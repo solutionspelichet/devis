@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pelichet NLC SA - Générateur de Devis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#d32f2f">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .bg-pelichet { background-color: #d32f2f; }
+        .btn-shadow { box-shadow: 0 4px 6px -1px rgba(211, 47, 47, 0.2); }
+        .input-focus { outline: none; transition: all 0.2s; }
+        .input-focus:focus { ring: 2px; ring-color: #ef4444; border-color: #ef4444; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-pelichet text-white p-4 shadow-md mb-6 sticky top-0 z-20">
+        <div class="max-w-xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold tracking-tight">PELICHET NLC SA</h1>
+            <div class="text-xs bg-white/20 px-2 py-1 rounded uppercase font-bold">Expert v2.0</div>
+        </div>
+    </nav>
+
+    <div class="max-w-xl mx-auto px-4 pb-12">
+        <form id="devisForm" class="space-y-6">
+            <!-- SECTION 1 : GÉNÉRAL -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                <h3 class="text-sm font-bold text-red-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                    Informations Générales
+                </h3>
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-gray-400 mb-1">RÉFÉRENCE DEVIS</label>
+                            <input type="text" name="ref" required placeholder="899CHCH000402" class="w-full px-4 py-2 border rounded-lg input-focus">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-gray-400 mb-1">ENTREPRISE CLIENT</label>
+                            <input type="text" name="client" required placeholder="Corintis SA" class="w-full px-4 py-2 border rounded-lg input-focus">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-400 mb-1">CONTACT</label>
+                            <input type="text" name="contact" placeholder="Mme Nguyen" class="w-full px-4 py-2 border rounded-lg input-focus">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-400 mb-1">DATE PRÉVUE</label>
+                            <input type="date" name="datePrevue" required class="w-full px-4 py-2 border rounded-lg input-focus">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2 : PRESTATIONS DYNAMIQUES -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-sm font-bold text-red-600 uppercase tracking-widest flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                        Prestations
+                    </h3>
+                    <div class="relative group">
+                        <button type="button" class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full font-bold flex items-center gap-1 transition-colors">
+                            <span>Suggestions</span>
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+                        <div class="absolute right-0 mt-2 w-64 bg-white border shadow-xl rounded-xl hidden group-hover:block z-30 p-2 space-y-1">
+                            <button type="button" onclick="addSuggestion('logistique')" class="w-full text-left p-2 text-xs hover:bg-red-50 rounded">Logistique & Matériel</button>
+                            <button type="button" onclick="addSuggestion('labo_prep')" class="w-full text-left p-2 text-xs hover:bg-red-50 rounded">Labo : Préparation</button>
+                            <button type="button" onclick="addSuggestion('labo_dem')" class="w-full text-left p-2 text-xs hover:bg-red-50 rounded">Labo : Déménagement</button>
+                            <button type="button" onclick="addSuggestion('bur_prep')" class="w-full text-left p-2 text-xs hover:bg-red-50 rounded">Bureaux : Préparation</button>
+                            <button type="button" onclick="addSuggestion('bur_dem')" class="w-full text-left p-2 text-xs hover:bg-red-50 rounded">Bureaux : Déménagement</button>
+                            <button type="button" onclick="addSuggestion('montage')" class="w-full text-left p-2 text-xs hover:bg-red-50 rounded">Intervention Montage</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="prestationsList" class="space-y-4">
+                    <!-- Les lignes de prestations s'ajoutent ici -->
+                </div>
+
+                <button type="button" onclick="addNewLine()" class="mt-4 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:text-red-500 hover:border-red-300 font-bold transition-all flex justify-center items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
+                    Ajouter une ligne manuelle
+                </button>
+            </div>
+
+            <!-- SECTION 3 : FINANCES -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                <h3 class="text-sm font-bold text-red-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Tarification
+                </h3>
+                <div class="relative">
+                    <span class="absolute left-4 top-3 text-gray-400 font-bold">CHF</span>
+                    <input type="number" name="montantHT" required step="0.01" placeholder="0.00" class="w-full pl-14 pr-4 py-3 border rounded-xl input-focus font-bold text-xl bg-gray-50">
+                </div>
+                <p class="text-[10px] text-gray-400 mt-2 uppercase">Note: La TVA (8%) et la RPLP (0.5%) seront calculées automatiquement.</p>
+            </div>
+
+            <button type="submit" id="submitBtn" class="w-full bg-pelichet hover:bg-red-700 text-white font-bold py-5 rounded-2xl shadow-lg btn-shadow transition-all flex justify-center items-center gap-3">
+                <span id="btnText">Générer le Devis Officiel</span>
+                <div id="loader" class="hidden animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+            </button>
+        </form>
+    </div>
+
+    <!-- MODAL SUCCÈS -->
+    <div id="successModal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+            <div class="h-20 w-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+            </div>
+            <h3 class="text-2xl font-bold text-gray-900 mb-2">Devis Transmis !</h3>
+            <p class="text-gray-500 mb-8">Le document est en cours de création. Vérifiez votre dossier Google Drive dans quelques instants.</p>
+            <button onclick="closeModal()" class="w-full bg-gray-900 text-white font-bold py-4 rounded-xl hover:bg-black transition-colors">OK, Compris</button>
+        </div>
+    </div>
+
+    <script>
+        const SCRIPT_URL = 'VOTRE_URL_GOOGLE_APPS_SCRIPT_ICI';
+
+        const suggestions = {
+            "logistique": "Livraison et reprise de matériel : Mise à disposition de collaborateurs, poids lourd, cartons, cadres palettes, box et matériel d’emballage.",
+            "labo_prep": "Intervention préparation labo : 2 collaborateurs sur 2 jours, fourgon équipé. Démontage, emballage, protection, mise en cartons et cadres palettes.",
+            "labo_dem": "Intervention déménagement labo : 9 collaborateurs Manutention-Lourde. Chargement, transport, déchargement et mise en place selon instructions.",
+            "bur_prep": "Intervention préparation bureaux : 2 collaborateurs sur 1 jour. Démontage, emballage, protection, mise en cartons et box IT.",
+            "bur_dem": "Intervention déménagement bureaux : 9 collaborateurs. Manutention, transport et mise en place dans vos nouveaux locaux.",
+            "montage": "Intervention montage : Mise à disposition de 2 collaborateurs spécialisés en montage de mobilier sur 2 jours."
+        };
+
+        const list = document.getElementById('prestationsList');
+
+        function addNewLine(text = "") {
+            const div = document.createElement('div');
+            div.className = "flex gap-2 group animate-in slide-in-from-top-2 duration-200";
+            div.innerHTML = `
+                <textarea name="postes" required rows="2" class="flex-1 px-3 py-2 border rounded-lg text-sm input-focus" placeholder="Détail de la prestation...">${text}</textarea>
+                <button type="button" onclick="this.parentElement.remove()" class="text-gray-300 hover:text-red-500 self-center p-1">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            `;
+            list.appendChild(div);
+        }
+
+        function addSuggestion(key) {
+            addNewLine(suggestions[key]);
+        }
+
+        // Initialiser avec une ligne vide
+        window.onload = () => addNewLine();
+
+        const form = document.getElementById('devisForm');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            const loader = document.getElementById('loader');
+            
+            btn.disabled = true;
+            loader.classList.remove('hidden');
+
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            data.postes = formData.getAll('postes'); // Récupérer le tableau de textes
+
+            try {
+                await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(data),
+                    mode: 'no-cors'
+                });
+                document.getElementById('successModal').classList.remove('hidden');
+                form.reset();
+                list.innerHTML = "";
+                addNewLine();
+            } catch (err) {
+                alert("Erreur réseau. Vérifiez l'URL de votre script.");
+            } finally {
+                btn.disabled = false;
+                loader.classList.add('hidden');
+            }
+        });
+
+        function closeModal() {
+            document.getElementById('successModal').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
