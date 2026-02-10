@@ -20,7 +20,7 @@
     <nav class="bg-pelichet text-white p-4 shadow-md mb-6 sticky top-0 z-20">
         <div class="max-w-xl mx-auto flex justify-between items-center">
             <h1 class="text-xl font-bold tracking-tight">PELICHET NLC SA</h1>
-            <div class="text-xs bg-white/20 px-2 py-1 rounded uppercase font-bold">Expert v2.0</div>
+            <div class="text-xs bg-white/20 px-2 py-1 rounded uppercase font-bold">Version 2.1</div>
         </div>
     </nav>
 
@@ -38,13 +38,29 @@
                             <label class="block text-xs font-bold text-gray-400 mb-1">RÉFÉRENCE DEVIS</label>
                             <input type="text" name="ref" required placeholder="899CHCH000402" class="w-full px-4 py-2 border rounded-lg input-focus">
                         </div>
+                        
+                        <!-- Nouveau champ Genre -->
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-gray-400 mb-2">CIVILITÉ DESTINATAIRE</label>
+                            <div class="flex gap-4">
+                                <label class="flex-1 flex items-center justify-center gap-2 p-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition-all">
+                                    <input type="radio" name="genre" value="Monsieur" checked class="text-red-600 focus:ring-red-500">
+                                    <span class="text-sm">Monsieur</span>
+                                </label>
+                                <label class="flex-1 flex items-center justify-center gap-2 p-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition-all">
+                                    <input type="radio" name="genre" value="Madame" class="text-red-600 focus:ring-red-500">
+                                    <span class="text-sm">Madame</span>
+                                </label>
+                            </div>
+                        </div>
+
                         <div class="col-span-2">
                             <label class="block text-xs font-bold text-gray-400 mb-1">ENTREPRISE CLIENT</label>
                             <input type="text" name="client" required placeholder="Corintis SA" class="w-full px-4 py-2 border rounded-lg input-focus">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-gray-400 mb-1">CONTACT</label>
-                            <input type="text" name="contact" placeholder="Mme Nguyen" class="w-full px-4 py-2 border rounded-lg input-focus">
+                            <label class="block text-xs font-bold text-gray-400 mb-1">NOM DU CONTACT</label>
+                            <input type="text" name="contact" placeholder="Nguyen" class="w-full px-4 py-2 border rounded-lg input-focus">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-400 mb-1">DATE PRÉVUE</label>
@@ -77,9 +93,7 @@
                     </div>
                 </div>
 
-                <div id="prestationsList" class="space-y-4">
-                    <!-- Les lignes de prestations s'ajoutent ici -->
-                </div>
+                <div id="prestationsList" class="space-y-4"></div>
 
                 <button type="button" onclick="addNewLine()" class="mt-4 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:text-red-500 hover:border-red-300 font-bold transition-all flex justify-center items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
@@ -97,7 +111,6 @@
                     <span class="absolute left-4 top-3 text-gray-400 font-bold">CHF</span>
                     <input type="number" name="montantHT" required step="0.01" placeholder="0.00" class="w-full pl-14 pr-4 py-3 border rounded-xl input-focus font-bold text-xl bg-gray-50">
                 </div>
-                <p class="text-[10px] text-gray-400 mt-2 uppercase">Note: La TVA (8%) et la RPLP (0.5%) seront calculées automatiquement.</p>
             </div>
 
             <button type="submit" id="submitBtn" class="w-full bg-pelichet hover:bg-red-700 text-white font-bold py-5 rounded-2xl shadow-lg btn-shadow transition-all flex justify-center items-center gap-3">
@@ -113,9 +126,9 @@
             <div class="h-20 w-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
                 <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
             </div>
-            <h3 class="text-2xl font-bold text-gray-900 mb-2">Devis Transmis !</h3>
-            <p class="text-gray-500 mb-8">Le document est en cours de création. Vérifiez votre dossier Google Drive dans quelques instants.</p>
-            <button onclick="closeModal()" class="w-full bg-gray-900 text-white font-bold py-4 rounded-xl hover:bg-black transition-colors">OK, Compris</button>
+            <h3 class="text-2xl font-bold text-gray-900 mb-2">Devis Archivé !</h3>
+            <p class="text-gray-500 mb-8">Les données sont enregistrées dans le Google Sheet et le document est prêt sur votre Drive.</p>
+            <button onclick="closeModal()" class="w-full bg-gray-900 text-white font-bold py-4 rounded-xl hover:bg-black transition-colors">Terminer</button>
         </div>
     </div>
 
@@ -149,7 +162,6 @@
             addNewLine(suggestions[key]);
         }
 
-        // Initialiser avec une ligne vide
         window.onload = () => addNewLine();
 
         const form = document.getElementById('devisForm');
@@ -163,7 +175,7 @@
 
             const formData = new FormData(form);
             const data = Object.fromEntries(formData.entries());
-            data.postes = formData.getAll('postes'); // Récupérer le tableau de textes
+            data.postes = formData.getAll('postes');
 
             try {
                 await fetch(SCRIPT_URL, {
@@ -176,7 +188,7 @@
                 list.innerHTML = "";
                 addNewLine();
             } catch (err) {
-                alert("Erreur réseau. Vérifiez l'URL de votre script.");
+                alert("Erreur de connexion avec Google.");
             } finally {
                 btn.disabled = false;
                 loader.classList.add('hidden');
