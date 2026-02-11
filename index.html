@@ -23,7 +23,7 @@
     <nav class="bg-pelichet text-white p-4 shadow-lg sticky top-0 z-50">
         <div class="max-w-2xl mx-auto flex justify-between items-center">
             <h1 class="text-xl font-bold tracking-tight uppercase">Pelichet Logistique</h1>
-            <div class="text-[10px] bg-white/20 px-2 py-1 rounded font-bold uppercase tracking-widest text-left">v9.0 Multi-RDV</div>
+            <div class="text-[10px] bg-white/20 px-2 py-1 rounded font-bold uppercase tracking-widest text-left">v9.2 Sync-WA</div>
         </div>
     </nav>
 
@@ -50,7 +50,8 @@
                 <div class="grid grid-cols-2 gap-4 text-left">
                     <div class="col-span-2">
                         <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-tighter">Mobile pour Réception Documents (WhatsApp)</label>
-                        <input type="tel" name="mobileSociete" required placeholder="+41..." class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold bg-slate-50 border-slate-200">
+                        <input type="tel" id="mobileSociete" name="mobileSociete" required value="+41 79 688 27 35" placeholder="+41..." class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold bg-slate-50 border-slate-200">
+                        <p id="syncNotice" class="text-[9px] text-blue-500 mt-1 italic">✓ Synchronisé avec le numéro du vendeur</p>
                     </div>
                     
                     <!-- Champs spécifiques Pelichet -->
@@ -58,7 +59,7 @@
                         <div class="col-span-1">
                             <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Vendeur</label>
                             <input type="text" name="vendeur" value="ARNAUD GUEDOU" class="w-full px-4 py-2 border rounded-lg input-focus text-xs font-semibold">
-                            <input type="text" name="vendeurTel" value="022 827 36 00" placeholder="Tél Vendeur" class="w-full mt-1 px-4 py-1 border rounded-lg input-focus text-[10px] text-slate-400 italic">
+                            <input type="text" id="vendeurTel" name="vendeurTel" value="+41 79 688 27 35" placeholder="Tél Vendeur" class="w-full mt-1 px-4 py-1 border rounded-lg input-focus text-[10px] text-slate-600 font-bold bg-white">
                         </div>
                         <div class="col-span-1">
                             <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Coordinateur</label>
@@ -87,12 +88,12 @@
                         <input type="text" name="ref" required placeholder="899CHCH..." class="w-full px-4 py-2 border rounded-lg input-focus font-mono uppercase bg-slate-50">
                     </div>
                     <div class="col-span-2">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Entreprise Cliente</label>
-                        <input type="text" name="client" required class="w-full px-4 py-2 border rounded-lg input-focus font-bold">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Entreprise Cliente (Nom Société)</label>
+                        <input type="text" name="client" required class="w-full px-4 py-2 border rounded-lg input-focus font-bold" placeholder="Ex: EPFL Innovation Park">
                     </div>
                     <div class="col-span-2">
                         <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Adresse de Facturation</label>
-                        <textarea name="adresseClient" required rows="2" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
+                        <textarea name="adresseClient" required rows="2" class="w-full px-4 py-2 border rounded-lg input-focus text-sm" placeholder="Adresse complète de facturation"></textarea>
                     </div>
                 </div>
             </div>
@@ -104,15 +105,15 @@
                     <!-- ENLEVEMENT -->
                     <div class="p-3 bg-red-50/50 rounded-xl border border-red-100">
                         <label class="block text-[10px] font-bold text-red-600 mb-2 uppercase italic underline">Enlèvement (Expéditeur) :</label>
-                        <textarea name="adresseDepart" required rows="2" placeholder="Nom + Adresse complète de départ" class="w-full px-4 py-2 border rounded-lg input-focus text-sm mb-3"></textarea>
+                        <textarea name="adresseDepart" required rows="2" placeholder="Adresse complète de départ (Rue, CP, Ville)" class="w-full px-4 py-2 border rounded-lg input-focus text-sm mb-3"></textarea>
                         <div class="grid grid-cols-2 gap-2">
                             <div>
                                 <label class="block text-[9px] font-bold text-slate-400 mb-1 uppercase">Nom Contact Client</label>
-                                <input type="text" name="contact" placeholder="Mai NGUYEN" class="w-full px-3 py-1.5 border rounded-lg text-xs">
+                                <input type="text" name="contact" placeholder="Mai NGUYEN" class="w-full px-3 py-1.5 border rounded-lg text-xs font-bold">
                             </div>
                             <div>
                                 <label class="block text-[9px] font-bold text-slate-400 mb-1 uppercase">Tél Contact Client</label>
-                                <input type="tel" name="contactTel" placeholder="079..." class="w-full px-3 py-1.5 border rounded-lg text-xs">
+                                <input type="tel" name="contactTel" placeholder="079.251.51.70" class="w-full px-3 py-1.5 border rounded-lg text-xs font-bold">
                             </div>
                         </div>
                     </div>
@@ -120,7 +121,7 @@
                     <!-- LIVRAISON -->
                     <div class="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
                         <label class="block text-[10px] font-bold text-blue-600 mb-2 uppercase italic underline">Livraison (Destinataire) :</label>
-                        <textarea name="adresseArrivee" required rows="2" placeholder="Nom + Adresse complète d'arrivée" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
+                        <textarea name="adresseArrivee" required rows="2" placeholder="Adresse complète d'arrivée (Rue, CP, Ville)" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
                     </div>
                 </div>
             </div>
@@ -131,7 +132,7 @@
                 <div id="prestationsContainer" class="space-y-8"></div>
                 <div class="grid grid-cols-2 gap-3 mt-8">
                     <button type="button" onclick="addPoste('simple')" class="py-4 border-2 border-dashed border-red-200 rounded-2xl text-red-500 text-[11px] font-bold hover:bg-red-50 flex flex-col items-center gap-1 transition-all">POSTE SIMPLE</button>
-                    <button type="button" onclick="addPoste('detail')" class="py-4 border-2 border-dashed border-blue-200 rounded-2xl text-blue-500 text-[11px] font-bold hover:bg-blue-50 flex flex-col items-center gap-1">BESOINS LOGISTIQUE</button>
+                    <button type="button" onclick="addPoste('detail')" class="py-4 border-2 border-dashed border-blue-200 rounded-2xl text-blue-500 text-[11px] font-bold hover:bg-blue-50 flex flex-col items-center gap-1 transition-all">BESOINS LOGISTIQUE</button>
                 </div>
             </div>
 
@@ -166,6 +167,24 @@
 
     <script>
         const SCRIPT_URL = document.getElementById('script_url_config').value;
+
+        // --- GESTION SYNCHRO WHATSAPP ---
+        const vTelInput = document.getElementById('vendeurTel');
+        const waInput = document.getElementById('mobileSociete');
+        const syncNotice = document.getElementById('syncNotice');
+        let autoSyncWA = true;
+
+        vTelInput.addEventListener('input', () => {
+            if (autoSyncWA) {
+                waInput.value = vTelInput.value;
+            }
+        });
+
+        waInput.addEventListener('input', () => {
+            autoSyncWA = false;
+            syncNotice.textContent = "⚠ Entrée spécifique (Synchro désactivée)";
+            syncNotice.classList.replace('text-blue-50', 'text-amber-500');
+        });
 
         const lists = {
             personnel: ["Manutentionnaire", "Chauffeur", "Chef d'équipe", "Chauffeur-Livreur", "Monteur"],
