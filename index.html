@@ -23,7 +23,7 @@
     <nav class="bg-pelichet text-white p-4 shadow-lg sticky top-0 z-50">
         <div class="max-w-2xl mx-auto flex justify-between items-center text-left">
             <h1 class="text-xl font-bold tracking-tight uppercase">Pelichet Logistique</h1>
-            <div class="text-[10px] bg-white/20 px-2 py-1 rounded font-bold uppercase tracking-widest">v10.1 Salutation</div>
+            <div class="text-[10px] bg-white/20 px-2 py-1 rounded font-bold uppercase tracking-widest">v10.2 Final Sync</div>
         </div>
     </nav>
 
@@ -49,13 +49,13 @@
                     <div class="col-span-2 text-left">
                         <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-tighter">Mobile WhatsApp (Réception Documents)</label>
                         <input type="tel" id="mobileSociete" name="mobileSociete" required value="+41 79 688 27 35" class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold bg-slate-50 border-slate-200">
-                        <p id="syncNoticeWA" class="text-[9px] text-blue-500 mt-1 italic">✓ Synchronisé avec le vendeur</p>
+                        <p id="syncNoticeWA" class="text-[9px] text-blue-500 mt-1 italic">✓ Synchronisé avec le conseiller</p>
                     </div>
                     
                     <div class="pelichet-only col-span-2 grid grid-cols-2 gap-3 text-left">
                         <div class="col-span-1">
-                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Vendeur</label>
-                            <input type="text" name="vendeur" value="ARNAUD GUEDOU" class="w-full px-4 py-2 border rounded-lg input-focus text-xs font-semibold">
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Conseiller (Vendeur)</label>
+                            <input type="text" id="vendeur" name="vendeur" value="ARNAUD GUEDOU" class="w-full px-4 py-2 border rounded-lg input-focus text-xs font-semibold">
                             <input type="text" id="vendeurTel" name="vendeurTel" value="+41 79 688 27 35" class="w-full mt-1 px-4 py-1 border rounded-lg input-focus text-[10px] text-slate-600 font-bold bg-white">
                         </div>
                         <div class="col-span-1">
@@ -63,8 +63,8 @@
                             <input type="text" name="coordinateur" value="WOTQUENNE LILOU" class="w-full px-4 py-2 border rounded-lg input-focus text-xs font-semibold">
                             <input type="text" name="coordinateurTel" value="022 827 36 97" class="w-full mt-1 px-4 py-1 border rounded-lg input-focus text-[10px] text-slate-400 italic">
                         </div>
-                        <div class="col-span-2">
-                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase text-left">Volume Estimé (M3)</label>
+                        <div class="col-span-2 text-left">
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Volume Estimé (M3)</label>
                             <input type="number" name="volumeEstime" value="200" class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold text-pelichet">
                         </div>
                     </div>
@@ -81,7 +81,7 @@
                     </div>
                     <div class="col-span-2 text-left">
                         <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Salutation (Pour le devis)</label>
-                        <select name="genre" class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold bg-slate-50">
+                        <select name="genre" class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold bg-slate-50 text-left">
                             <option value="Monsieur">Monsieur</option>
                             <option value="Madame">Madame</option>
                             <option value="Messieurs">Messieurs</option>
@@ -109,11 +109,11 @@
                         <textarea id="adresseDepart" name="adresseDepart" required rows="2" class="w-full px-4 py-2 border rounded-lg input-focus text-sm mb-3 text-left"></textarea>
                         <p id="syncNoticeDep" class="text-[9px] text-red-400 mb-2 italic">✓ Identique à facturation</p>
                         <div class="grid grid-cols-2 gap-2 text-left">
-                            <input type="text" name="contact" placeholder="Nom Contact" class="px-3 py-1.5 border rounded-lg text-xs font-bold text-left">
-                            <input type="tel" name="contactTel" placeholder="Tél Contact" class="px-3 py-1.5 border rounded-lg text-xs font-bold text-left">
+                            <input type="text" name="contact" placeholder="Nom Contact" class="px-3 py-1.5 border rounded-lg text-xs font-bold text-left text-left">
+                            <input type="tel" name="contactTel" placeholder="Tél Contact" class="px-3 py-1.5 border rounded-lg text-xs font-bold text-left text-left">
                         </div>
                     </div>
-                    <div class="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-left">
+                    <div class="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-left text-left">
                         <label class="block text-[10px] font-bold text-blue-600 mb-2 uppercase italic underline text-left">Livraison (ARRIVÉE) :</label>
                         <textarea name="adresseArrivee" required rows="2" class="w-full px-4 py-2 border rounded-lg input-focus text-sm text-left"></textarea>
                     </div>
@@ -181,7 +181,7 @@
             
             if (isEngin) {
                 h += `<div class="relative flex items-center"><input type="text" name="tonnage" placeholder="Ton." class="w-10 p-2 border rounded-lg text-[10px] text-center" value="1"><span class="absolute -right-2 text-[8px] font-bold text-slate-400">T</span></div>
-                <div class="ml-2 flex items-center"><input type="number" name="qty" placeholder="Qté" class="w-10 p-2 border rounded-lg text-[10px] text-center" value="1"><span class="text-[8px] font-bold text-slate-400 ml-0.5">x</span></div>`;
+                <div class="ml-2 flex items-center text-left"><input type="number" name="qty" placeholder="Qté" class="w-10 p-2 border rounded-lg text-[10px] text-center" value="1"><span class="text-[8px] font-bold text-slate-400 ml-0.5 text-left text-left">x</span></div>`;
             } else {
                 h += `<input type="number" name="qty" placeholder="Qté" class="w-12 p-2 border rounded-lg text-[10px] text-center" value="1">`;
             }
@@ -190,26 +190,26 @@
         }
 
         function createRDVRow() {
-            return `<div class="rdv-row flex gap-2 items-center text-left"><div class="flex-1"><input type="date" name="posteDate" class="w-full p-2 border border-blue-100 rounded-lg text-[10px] text-center bg-white text-left"></div><div class="w-20"><input type="text" name="heureRDV" value="8H00" class="w-full p-2 border border-blue-100 rounded-lg text-[10px] text-center font-bold"></div><button type="button" onclick="if(this.parentElement.parentElement.children.length>1) this.parentElement.remove()" class="text-slate-300">×</button></div>`;
+            return `<div class="rdv-row flex gap-2 items-center text-left text-left"><div class="flex-1"><input type="date" name="posteDate" class="w-full p-2 border border-blue-100 rounded-lg text-[10px] text-center bg-white text-left text-left"></div><div class="w-20"><input type="text" name="heureRDV" value="8H00" class="w-full p-2 border border-blue-100 rounded-lg text-[10px] text-center font-bold"></div><button type="button" onclick="if(this.parentElement.parentElement.children.length>1) this.parentElement.remove()" class="text-slate-300">×</button></div>`;
         }
 
         function addPoste(mode = 'simple') {
             const container = document.getElementById('prestationsContainer');
             const div = document.createElement('div');
-            div.className = `poste-card bg-white rounded-2xl p-5 relative border border-slate-200 shadow-sm poste-${mode} text-left`;
+            div.className = `poste-card bg-white rounded-2xl p-5 relative border border-slate-200 shadow-sm poste-${mode} text-left text-left text-left`;
             div.dataset.mode = mode;
             const header = `<button type="button" onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-white text-slate-300 rounded-full w-8 h-8 border font-bold shadow-sm text-center">×</button>
-                <div class="grid grid-cols-3 gap-2 mb-3 text-left"><div class="col-span-2 text-left"><label class="block text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Désignation</label><input type="text" name="posteTitre" class="w-full p-2 border rounded-lg text-xs font-bold uppercase text-left"></div><div><label class="block text-[9px] font-bold text-slate-400 uppercase tracking-tighter text-right">Prix HT</label><input type="number" name="postePrix" placeholder="0.00" class="w-full p-2 border rounded-lg text-xs font-bold text-right"></div></div>`;
+                <div class="grid grid-cols-3 gap-2 mb-3 text-left"><div class="col-span-2 text-left"><label class="block text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Désignation</label><input type="text" name="posteTitre" class="w-full p-2 border rounded-lg text-xs font-bold uppercase text-left text-left text-left"></div><div><label class="block text-[9px] font-bold text-slate-400 uppercase tracking-tighter text-right text-left text-left">Prix HT</label><input type="number" name="postePrix" placeholder="0.00" class="w-full p-2 border rounded-lg text-xs font-bold text-right text-left text-left"></div></div>`;
             
             if (mode === 'simple') {
-                div.innerHTML = header + `<textarea name="simpleText" required rows="3" class="w-full p-2 text-xs border rounded-xl" placeholder="Description libre..."></textarea>`;
+                div.innerHTML = header + `<textarea name="simpleText" required rows="3" class="w-full p-2 text-xs border rounded-xl text-left" placeholder="Description libre..."></textarea>`;
             } else {
-                div.innerHTML = header + `<div class="space-y-4 text-left"><div class="bg-blue-50 p-3 rounded-xl text-left"><label class="block text-[9px] font-bold text-blue-600 mb-2 uppercase italic underline text-left">Rendez-vous :</label><div class="rdv-container text-left">${createRDVRow()}</div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRDVRow())" class="text-[9px] text-blue-700 font-bold hover:underline">+ Ajouter jour/RDV</button><div class="mt-3 text-left"><label class="block text-[9px] font-bold text-blue-600 mb-1 uppercase text-left">Durée (Jours) :</label><div class="flex items-center gap-2 text-left"><input type="number" name="nbJours" step="0.5" value="1" class="w-16 p-1 border rounded text-xs text-center font-bold"><button type="button" onclick="this.previousElementSibling.value=0.5" class="bg-blue-100 text-blue-600 px-2 py-1 rounded text-[10px] font-bold">0.5 J</button><button type="button" onclick="this.previousElementSibling.previousElementSibling.value=1" class="bg-blue-100 text-blue-600 px-2 py-1 rounded text-[10px] font-bold">1 J</button></div></div></div>
-                    <div><label class="block text-[9px] font-bold text-purple-600 uppercase italic">Véhicules Spéciaux (Qté & Tonnage) :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('engins'))" class="text-[9px] text-purple-600 font-bold hover:underline">+ Ajouter Engin</button></div>
-                    <div><label class="block text-[9px] font-bold text-slate-500 uppercase italic">Personnel :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('personnel'))" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
-                    <div><label class="block text-[9px] font-bold text-slate-500 uppercase italic">Flotte / Véhicules :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('vehicules'))" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
-                    <div><label class="block text-[9px] font-bold text-slate-500 uppercase italic text-left">Matériel :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('materiel'))" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
-                    <textarea name="tache" rows="2" class="w-full p-2 border rounded-lg text-xs" placeholder="Instructions détaillées..."></textarea></div>`;
+                div.innerHTML = header + `<div class="space-y-4 text-left"><div class="bg-blue-50 p-3 rounded-xl text-left text-left"><label class="block text-[9px] font-bold text-blue-600 mb-2 uppercase italic underline text-left text-left text-left">Rendez-vous :</label><div class="rdv-container text-left text-left text-left text-left">${createRDVRow()}</div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRDVRow())" class="text-[9px] text-blue-700 font-bold hover:underline">+ Ajouter jour/RDV</button><div class="mt-3 text-left text-left text-left"><label class="block text-[9px] font-bold text-blue-600 mb-1 uppercase text-left text-left">Durée (Jours) :</label><div class="flex items-center gap-2 text-left text-left text-left text-left"><input type="number" name="nbJours" step="0.5" value="1" class="w-16 p-1 border rounded text-xs text-center font-bold text-left text-left"><button type="button" onclick="this.previousElementSibling.value=0.5" class="bg-blue-100 text-blue-600 px-2 py-1 rounded text-[10px] font-bold text-left">0.5 J</button><button type="button" onclick="this.previousElementSibling.previousElementSibling.value=1" class="bg-blue-100 text-blue-600 px-2 py-1 rounded text-[10px] font-bold text-left">1 J</button></div></div></div>
+                    <div><label class="block text-[9px] font-bold text-purple-600 uppercase italic text-left text-left text-left">Véhicules Spéciaux (Qté & Tonnage) :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('engins'))" class="text-[9px] text-purple-600 font-bold hover:underline">+ Ajouter Engin</button></div>
+                    <div><label class="block text-[9px] font-bold text-slate-500 uppercase italic text-left text-left text-left">Personnel :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('personnel'))" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
+                    <div><label class="block text-[9px] font-bold text-slate-500 uppercase italic text-left text-left text-left text-left">Flotte / Véhicules :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('vehicules'))" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
+                    <div><label class="block text-[9px] font-bold text-slate-500 uppercase italic text-left text-left text-left text-left">Matériel :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('materiel'))" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
+                    <textarea name="tache" rows="2" class="w-full p-2 border rounded-lg text-xs text-left text-left" placeholder="Instructions détaillées..."></textarea></div>`;
             }
             container.appendChild(div);
         }
