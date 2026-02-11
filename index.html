@@ -9,18 +9,21 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; text-align: left; }
         .bg-pelichet { background-color: #d32f2f; }
+        .border-pelichet { border-color: #d32f2f; }
+        .text-pelichet { color: #d32f2f; }
         .input-focus:focus { ring: 2px; ring-color: #d32f2f; outline: none; border-color: #d32f2f; }
         .poste-card { border-left: 6px solid #cbd5e1; transition: all 0.2s; }
         .poste-simple { border-left-color: #ef4444; }
         .poste-detail { border-left-color: #3b82f6; }
+        .rdv-row { border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px; margin-bottom: 8px; }
         select { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1em; }
     </style>
 </head>
-<body class="bg-slate-100 min-h-screen pb-24 text-left">
+<body class="bg-slate-50 min-h-screen pb-24 text-left">
     <nav class="bg-pelichet text-white p-4 shadow-lg sticky top-0 z-50">
         <div class="max-w-2xl mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold tracking-tight uppercase">Devis & Logistique</h1>
-            <div class="text-[10px] bg-white/20 px-2 py-1 rounded font-bold uppercase tracking-widest text-left">v8.6 Auto-Resa</div>
+            <h1 class="text-xl font-bold tracking-tight uppercase">Pelichet Logistique</h1>
+            <div class="text-[10px] bg-white/20 px-2 py-1 rounded font-bold uppercase tracking-widest text-left">v9.0 Multi-RDV</div>
         </div>
     </nav>
 
@@ -30,10 +33,10 @@
             <!-- CONFIGURATION SCRIPT URL -->
             <input type="hidden" id="script_url_config" value="https://script.google.com/macros/s/AKfycbylU9ZThTLcB6pnq4ET0egd8dzyBH-3EfidN1MpK6cV9q4hiPmrEgJRDI0MtD08fHO9_w/exec">
 
-            <!-- 1. PRESTATAIRE -->
+            <!-- 1. PRESTATAIRE / EMETTEUR -->
             <div class="bg-white rounded-2xl shadow-sm border p-6">
-                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">1. Société Émettrice</h3>
-                <div class="flex gap-4 mb-4 text-left">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">1. Émetteur & Suivi</h3>
+                <div class="flex gap-4 mb-6">
                     <label class="flex-1 flex items-center justify-center gap-2 p-3 border rounded-xl cursor-pointer hover:bg-red-50 transition-all">
                         <input type="radio" name="typeSociete" value="Pelichet" checked onclick="togglePelichet(true)" class="text-red-600">
                         <span class="text-sm font-bold text-slate-700">Pelichet NLC</span>
@@ -44,29 +47,34 @@
                     </label>
                 </div>
                 
-                <div class="grid grid-cols-2 gap-3 mb-4 text-left">
+                <div class="grid grid-cols-2 gap-4 text-left">
                     <div class="col-span-2">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1">MOBILE SOCIÉTÉ (WHATSAPP)</label>
-                        <input type="tel" name="mobileSociete" required placeholder="+41..." class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-tighter">Mobile pour Réception Documents (WhatsApp)</label>
+                        <input type="tel" name="mobileSociete" required placeholder="+41..." class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold bg-slate-50 border-slate-200">
                     </div>
+                    
                     <!-- Champs spécifiques Pelichet -->
-                    <div class="pelichet-only text-left">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1">VENDEUR</label>
-                        <input type="text" name="vendeur" value="ARNAUD GUEDOU" class="w-full px-4 py-2 border rounded-lg input-focus text-sm">
-                    </div>
-                    <div class="pelichet-only text-left">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1">COORDINATEUR</label>
-                        <input type="text" name="coordinateur" value="WOTQUENNE LILOU" class="w-full px-4 py-2 border rounded-lg input-focus text-sm">
-                    </div>
-                    <div class="pelichet-only col-span-2 text-left">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1">VOLUME ESTIMÉ (M3)</label>
-                        <input type="number" name="volumeEstime" value="200" class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold">
+                    <div class="pelichet-only col-span-2 grid grid-cols-2 gap-3">
+                        <div class="col-span-1">
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Vendeur</label>
+                            <input type="text" name="vendeur" value="ARNAUD GUEDOU" class="w-full px-4 py-2 border rounded-lg input-focus text-xs font-semibold">
+                            <input type="text" name="vendeurTel" value="022 827 36 00" placeholder="Tél Vendeur" class="w-full mt-1 px-4 py-1 border rounded-lg input-focus text-[10px] text-slate-400 italic">
+                        </div>
+                        <div class="col-span-1">
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Coordinateur</label>
+                            <input type="text" name="coordinateur" value="WOTQUENNE LILOU" class="w-full px-4 py-2 border rounded-lg input-focus text-xs font-semibold">
+                            <input type="text" name="coordinateurTel" value="022 827 36 97" class="w-full mt-1 px-4 py-1 border rounded-lg input-focus text-[10px] text-slate-400 italic">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase">Volume Estimé (M3)</label>
+                            <input type="number" name="volumeEstime" value="200" class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold text-pelichet">
+                        </div>
                     </div>
                 </div>
 
-                <div id="infoAutre" class="hidden space-y-3 p-3 bg-gray-50 rounded-xl border border-dashed text-left">
-                    <input type="text" name="nomPrestataire" placeholder="Nom de la société" class="w-full px-4 py-2 border rounded-lg text-sm input-focus">
-                    <textarea name="adressePrestataire" placeholder="Adresse complète" rows="2" class="w-full px-4 py-2 border rounded-lg text-sm input-focus"></textarea>
+                <div id="infoAutre" class="hidden space-y-3 mt-4 p-3 bg-slate-50 rounded-xl border border-dashed">
+                    <input type="text" name="nomPrestataire" placeholder="Nom de la société" class="w-full px-4 py-2 border rounded-lg text-sm">
+                    <textarea name="adressePrestataire" placeholder="Adresse complète" rows="2" class="w-full px-4 py-2 border rounded-lg text-sm"></textarea>
                 </div>
             </div>
 
@@ -75,58 +83,69 @@
                 <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">2. Informations Client</h3>
                 <div class="grid grid-cols-2 gap-4 text-left">
                     <div class="col-span-2">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1">RÉFÉRENCE DOSSIER</label>
-                        <input type="text" name="ref" required placeholder="899CHCH..." class="w-full px-4 py-2 border rounded-lg input-focus font-mono uppercase">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Référence Dossier</label>
+                        <input type="text" name="ref" required placeholder="899CHCH..." class="w-full px-4 py-2 border rounded-lg input-focus font-mono uppercase bg-slate-50">
                     </div>
                     <div class="col-span-2">
                         <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Entreprise Cliente</label>
                         <input type="text" name="client" required class="w-full px-4 py-2 border rounded-lg input-focus font-bold">
                     </div>
-                    <div class="col-span-1">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Contact</label>
-                        <input type="text" name="contact" class="w-full px-4 py-2 border rounded-lg input-focus text-sm">
-                    </div>
-                    <div class="col-span-1">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase text-blue-600">Date Générale</label>
-                        <input type="date" name="datePrevue" required class="w-full px-4 py-2 border border-blue-100 bg-blue-50/30 rounded-lg input-focus text-xs">
-                    </div>
                     <div class="col-span-2">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Facturation</label>
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Adresse de Facturation</label>
                         <textarea name="adresseClient" required rows="2" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
                     </div>
                 </div>
             </div>
 
-            <!-- 3. LOGISTIQUE -->
+            <!-- 3. LOGISTIQUE & PARCOURS -->
             <div class="bg-white rounded-2xl shadow-sm border p-6 text-left">
-                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 text-left">3. Parcours</h3>
-                <div class="space-y-4 text-left">
-                    <textarea name="adresseDepart" required rows="2" placeholder="Départ (Enlèvement)" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
-                    <textarea name="adresseArrivee" required rows="2" placeholder="Arrivée (Livraison)" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">3. Logistique & Parcours</h3>
+                <div class="space-y-6">
+                    <!-- ENLEVEMENT -->
+                    <div class="p-3 bg-red-50/50 rounded-xl border border-red-100">
+                        <label class="block text-[10px] font-bold text-red-600 mb-2 uppercase italic underline">Enlèvement (Expéditeur) :</label>
+                        <textarea name="adresseDepart" required rows="2" placeholder="Nom + Adresse complète de départ" class="w-full px-4 py-2 border rounded-lg input-focus text-sm mb-3"></textarea>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[9px] font-bold text-slate-400 mb-1 uppercase">Nom Contact Client</label>
+                                <input type="text" name="contact" placeholder="Mai NGUYEN" class="w-full px-3 py-1.5 border rounded-lg text-xs">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-bold text-slate-400 mb-1 uppercase">Tél Contact Client</label>
+                                <input type="tel" name="contactTel" placeholder="079..." class="w-full px-3 py-1.5 border rounded-lg text-xs">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- LIVRAISON -->
+                    <div class="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                        <label class="block text-[10px] font-bold text-blue-600 mb-2 uppercase italic underline">Livraison (Destinataire) :</label>
+                        <textarea name="adresseArrivee" required rows="2" placeholder="Nom + Adresse complète d'arrivée" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
+                    </div>
                 </div>
             </div>
 
             <!-- 4. PRESTATIONS -->
             <div class="bg-white rounded-2xl shadow-sm border p-6 text-left">
-                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6 text-left">4. Détail Prestations & Ressources</h3>
-                <div id="prestationsContainer" class="space-y-8 text-left"></div>
-                <div class="grid grid-cols-2 gap-3 mt-8 text-left">
-                    <button type="button" onclick="addPoste('simple')" class="py-4 border-2 border-dashed border-red-200 rounded-2xl text-red-500 text-[11px] font-bold hover:bg-red-50 flex flex-col items-center gap-1">POSTE SIMPLE</button>
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">4. Prestations & Instructions de Travail</h3>
+                <div id="prestationsContainer" class="space-y-8"></div>
+                <div class="grid grid-cols-2 gap-3 mt-8">
+                    <button type="button" onclick="addPoste('simple')" class="py-4 border-2 border-dashed border-red-200 rounded-2xl text-red-500 text-[11px] font-bold hover:bg-red-50 flex flex-col items-center gap-1 transition-all">POSTE SIMPLE</button>
                     <button type="button" onclick="addPoste('detail')" class="py-4 border-2 border-dashed border-blue-200 rounded-2xl text-blue-500 text-[11px] font-bold hover:bg-blue-50 flex flex-col items-center gap-1">BESOINS LOGISTIQUE</button>
                 </div>
             </div>
 
             <!-- 5. TOTAL -->
             <div class="bg-white rounded-2xl shadow-sm border p-6 text-left">
-                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">5. Chiffre d'Affaires HT</h3>
-                <div class="relative text-left">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">5. Chiffre d'Affaires Global</h3>
+                <div class="relative">
                     <span class="absolute left-4 top-3 font-bold text-slate-400">CHF</span>
-                    <input type="number" name="montantHT" required step="0.01" class="w-full pl-14 pr-4 py-3 border rounded-xl font-bold text-xl input-focus">
+                    <input type="number" name="montantHT" required step="0.01" class="w-full pl-14 pr-4 py-3 border rounded-xl font-bold text-xl input-focus text-left">
                 </div>
             </div>
 
             <button type="submit" id="submitBtn" class="w-full bg-pelichet text-white font-bold py-5 rounded-3xl shadow-xl flex justify-center items-center gap-3 transition-all active:scale-[0.98]">
-                <span id="btnText" class="text-lg text-center">Générer Devis + Réservation</span>
+                <span id="btnText" class="text-lg uppercase">Générer Devis + RESA</span>
                 <div id="loader" class="hidden animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
             </button>
         </form>
@@ -136,13 +155,11 @@
     <div id="modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
         <div class="bg-white rounded-[2.5rem] p-8 max-w-sm w-full text-center shadow-2xl">
             <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl font-bold">✓</div>
-            <h2 class="text-xl font-bold mb-2">Documents Prêts !</h2>
-            <p class="text-slate-500 text-[10px] mb-8 text-center text-left">Le Devis et la Fiche de Réservation ont été générés et sauvegardés sur le Drive.</p>
+            <h2 class="text-xl font-bold mb-2">Documents Archivés !</h2>
+            <p class="text-slate-500 text-[11px] mb-8 text-center">Le Devis et la Fiche RESA ont été générés.<br>Partagez les fichiers PDF + Word par WhatsApp.</p>
             <div class="space-y-3">
-                <button id="shareFilesBtn" class="w-full bg-[#25D366] text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2">
-                    Partager les Fichiers (PDF + Word)
-                </button>
-                <button onclick="location.reload()" class="w-full text-slate-400 text-xs py-2 uppercase font-bold tracking-widest text-center">Nouveau Dossier</button>
+                <button id="shareFilesBtn" class="w-full bg-[#25D366] text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 uppercase tracking-wide">Partager (WhatsApp)</button>
+                <button onclick="location.reload()" class="w-full text-slate-400 text-xs py-2 uppercase font-bold tracking-widest">Nouveau Dossier</button>
             </div>
         </div>
     </div>
@@ -151,10 +168,9 @@
         const SCRIPT_URL = document.getElementById('script_url_config').value;
 
         const lists = {
-            personnel: ["Manutentionnaire", "Chauffeur", "Chef d'équipe", "Monteur"],
-            vehicules: ["VL", "PL avec hayon", "PL", "Semi", "Fourgon", "VL transport personnel"],
-            equipement: ["Chariot élévateur", "Nacelle", "Camion grue"],
-            materiel: ["Cartons", "Adhésif", "Papier bulle", "Box IT", "Cadre palette", "Bacs plastiques"]
+            personnel: ["Manutentionnaire", "Chauffeur", "Chef d'équipe", "Chauffeur-Livreur", "Monteur"],
+            vehicules: ["VL", "1F", "1PL hayon", "PL", "Semi", "Caravelle", "Box IT"],
+            materiel: ["Chariots", "Caisse à outils", "Rouleaux bulle", "Adhésif", "Boites bleues", "Protection film", "Transpalette", "Cadre palette"]
         };
 
         function togglePelichet(isP) {
@@ -162,28 +178,24 @@
             document.getElementById('infoAutre').classList.toggle('hidden', isP);
         }
 
-        function handleCustom(s) {
-            if (s.value === "CUSTOM") {
-                const n = prompt("Précisez :");
-                if (n) {
-                    const o = document.createElement('option');
-                    o.value = n; o.text = n;
-                    s.add(o, s.options[s.length-1]);
-                    s.value = n;
-                } else s.value = "";
-            }
-        }
-
         function createRow(type) {
             let h = `<div class="flex gap-1 items-center mb-1 text-left">
-                <select class="flex-1 p-2 bg-white border border-slate-200 rounded-lg text-[11px] outline-none" onchange="handleCustom(this)">
+                <select class="flex-1 p-2 bg-white border border-slate-200 rounded-lg text-[10px] outline-none" onchange="if(this.value=='CUSTOM'){const n=prompt('Précisez :');if(n){const o=document.createElement('option');o.value=n;o.text=n;this.add(o,this.options[this.options.length-1]);this.value=n;}}">
                     <option value="">-- Type --</option>`;
             lists[type].forEach(i => h += `<option value="${i}">${i}</option>`);
             h += `<option value="CUSTOM">+ Autre...</option></select>
-                <input type="number" placeholder="Qté" class="w-14 p-2 border rounded-lg text-[11px] text-center" min="1" value="1">
-                <button type="button" onclick="this.parentElement.remove()" class="text-slate-300 px-2 text-lg font-bold">×</button>
+                <input type="number" placeholder="Qté" class="w-12 p-2 border rounded-lg text-[10px] text-center" min="1" value="1">
+                <button type="button" onclick="this.parentElement.remove()" class="text-slate-300 px-1 text-lg font-bold">×</button>
             </div>`;
             return h;
+        }
+
+        function createRDVRow() {
+            return `<div class="rdv-row flex gap-2 items-center">
+                <div class="flex-1"><input type="date" name="posteDate" class="w-full p-2 border border-blue-100 rounded-lg text-[10px] text-center bg-white"></div>
+                <div class="w-20"><input type="text" name="heureRDV" value="8H00" class="w-full p-2 border border-blue-100 rounded-lg text-[10px] text-center font-bold"></div>
+                <button type="button" onclick="if(this.parentElement.parentElement.children.length>1) this.parentElement.remove()" class="text-slate-300">×</button>
+            </div>`;
         }
 
         function addPoste(mode = 'simple') {
@@ -193,31 +205,24 @@
             div.dataset.mode = mode;
             const header = `<button type="button" onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-white text-slate-300 rounded-full w-8 h-8 border font-bold shadow-sm">×</button>
                 <div class="grid grid-cols-3 gap-2 mb-3 text-left">
-                    <div class="col-span-2"><label class="block text-[9px] font-bold text-slate-400">TITRE POSTE</label><input type="text" name="posteTitre" class="w-full p-2 border rounded-lg text-xs font-bold input-focus"></div>
-                    <div><label class="block text-[9px] font-bold text-slate-400">PRIX HT</label><input type="number" name="postePrix" class="w-full p-2 border rounded-lg text-xs font-bold input-focus"></div>
+                    <div class="col-span-2"><label class="block text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Désignation du Poste</label><input type="text" name="posteTitre" placeholder="Ex: Support emballage" class="w-full p-2 border rounded-lg text-xs font-bold input-focus"></div>
+                    <div><label class="block text-[9px] font-bold text-slate-400 uppercase tracking-tighter text-right">Prix HT</label><input type="number" name="postePrix" placeholder="0.00" class="w-full p-2 border rounded-lg text-xs font-bold input-focus text-right"></div>
                 </div>`;
+            
             if (mode === 'simple') {
-                div.innerHTML = header + `<textarea name="simpleText" required rows="3" class="w-full p-2 text-xs border rounded-xl input-focus" placeholder="Description de la prestation..."></textarea>`;
+                div.innerHTML = header + `<textarea name="simpleText" required rows="3" class="w-full p-2 text-xs border rounded-xl input-focus" placeholder="Description libre..."></textarea>`;
             } else {
-                div.innerHTML = header + `<div class="space-y-4 text-left">
-                    <div class="grid grid-cols-2 gap-2 bg-blue-50 p-3 rounded-xl">
-                        <div class="text-left">
-                            <label class="block text-[9px] font-bold text-blue-600 mb-1 uppercase">Date</label>
-                            <input type="date" name="posteDate" class="w-full p-2 border border-blue-100 rounded-lg text-[10px] text-center bg-white">
-                        </div>
-                        <div class="text-left">
-                            <label class="block text-[9px] font-bold text-blue-600 mb-1 uppercase text-right">Heure RDV</label>
-                            <input type="text" name="heureRDV" value="8H00" class="w-full p-2 border border-blue-100 rounded-lg text-[10px] text-center bg-white font-bold">
-                        </div>
-                        <div class="col-span-2 text-left">
-                            <label class="block text-[9px] font-bold text-blue-600 mb-1 uppercase">Nb Jours d'intervention</label>
-                            <input type="number" name="nbJours" value="1" class="w-full p-2 border border-blue-100 rounded-lg text-xs text-center font-bold bg-white">
-                        </div>
+                div.innerHTML = header + `<div class="space-y-4">
+                    <div class="bg-blue-50 p-3 rounded-xl">
+                        <label class="block text-[9px] font-bold text-blue-600 mb-2 uppercase italic underline">Rendez-vous prévus :</label>
+                        <div class="rdv-container">${createRDVRow()}</div>
+                        <button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRDVRow())" class="text-[9px] text-blue-700 font-bold">+ Ajouter un jour/RDV</button>
+                        <div class="mt-3"><label class="block text-[9px] font-bold text-blue-600 mb-1 uppercase">Nb total jours durée :</label><input type="number" name="nbJours" value="1" class="w-16 p-1 border rounded text-xs text-center font-bold"></div>
                     </div>
-                    <div class="text-left"><label class="block text-[9px] font-bold text-left">PERSONNEL</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('personnel'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter personnel</button></div>
-                    <div class="text-left"><label class="block text-[9px] font-bold text-left">VÉHICULES</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('vehicules'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter véhicule</button></div>
-                    <div class="text-left"><label class="block text-[9px] font-bold text-left">MATÉRIEL</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('materiel'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter matériel</button></div>
-                    <textarea name="tache" rows="2" class="w-full p-2 border rounded-lg text-xs" placeholder="Instructions de travail spécifiques..."></textarea>
+                    <div><label class="block text-[9px] font-bold text-slate-500 uppercase italic">Ressources Personnel :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('personnel'))" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
+                    <div><label class="block text-[9px] font-bold text-slate-500 uppercase italic">Flotte / Véhicules :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('vehicules'))" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
+                    <div><label class="block text-[9px] font-bold text-slate-500 uppercase italic">Matériel requis :</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRow('materiel'))" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
+                    <textarea name="tache" rows="2" class="w-full p-2 border rounded-lg text-xs input-focus" placeholder="Instructions de travail spécifiques (ex: emballage labo, démontage établis...)"></textarea>
                 </div>`;
             }
             container.appendChild(div);
@@ -230,24 +235,39 @@
 
             const fd = new FormData(e.target);
             const data = Object.fromEntries(fd.entries());
-            const compiled = [];
+            const compiledPostes = [];
+            
             document.querySelectorAll('.poste-card').forEach(card => {
-                const m = card.dataset.mode;
-                const b = { mode: m, titre: card.querySelector('[name="posteTitre"]').value, prix: card.querySelector('[name="postePrix"]').value };
-                if(m=='simple') b.text = card.querySelector('[name="simpleText"]').value;
-                else {
-                    b.dateLogistique = card.querySelector('[name="posteDate"]').value;
-                    b.heureRDV = card.querySelector('[name="heureRDV"]').value;
-                    b.jours = card.querySelector('[name="nbJours"]').value;
-                    b.tache = card.querySelector('[name="tache"]').value;
-                    b.personnel=[]; b.vehicules=[]; b.materiel=[];
-                    const groups = card.querySelectorAll('.rows');
-                    const fill = (c, a) => c.querySelectorAll('div').forEach(r => { const v=r.querySelector('select').value; if(v) a.push(`${r.querySelector('input').value}x ${v}`); });
-                    fill(groups[0], b.personnel); fill(groups[1], b.vehicules); fill(groups[2], b.materiel);
+                const mode = card.dataset.mode;
+                const base = {
+                    mode: mode,
+                    titre: card.querySelector('[name="posteTitre"]').value,
+                    prix: card.querySelector('[name="postePrix"]').value
+                };
+
+                if (mode === 'simple') {
+                    base.text = card.querySelector('[name="simpleText"]').value;
+                } else {
+                    base.jours = card.querySelector('[name="nbJours"]').value;
+                    base.tache = card.querySelector('[name="tache"]').value;
+                    base.personnel = []; base.vehicules = []; base.materiel = [];
+                    
+                    // Collecte des RDV
+                    base.rdvs = [];
+                    card.querySelectorAll('.rdv-row').forEach(row => {
+                        base.rdvs.push({
+                            date: row.querySelector('[name="posteDate"]').value,
+                            heure: row.querySelector('[name="heureRDV"]').value
+                        });
+                    });
+
+                    const rows = card.querySelectorAll('.rows');
+                    const collect = (c, a) => c.querySelectorAll('div').forEach(r => { const v=r.querySelector('select').value; if(v) a.push(`${r.querySelector('input').value}x ${v}`); });
+                    collect(rows[0], base.personnel); collect(rows[1], base.vehicules); collect(rows[2], base.materiel);
                 }
-                compiled.push(b);
+                compiledPostes.push(base);
             });
-            data.postes = compiled;
+            data.postes = compiledPostes;
 
             try {
                 const response = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(data) });
@@ -255,7 +275,7 @@
                 if (res.status === "success") {
                     document.getElementById('modal').classList.remove('hidden');
                     setupShare(res, data);
-                } else alert("Erreur : " + res.message);
+                } else alert("Erreur Script: " + res.message);
             } catch (err) { alert("Erreur de connexion."); }
             finally { btn.disabled = false; document.getElementById('loader').classList.add('hidden'); }
         });
@@ -278,15 +298,15 @@
                     if (navigator.canShare && navigator.canShare({ files: files })) {
                         await navigator.share({
                             files: files,
-                            title: `Dossier Pelichet ${formData.ref}`,
-                            text: `Bonjour,\nVoici le Devis et la Fiche de Réservation pour le dossier ${formData.ref} (${formData.client}).`
+                            title: `Dossier ${formData.ref}`,
+                            text: `Bonjour,\nVoici les documents (Devis + RESA) concernant le dossier ${formData.ref} pour ${formData.client}.`
                         });
                     } else {
                         const phone = formData.mobileSociete.replace(/\s+/g, '').replace('+', '');
-                        const msg = `Bonjour,\nVoici les liens du dossier ${formData.ref} :\nPDF: ${res.pdfUrl}\nWord: ${res.docUrl}`;
+                        const msg = `Bonjour,\nDocuments ${formData.ref} disponibles :\nPDF: ${res.pdfUrl}\nWord: ${res.docUrl}`;
                         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
                     }
-                } catch (err) { alert("Partage impossible."); }
+                } catch (err) { alert("Erreur de partage."); }
             };
         }
         window.onload = () => addPoste('simple');
