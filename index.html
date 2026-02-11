@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pelichet NLC SA - Devis Pro</title>
+    <title>Pelichet NLC SA - Devis Expert</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -13,14 +13,13 @@
         .poste-card { border-left: 6px solid #cbd5e1; }
         .poste-simple { border-left-color: #ef4444; }
         .poste-detail { border-left-color: #3b82f6; }
-        select { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1em; }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen pb-24">
     <nav class="bg-pelichet text-white p-4 shadow-lg sticky top-0 z-50">
         <div class="max-w-2xl mx-auto flex justify-between items-center">
             <h1 class="text-xl font-bold tracking-tight uppercase">Générateur de Devis</h1>
-            <div class="text-[10px] bg-white/20 px-2 py-1 rounded font-bold">V6.5 HYBRID PRO</div>
+            <div class="text-[10px] bg-white/20 px-2 py-1 rounded font-bold uppercase tracking-widest text-left">v7.0 Share Files</div>
         </div>
     </nav>
 
@@ -28,9 +27,7 @@
         <form id="devisForm" class="space-y-6 text-left">
             
             <!-- CONFIGURATION SCRIPT URL -->
-            <div class="hidden">
-                <input type="hidden" id="script_url_config" value="https://script.google.com/macros/s/AKfycbylU9ZThTLcB6pnq4ET0egd8dzyBH-3EfidN1MpK6cV9q4hiPmrEgJRDI0MtD08fHO9_w/exec">
-            </div>
+            <input type="hidden" id="script_url_config" value="https://script.google.com/macros/s/AKfycbylU9ZThTLcB6pnq4ET0egd8dzyBH-3EfidN1MpK6cV9q4hiPmrEgJRDI0MtD08fHO9_w/exec">
 
             <!-- 1. PRESTATAIRE -->
             <div class="bg-white rounded-2xl shadow-sm border p-6">
@@ -38,28 +35,34 @@
                 <div class="flex gap-4 mb-4">
                     <label class="flex-1 flex items-center justify-center gap-2 p-3 border rounded-xl cursor-pointer hover:bg-red-50 transition-all">
                         <input type="radio" name="typeSociete" value="Pelichet" checked onclick="toggleAutre(false)" class="text-red-600">
-                        <span class="text-sm font-bold text-slate-700">Pelichet NLC</span>
+                        <span class="text-sm font-bold text-slate-700 text-left">Pelichet NLC</span>
                     </label>
-                    <label class="flex-1 flex items-center justify-center gap-2 p-3 border rounded-xl cursor-pointer hover:bg-red-50 transition-all">
+                    <label class="flex-1 flex items-center justify-center gap-2 p-3 border rounded-xl cursor-pointer hover:bg-red-50 transition-all text-left">
                         <input type="radio" name="typeSociete" value="Autre" onclick="toggleAutre(true)" class="text-red-600">
                         <span class="text-sm font-bold text-slate-700">Autre</span>
                     </label>
                 </div>
+                
+                <div class="mb-4">
+                    <label class="block text-[10px] font-bold text-slate-500 mb-1">MOBILE SOCIÉTÉ (POUR RÉCEPTION WHATSAPP)</label>
+                    <input type="tel" name="mobileSociete" required placeholder="+41 79 123 45 67" class="w-full px-4 py-2 border rounded-lg input-focus text-sm font-bold">
+                </div>
+
                 <div id="infoAutre" class="hidden space-y-3 p-3 bg-gray-50 rounded-xl border border-dashed">
                     <input type="text" name="nomPrestataire" placeholder="Nom de la société" class="w-full px-4 py-2 border rounded-lg text-sm input-focus">
                     <textarea name="adressePrestataire" placeholder="Adresse complète" rows="2" class="w-full px-4 py-2 border rounded-lg text-sm input-focus"></textarea>
-                    <input type="text" name="telPrestataire" placeholder="Téléphone" class="w-full px-4 py-2 border rounded-lg text-sm input-focus">
-                    <input type="email" name="emailPrestataire" placeholder="Email (réception PDF)" class="w-full px-4 py-2 border border-blue-200 rounded-lg text-sm input-focus bg-blue-50">
+                    <input type="text" name="telPrestataire" placeholder="Téléphone fixe" class="w-full px-4 py-2 border rounded-lg text-sm input-focus">
+                    <input type="email" name="emailPrestataire" placeholder="Email pour réception PDF" class="w-full px-4 py-2 border border-blue-200 rounded-lg text-sm input-focus bg-blue-50">
                 </div>
             </div>
 
             <!-- 2. CLIENT -->
-            <div class="bg-white rounded-2xl shadow-sm border p-6">
+            <div class="bg-white rounded-2xl shadow-sm border p-6 text-left">
                 <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">2. Informations Client</h3>
                 <div class="grid grid-cols-2 gap-4">
                     <div class="col-span-2">
                         <label class="block text-[10px] font-bold text-slate-500 mb-1">RÉFÉRENCE DOSSIER</label>
-                        <input type="text" name="ref" required placeholder="Ex: 899CHCH..." class="w-full px-4 py-2 border rounded-lg input-focus font-mono uppercase">
+                        <input type="text" name="ref" required placeholder="899CHCH..." class="w-full px-4 py-2 border rounded-lg input-focus font-mono uppercase">
                     </div>
                     <div class="col-span-1">
                         <label class="block text-[10px] font-bold text-slate-500 mb-1">CIVILITÉ</label>
@@ -69,8 +72,8 @@
                         </select>
                     </div>
                     <div class="col-span-1">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1">WHATSAPP (MOBILE)</label>
-                        <input type="tel" name="mobileWhatsApp" placeholder="+41..." class="w-full px-4 py-2 border rounded-lg input-focus text-sm">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1">CLIENT NOM</label>
+                        <input type="text" name="contact" class="w-full px-4 py-2 border rounded-lg input-focus text-sm">
                     </div>
                     <div class="col-span-2">
                         <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Entreprise Cliente</label>
@@ -80,150 +83,116 @@
                         <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Facturation</label>
                         <textarea name="adresseClient" required rows="2" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
                     </div>
-                    <div class="col-span-1">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1">CONTACT</label>
-                        <input type="text" name="contact" class="w-full px-4 py-2 border rounded-lg input-focus text-sm">
-                    </div>
-                    <div class="col-span-1">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Date</label>
+                    <div class="col-span-2">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Date Prévue</label>
                         <input type="date" name="datePrevue" required class="w-full px-4 py-2 border rounded-lg input-focus text-xs">
                     </div>
                 </div>
             </div>
 
             <!-- 3. LOGISTIQUE -->
-            <div class="bg-white rounded-2xl shadow-sm border p-6">
+            <div class="bg-white rounded-2xl shadow-sm border p-6 text-left">
                 <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">3. Parcours</h3>
                 <div class="space-y-4">
-                    <textarea name="adresseDepart" required rows="2" placeholder="Adresse Départ" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
-                    <textarea name="adresseArrivee" required rows="2" placeholder="Adresse Arrivée" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
+                    <textarea name="adresseDepart" required rows="2" placeholder="Départ" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
+                    <textarea name="adresseArrivee" required rows="2" placeholder="Arrivée" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
                 </div>
             </div>
 
             <!-- 4. PRESTATIONS -->
-            <div class="bg-white rounded-2xl shadow-sm border p-6">
-                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">4. Prestations & Tarifs</h3>
+            <div class="bg-white rounded-2xl shadow-sm border p-6 text-left">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">4. Détail Prestations</h3>
                 <div id="prestationsContainer" class="space-y-8"></div>
-                <div class="grid grid-cols-2 gap-3 mt-8">
-                    <button type="button" onclick="addPoste('simple')" class="py-4 border-2 border-dashed border-red-200 rounded-2xl text-red-500 text-[11px] font-bold hover:bg-red-50 flex flex-col items-center gap-1 transition-all">
-                        POSTE SIMPLE
-                    </button>
-                    <button type="button" onclick="addPoste('detail')" class="py-4 border-2 border-dashed border-blue-200 rounded-2xl text-blue-500 text-[11px] font-bold hover:bg-blue-50 flex flex-col items-center gap-1 transition-all">
-                        BESOINS DÉTAILLÉS
-                    </button>
+                <div class="grid grid-cols-2 gap-3 mt-8 text-left">
+                    <button type="button" onclick="addPoste('simple')" class="py-4 border-2 border-dashed border-red-200 rounded-2xl text-red-500 text-[11px] font-bold hover:bg-red-50 flex flex-col items-center gap-1">POSTE SIMPLE</button>
+                    <button type="button" onclick="addPoste('detail')" class="py-4 border-2 border-dashed border-blue-200 rounded-2xl text-blue-500 text-[11px] font-bold hover:bg-blue-50 flex flex-col items-center gap-1">BESOINS DÉTAILLÉS</button>
                 </div>
             </div>
 
             <!-- 5. TOTAL -->
-            <div class="bg-white rounded-2xl shadow-sm border p-6">
+            <div class="bg-white rounded-2xl shadow-sm border p-6 text-left">
                 <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">5. Chiffre d'Affaires HT</h3>
                 <div class="relative">
                     <span class="absolute left-4 top-3 font-bold text-slate-400">CHF</span>
-                    <input type="number" name="montantHT" required step="0.01" class="w-full pl-14 pr-4 py-3 border rounded-xl font-bold text-xl input-focus">
+                    <input type="number" name="montantHT" required step="0.01" class="w-full pl-14 pr-4 py-3 border rounded-xl font-bold text-xl input-focus text-left">
                 </div>
             </div>
 
             <button type="submit" id="submitBtn" class="w-full bg-pelichet text-white font-bold py-5 rounded-3xl shadow-xl flex justify-center items-center gap-3 transition-all active:scale-[0.98]">
-                <span id="btnText" class="text-lg">Générer le Devis</span>
+                <span id="btnText" class="text-lg">Générer et Partager à la Société</span>
                 <div id="loader" class="hidden animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
             </button>
         </form>
     </div>
 
-    <!-- MODAL -->
+    <!-- MODAL DE PARTAGE -->
     <div id="modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
         <div class="bg-white rounded-[2.5rem] p-8 max-w-sm w-full text-center shadow-2xl animate-in zoom-in duration-200">
-            <div id="modalIcon" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"></div>
-            <h2 id="modalTitle" class="text-xl font-bold mb-2"></h2>
-            <p id="modalMsg" class="text-slate-500 text-xs mb-8"></p>
-            <div id="modalActions" class="space-y-3"></div>
+            <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl font-bold">✓</div>
+            <h2 class="text-xl font-bold mb-2">Devis Généré !</h2>
+            <p class="text-slate-500 text-[10px] mb-8">Les fichiers ont été sauvegardés sur le Drive.<br>Cliquez sur "Partager" pour envoyer PDF + Word via WhatsApp.</p>
+            <div class="space-y-3">
+                <button id="shareFilesBtn" class="w-full bg-[#25D366] text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2">
+                    Partager les Fichiers (PDF + Word)
+                </button>
+                <button onclick="location.reload()" class="w-full text-slate-400 text-xs py-2 uppercase font-bold tracking-widest">Nouveau Devis</button>
+            </div>
         </div>
     </div>
 
     <script>
-        // CONFIGURATION : Coller l'URL de l'application web ici
         const SCRIPT_URL = document.getElementById('script_url_config').value;
 
-        const opts = {
-            personnel: ["Manutentionnaire", "Chauffeur", "Chef d'équipe", "Monteur"],
-            vehicules: ["VL", "PL avec hayon", "PL", "Semi", "Fourgon", "VL transport personnel"],
+        const optionsLists = {
+            personnel: ["Manutentionnaire", "Chauffeur", "Chef d'équipe", "Chauffeur-Livreur", "Monteur"],
+            vehicules: ["VL", "PL avec hayon", "PL", "Semi", "Fourgon", "Fourgon avec hayon", "VL transport personnel"],
             equipement: ["Chariot élévateur", "Nacelle", "Camion grue"],
-            materiel: ["Cartons", "Adhésif", "Papier bulle", "Box IT", "Cadre palette", "Bacs plastiques"]
+            materiel: ["Cartons", "Adhésif", "Papier bulle", "Box IT", "Cadre palette", "Bacs plastiques", "Housse matelas"]
         };
 
-        function toggleAutre(v) { document.getElementById('infoAutre').classList.toggle('hidden', !v); }
+        function toggleAutre(val) { document.getElementById('infoAutre').classList.toggle('hidden', !val); }
 
-        function handleCustom(s) {
-            if (s.value === "CUSTOM") {
-                const n = prompt("Précisez :");
-                if (n) {
-                    const o = document.createElement('option');
-                    o.value = n; o.textContent = n;
-                    s.insertBefore(o, s.lastChild); s.value = n;
-                } else s.value = "";
-            }
-        }
-
-        function createRow(type) {
-            let h = `<div class="flex gap-1 items-center mb-1">
-                <select class="flex-1 p-2 bg-white border rounded-lg text-[11px] outline-none" onchange="handleCustom(this)">
+        function createRowHtml(type) {
+            let html = `<div class="flex gap-1 items-center mb-1">
+                <select class="flex-1 p-2 bg-white border border-slate-200 rounded-lg text-[11px] outline-none" onchange="if(this.value=='CUSTOM'){const n=prompt('Type:');if(n){const o=document.createElement('option');o.value=n;o.text=n;this.add(o,this.options[this.options.length-1]);this.value=n;}}">
                     <option value="">-- Type --</option>`;
-            opts[type].forEach(i => h += `<option value="${i}">${i}</option>`);
-            h += `<option value="CUSTOM">+ Autre...</option></select>
+            optionsLists[type].forEach(i => html += `<option value="${i}">${i}</option>`);
+            html += `<option value="CUSTOM">+ Autre...</option></select>
                 <input type="number" placeholder="Qté" class="w-14 p-2 border rounded-lg text-[11px] text-center" min="1" value="1">
-                <button type="button" onclick="this.parentElement.remove()" class="text-slate-300 hover:text-red-500 font-bold px-2 text-lg">×</button>
+                <button type="button" onclick="this.parentElement.remove()" class="text-slate-300 px-2 text-lg font-bold">×</button>
             </div>`;
-            return h;
+            return html;
         }
-
-        function addSubRow(btn, type) { btn.previousElementSibling.insertAdjacentHTML('beforeend', createRow(type)); }
 
         function addPoste(mode = 'simple') {
             const container = document.getElementById('prestationsContainer');
             const div = document.createElement('div');
             div.className = `poste-card bg-white rounded-2xl p-5 relative border border-slate-200 shadow-sm poste-${mode}`;
             div.dataset.mode = mode;
-
-            const base = `
-                <button type="button" onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-white text-slate-300 hover:text-red-500 rounded-full w-8 h-8 border shadow-sm flex items-center justify-center font-bold z-10">×</button>
-                <div class="grid grid-cols-3 gap-3 mb-4">
-                    <div class="col-span-2">
-                        <label class="block text-[9px] font-bold text-slate-400 mb-1">TITRE DU POSTE</label>
-                        <input type="text" name="posteTitre" placeholder="Ex: Phase 1" class="w-full p-2 border rounded-lg text-xs font-bold input-focus">
-                    </div>
-                    <div>
-                        <label class="block text-[9px] font-bold text-slate-400 mb-1">PRIX HT</label>
-                        <input type="number" name="postePrix" placeholder="0.00" class="w-full p-2 border rounded-lg text-xs font-bold text-right input-focus">
-                    </div>
-                </div>
-            `;
-
+            const header = `<button type="button" onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-white text-slate-300 rounded-full w-8 h-8 border font-bold">×</button>
+                <div class="grid grid-cols-3 gap-2 mb-3">
+                    <div class="col-span-2"><label class="block text-[9px] font-bold text-slate-400">TITRE POSTE</label><input type="text" name="posteTitre" class="w-full p-2 border rounded-lg text-xs font-bold input-focus"></div>
+                    <div><label class="block text-[9px] font-bold text-slate-400">PRIX HT</label><input type="number" name="postePrix" class="w-full p-2 border rounded-lg text-xs font-bold input-focus"></div>
+                </div>`;
             if (mode === 'simple') {
-                div.innerHTML = base + `<textarea name="simpleText" required rows="3" class="w-full p-3 text-xs border rounded-xl input-focus" placeholder="Description..."></textarea>`;
+                div.innerHTML = header + `<textarea name="simpleText" required rows="3" class="w-full p-2 text-xs border rounded-xl input-focus" placeholder="Description..."></textarea>`;
             } else {
-                div.innerHTML = base + `
-                    <div class="space-y-4">
-                        <div class="flex items-center gap-3 bg-blue-50/50 p-2 rounded-xl">
-                            <label class="text-[9px] font-bold text-blue-600">DURÉE :</label>
-                            <input type="number" name="nbJours" value="1" class="w-14 p-1 border rounded text-xs text-center font-bold">
-                            <span class="text-[10px] text-blue-400 font-bold">JOUR(S)</span>
-                        </div>
-                        <div class="space-y-3">
-                            <div><label class="block text-[9px] font-bold text-slate-500 mb-1">PERSONNEL</label><div class="rows-container"></div><button type="button" onclick="addSubRow(this, 'personnel')" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
-                            <div><label class="block text-[9px] font-bold text-slate-500 mb-1">VÉHICULES</label><div class="rows-container"></div><button type="button" onclick="addSubRow(this, 'vehicules')" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
-                            <div><label class="block text-[9px] font-bold text-slate-500 mb-1">ENGINS</label><div class="rows-container"></div><button type="button" onclick="addSubRow(this, 'equipement')" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
-                            <div><label class="block text-[9px] font-bold text-slate-500 mb-1">MATÉRIEL</label><div class="rows-container"></div><button type="button" onclick="addSubRow(this, 'materiel')" class="text-[9px] text-blue-500 font-bold hover:underline">+ Ajouter</button></div>
-                        </div>
-                        <textarea name="tache" rows="2" class="w-full p-2 border rounded-lg text-xs" placeholder="Tâche..."></textarea>
-                    </div>
-                `;
+                div.innerHTML = header + `<div class="space-y-4">
+                    <div class="flex items-center gap-2 bg-blue-50 p-2 rounded-xl text-[10px] font-bold">DURÉE: <input type="number" name="nbJours" value="1" class="w-12 p-1 border rounded text-center"> JOUR(S)</div>
+                    <div><label class="block text-[9px] font-bold">PERSONNEL</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRowHtml('personnel'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter</button></div>
+                    <div><label class="block text-[9px] font-bold">VÉHICULES</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRowHtml('vehicules'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter</button></div>
+                    <div><label class="block text-[9px] font-bold">ENGINS</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRowHtml('equipement'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter</button></div>
+                    <div><label class="block text-[9px] font-bold">MATÉRIEL</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRowHtml('materiel'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter</button></div>
+                    <textarea name="tache" rows="2" class="w-full p-2 border rounded-lg text-xs" placeholder="Tâche..."></textarea>
+                </div>`;
             }
             container.appendChild(div);
         }
 
         document.getElementById('devisForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const btn = document.getElementById('submitBtn'); btn.disabled = true;
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
             document.getElementById('loader').classList.remove('hidden');
 
             const fd = new FormData(e.target);
@@ -231,15 +200,15 @@
             const compiled = [];
             document.querySelectorAll('.poste-card').forEach(card => {
                 const m = card.dataset.mode;
-                const b = { mode: m, titre: card.querySelector('input[name="posteTitre"]').value, prix: card.querySelector('input[name="postePrix"]').value };
-                if (m === 'simple') { b.text = card.querySelector('textarea').value; }
+                const b = { mode: m, titre: card.querySelector('[name="posteTitre"]').value, prix: card.querySelector('[name="postePrix"]').value };
+                if(m=='simple') b.text = card.querySelector('[name="simpleText"]').value;
                 else {
-                    b.jours = card.querySelector('input[name="nbJours"]').value;
-                    b.tache = card.querySelector('textarea[name="tache"]').value;
-                    b.personnel = []; b.vehicules = []; b.levage = []; b.materiel = [];
-                    const gs = card.querySelectorAll('.rows-container');
-                    const fill = (c, a) => { c.querySelectorAll('div').forEach(r => { const v = r.querySelector('select').value; if(v) a.push(`${r.querySelector('input').value}x ${v}`); }); };
-                    fill(gs[0], b.personnel); fill(gs[1], b.vehicules); fill(gs[2], b.levage); fill(gs[3], b.materiel);
+                    b.jours = card.querySelector('[name="nbJours"]').value;
+                    b.tache = card.querySelector('[name="tache"]').value;
+                    b.personnel=[]; b.vehicules=[]; b.levage=[]; b.materiel=[];
+                    const groups = card.querySelectorAll('.rows');
+                    const fill = (c, a) => c.querySelectorAll('div').forEach(r => { const v=r.querySelector('select').value; if(v) a.push(`${r.querySelector('input').value}x ${v}`); });
+                    fill(groups[0], b.personnel); fill(groups[1], b.vehicules); fill(groups[2], b.levage); fill(groups[3], b.materiel);
                 }
                 compiled.push(b);
             });
@@ -247,36 +216,45 @@
 
             try {
                 const response = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(data) });
-                const result = await response.json();
-                if (result.status === "success") showModal('success', result.url, data);
-                else showModal('error', result.message);
-            } catch (err) { showModal('error', "Vérifiez l'URL du script Google et le déploiement."); }
+                const res = await response.json();
+                if (res.status === "success") {
+                    document.getElementById('modal').classList.remove('hidden');
+                    setupShare(res, data);
+                } else alert(res.message);
+            } catch (err) { alert("Erreur serveur."); }
             finally { btn.disabled = false; document.getElementById('loader').classList.add('hidden'); }
         });
 
-        function showModal(s, d, f = null) {
-            const m = document.getElementById('modal');
-            const i = document.getElementById('modalIcon');
-            const t = document.getElementById('modalTitle');
-            const b = document.getElementById('modalMsg');
-            const a = document.getElementById('modalActions');
-            m.classList.remove('hidden'); a.innerHTML = "";
-            if (s === 'success') {
-                i.className = "w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl"; i.innerHTML = "✓";
-                t.innerText = "Devis Prêt !"; b.innerText = "Enregistré dans le Sheet et Drive.";
-                a.innerHTML = `<button onclick="window.open('${d}', '_blank')" class="w-full bg-slate-900 text-white font-bold py-3 rounded-2xl">Ouvrir</button>
-                               <button id="waBtn" class="w-full bg-[#25D366] text-white font-bold py-3 rounded-2xl">WhatsApp</button>
-                               <button onclick="location.reload()" class="w-full text-slate-400 text-xs">Nouveau</button>`;
-                document.getElementById('waBtn').onclick = () => {
-                    const msg = `Bonjour,\nVoici le devis (${f.ref}) :\n${d}`;
-                    window.open(`https://wa.me/${f.mobileWhatsApp.replace(/\s+/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
-                };
-            } else {
-                i.className = "w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl"; i.innerHTML = "!";
-                t.innerText = "Erreur"; b.innerText = d;
-                a.innerHTML = `<button onclick="document.getElementById('modal').classList.add('hidden')" class="w-full bg-slate-900 text-white font-bold py-3 rounded-2xl">Retour</button>`;
-            }
+        async function setupShare(res, formData) {
+            document.getElementById('shareFilesBtn').onclick = async () => {
+                try {
+                    // Fonction pour télécharger un fichier en blob
+                    const downloadFile = async (id, name, mime) => {
+                        const url = `https://docs.google.com/uc?export=download&id=${id}`;
+                        const response = await fetch(url);
+                        const blob = await response.blob();
+                        return new File([blob], name, { type: mime });
+                    };
+
+                    const pdfFile = await downloadFile(res.pdfId, res.pdfName, 'application/pdf');
+                    const docFile = await downloadFile(res.docId, res.docName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+
+                    if (navigator.share) {
+                        await navigator.share({
+                            files: [pdfFile, docFile],
+                            title: `Devis ${formData.ref}`,
+                            text: `Bonjour,\nVoici le devis (${formData.ref}) pour ${formData.client} au format PDF et Word.`
+                        });
+                    } else {
+                        alert("Votre navigateur ne supporte pas le partage direct de fichiers. Veuillez télécharger les fichiers manuellement depuis le Drive.");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert("Erreur lors de la préparation des fichiers. Assurez-vous d'être sur mobile.");
+                }
+            };
         }
+
         window.onload = () => addPoste('simple');
     </script>
 </body>
