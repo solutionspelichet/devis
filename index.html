@@ -20,7 +20,7 @@
     <nav class="bg-pelichet text-white p-4 shadow-lg sticky top-0 z-50">
         <div class="max-w-2xl mx-auto flex justify-between items-center">
             <h1 class="text-xl font-bold tracking-tight uppercase">Générateur de Devis</h1>
-            <div class="text-[10px] bg-white/20 px-2 py-1 rounded font-bold uppercase tracking-widest text-left">v7.2 Fixed Permissions</div>
+            <div class="text-[10px] bg-white/20 px-2 py-1 rounded font-bold uppercase tracking-widest text-left">v8.0 Logistique Pro</div>
         </div>
     </nav>
 
@@ -53,7 +53,7 @@
                     <input type="text" name="nomPrestataire" placeholder="Nom de la société" class="w-full px-4 py-2 border rounded-lg text-sm input-focus">
                     <textarea name="adressePrestataire" placeholder="Adresse complète" rows="2" class="w-full px-4 py-2 border rounded-lg text-sm input-focus"></textarea>
                     <input type="text" name="telPrestataire" placeholder="Téléphone fixe" class="w-full px-4 py-2 border rounded-lg text-sm input-focus">
-                    <input type="email" name="emailPrestataire" placeholder="Email (réception PDF)" class="w-full px-4 py-2 border border-blue-200 rounded-lg text-sm input-focus bg-blue-50">
+                    <input type="email" name="emailPrestataire" placeholder="Email pour réception PDF" class="w-full px-4 py-2 border border-blue-200 rounded-lg text-sm input-focus bg-blue-50">
                 </div>
             </div>
 
@@ -85,8 +85,8 @@
                         <textarea name="adresseClient" required rows="2" class="w-full px-4 py-2 border rounded-lg input-focus text-sm"></textarea>
                     </div>
                     <div class="col-span-2">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Date Prévue</label>
-                        <input type="date" name="datePrevue" required class="w-full px-4 py-2 border rounded-lg input-focus text-xs">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase text-blue-600">Date Prévue (Générale)</label>
+                        <input type="date" name="datePrevue" required class="w-full px-4 py-2 border border-blue-100 bg-blue-50/30 rounded-lg input-focus text-xs">
                     </div>
                 </div>
             </div>
@@ -102,7 +102,7 @@
 
             <!-- 4. PRESTATIONS -->
             <div class="bg-white rounded-2xl shadow-sm border p-6 text-left">
-                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">4. Détail Prestations</h3>
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6 text-left">4. Détail Prestations & Réservations</h3>
                 <div id="prestationsContainer" class="space-y-8"></div>
                 <div class="grid grid-cols-2 gap-3 mt-8 text-left">
                     <button type="button" onclick="addPoste('simple')" class="py-4 border-2 border-dashed border-red-200 rounded-2xl text-red-500 text-[11px] font-bold hover:bg-red-50 flex flex-col items-center gap-1">POSTE SIMPLE</button>
@@ -170,7 +170,7 @@
             const div = document.createElement('div');
             div.className = `poste-card bg-white rounded-2xl p-5 relative border border-slate-200 shadow-sm poste-${mode}`;
             div.dataset.mode = mode;
-            const header = `<button type="button" onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-white text-slate-300 rounded-full w-8 h-8 border font-bold">×</button>
+            const header = `<button type="button" onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-white text-slate-300 rounded-full w-8 h-8 border font-bold shadow-sm">×</button>
                 <div class="grid grid-cols-3 gap-2 mb-3">
                     <div class="col-span-2"><label class="block text-[9px] font-bold text-slate-400">TITRE POSTE</label><input type="text" name="posteTitre" class="w-full p-2 border rounded-lg text-xs font-bold input-focus"></div>
                     <div><label class="block text-[9px] font-bold text-slate-400">PRIX HT</label><input type="number" name="postePrix" class="w-full p-2 border rounded-lg text-xs font-bold input-focus"></div>
@@ -179,12 +179,21 @@
                 div.innerHTML = header + `<textarea name="simpleText" required rows="3" class="w-full p-2 text-xs border rounded-xl input-focus" placeholder="Description..."></textarea>`;
             } else {
                 div.innerHTML = header + `<div class="space-y-4">
-                    <div class="flex items-center gap-2 bg-blue-50 p-2 rounded-xl text-[10px] font-bold">DURÉE: <input type="number" name="nbJours" value="1" class="w-12 p-1 border rounded text-center"> JOUR(S)</div>
+                    <div class="grid grid-cols-2 gap-2 bg-blue-50 p-3 rounded-xl">
+                        <div>
+                            <label class="block text-[9px] font-bold text-blue-600 mb-1 uppercase">Nb Jours</label>
+                            <input type="number" name="nbJours" value="1" class="w-full p-2 border border-blue-100 rounded-lg text-xs text-center font-bold">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-blue-600 mb-1 uppercase italic text-right">Date d'intervention (opt.)</label>
+                            <input type="date" name="posteDate" class="w-full p-2 border border-blue-100 rounded-lg text-[10px] text-center bg-white">
+                        </div>
+                    </div>
                     <div><label class="block text-[9px] font-bold text-left">PERSONNEL</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRowHtml('personnel'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter</button></div>
                     <div><label class="block text-[9px] font-bold text-left">VÉHICULES</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRowHtml('vehicules'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter</button></div>
                     <div><label class="block text-[9px] font-bold text-left">ENGINS</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRowHtml('equipement'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter</button></div>
                     <div><label class="block text-[9px] font-bold text-left">MATÉRIEL</label><div class="rows"></div><button type="button" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', createRowHtml('materiel'))" class="text-[9px] text-blue-500 font-bold">+ Ajouter</button></div>
-                    <textarea name="tache" rows="2" class="w-full p-2 border rounded-lg text-xs" placeholder="Tâche..."></textarea>
+                    <textarea name="tache" rows="2" class="w-full p-2 border rounded-lg text-xs" placeholder="Tâche spécifique..."></textarea>
                 </div>`;
             }
             container.appendChild(div);
@@ -205,6 +214,7 @@
                 if(m=='simple') b.text = card.querySelector('[name="simpleText"]').value;
                 else {
                     b.jours = card.querySelector('[name="nbJours"]').value;
+                    b.dateLogistique = card.querySelector('[name="posteDate"]').value; // Nouvelle donnée : Date de réservation
                     b.tache = card.querySelector('[name="tache"]').value;
                     b.personnel=[]; b.vehicules=[]; b.levage=[]; b.materiel=[];
                     const groups = card.querySelectorAll('.rows');
@@ -222,7 +232,7 @@
                     document.getElementById('modal').classList.remove('hidden');
                     setupShare(res, data);
                 } else alert("Erreur Script : " + res.message);
-            } catch (err) { alert("Erreur de connexion au serveur. Vérifiez les autorisations du script."); }
+            } catch (err) { alert("Erreur serveur."); }
             finally { btn.disabled = false; document.getElementById('loader').classList.add('hidden'); }
         });
 
