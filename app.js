@@ -158,7 +158,9 @@ const PosteManager = {
   },
 
   _createOptionsHTML(list) {
-    return '<option value="">-- Type --</option>' + list.map(i => `<option value="${i}">${i}</option>`).join('');
+    return '<option value="">-- Type --</option>'
+      + list.map(i => `<option value="${i}">${i}</option>`).join('')
+      + '<option value="__autre__">Autre (personnalisé)</option>';
   },
 
   _createRow(type) {
@@ -168,6 +170,7 @@ const PosteManager = {
     div.dataset.type = type;
     div.innerHTML = `
       <select style="flex:1">${this._createOptionsHTML(CONFIG.LISTS[type])}</select>
+      <input type="text" name="customValue" placeholder="Précisez..." class="custom-input hidden" style="flex:1">
       ${isEngin ? `
         <div style="position:relative;display:flex;align-items:center">
           <input type="text" name="ton" placeholder="Ton" style="width:2.5rem;text-align:center">
@@ -180,6 +183,18 @@ const PosteManager = {
       ` : `<input type="number" name="qty" value="1" style="width:3rem;text-align:center">`}
       <button type="button" class="row-remove" title="Supprimer">&times;</button>
     `;
+    // Toggle champ personnalisé quand "Autre" est sélectionné
+    const select = div.querySelector('select');
+    const customInput = div.querySelector('.custom-input');
+    select.addEventListener('change', () => {
+      if (select.value === '__autre__') {
+        customInput.classList.remove('hidden');
+        customInput.focus();
+      } else {
+        customInput.classList.add('hidden');
+        customInput.value = '';
+      }
+    });
     div.querySelector('.row-remove').addEventListener('click', () => div.remove());
     return div;
   },
@@ -324,14 +339,18 @@ const PosteManager = {
   _collectRows(container, hasEnginFields = false) {
     if (!container) return [];
     return Array.from(container.querySelectorAll('.row-item')).map(r => {
-      const sel = r.querySelector('select')?.value || '';
+      const selectVal = r.querySelector('select')?.value || '';
+      const customVal = r.querySelector('input[name="customValue"]')?.value || '';
+      // Si "Autre" est sélectionné, utiliser la valeur personnalisée
+      const label = (selectVal === '__autre__') ? customVal : selectVal;
+      if (!label.trim()) return '';
       const qty = r.querySelector('input[name="qty"]')?.value || '1';
       if (hasEnginFields) {
         const ton = r.querySelector('input[name="ton"]')?.value || '';
-        return `${qty}x ${sel} (${ton}T)`;
+        return `${qty}x ${label} (${ton}T)`;
       }
-      return `${qty}x ${sel}`;
-    }).filter(s => s && !s.includes('x  '));
+      return `${qty}x ${label}`;
+    }).filter(s => s);
   },
 
   loadPostes(postes) {

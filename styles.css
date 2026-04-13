@@ -330,6 +330,13 @@ select {
   line-height: 1;
 }
 .row-item .row-remove:hover { color: var(--pelichet-red); }
+.row-item .custom-input {
+  border: 1px dashed var(--orange);
+  background: var(--orange-light);
+  font-weight: 600;
+  animation: slideIn 0.2s ease;
+}
+.row-item .custom-input::placeholder { color: var(--orange); opacity: 0.7; }
 
 /* ---- RDV SECTION ---- */
 .rdv-section { background: var(--blue-light); padding: 0.75rem; border-radius: var(--radius-xl); }
