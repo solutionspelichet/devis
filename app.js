@@ -359,16 +359,93 @@ const PosteManager = {
   loadPostes(postes) {
     this._container.innerHTML = '';
     (postes || []).forEach(p => {
-      this.addPoste(p.mode || 'simple');
+      const mode = p.mode || 'simple';
+      this.addPoste(mode);
       const card = this._container.lastElementChild;
       card.querySelector('[name="posteTitre"]').value = p.titre || '';
       card.querySelector('[name="postePrix"]').value = p.prix || '';
 
-      if (p.mode === 'simple') {
+      if (mode === 'simple') {
         const ta = card.querySelector('[name="simpleText"]');
         if (ta) ta.value = p.text || '';
+
+      } else {
+        // ---- Nombre de jours ----
+        const nbJoursInput = card.querySelector('[name="nbJours"]');
+        if (nbJoursInput) nbJoursInput.value = p.jours || '1';
+
+        // ---- Instructions / tâche ----
+        const tacheInput = card.querySelector('[name="tache"]');
+        if (tacheInput) tacheInput.value = p.tache || '';
+
+        // ---- RDV (dates et heures) ----
+        const rdvContainer = card.querySelector('.rdv-container');
+        const rdvs = (p.rdvs || []).filter(r => r.date);
+        if (rdvs.length > 0 && rdvContainer) {
+          // Supprimer le RDV par défaut créé par addPoste
+          rdvContainer.innerHTML = '';
+          rdvs.forEach(r => {
+            const rdvRow = this._createRDVRow();
+            const dateInput = rdvRow.querySelector('[name="posteDate"]');
+            const heureInput = rdvRow.querySelector('[name="heureRDV"]');
+            if (dateInput) dateInput.value = r.date || '';
+            if (heureInput) heureInput.value = r.heure || '8H00';
+            rdvContainer.appendChild(rdvRow);
+          });
+        }
+
+        // ---- Ressources (personnel, véhicules, engins, matériel) ----
+        const sections = card.querySelectorAll('.detail-section .rows');
+        const resourceTypes = ['engins', 'personnel', 'vehicules', 'materiel'];
+
+        resourceTypes.forEach((type, idx) => {
+          const items = p[type] || [];
+          const rowsContainer = sections[idx];
+          if (!rowsContainer || items.length === 0) return;
+
+          items.forEach(itemStr => {
+            // Parser le format "2x Manutentionnaire" ou "1x Grue mobile (50T)"
+            const match = String(itemStr).match(/^(\d+)x\s+(.+?)(?:\s+\((\d+)T\))?$/);
+            if (!match) return;
+
+            const qty = match[1];
+            const label = match[2].trim();
+            const ton = match[3] || '';
+
+            const row = this._createRow(type);
+            const select = row.querySelector('select');
+            const qtyInput = row.querySelector('input[name="qty"]');
+
+            // Essayer de sélectionner dans la liste, sinon choisir "Autre"
+            if (select) {
+              const option = Array.from(select.options).find(o => o.value === label);
+              if (option) {
+                select.value = label;
+              } else {
+                // Valeur personnalisée : sélectionner "Autre" et remplir le champ
+                select.value = '__autre__';
+                const customInput = row.querySelector('.custom-input');
+                if (customInput) {
+                  customInput.classList.remove('hidden');
+                  customInput.value = label;
+                }
+              }
+            }
+
+            if (qtyInput) qtyInput.value = qty;
+
+            // Tonnage pour les engins
+            if (ton && type === 'engins') {
+              const tonInput = row.querySelector('input[name="ton"]');
+              if (tonInput) tonInput.value = ton;
+            }
+
+            rowsContainer.appendChild(row);
+          });
+        });
       }
     });
+    PriceCalc.updateBreakdown();
   }
 };
 
