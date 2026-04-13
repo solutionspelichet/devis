@@ -340,7 +340,47 @@ select {
 
 /* ---- RDV SECTION ---- */
 .rdv-section { background: var(--blue-light); padding: 0.75rem; border-radius: var(--radius-xl); }
-.rdv-section label { font-size: 9px; font-weight: 700; color: var(--blue-dark); text-transform: uppercase; margin-bottom: 0.5rem; display: block; }
+.rdv-section > label { font-size: 9px; font-weight: 700; color: var(--blue-dark); text-transform: uppercase; margin-bottom: 0.5rem; display: block; }
+.jours-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: white;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+.jours-row label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--blue-dark);
+  text-transform: uppercase;
+  white-space: nowrap;
+  display: inline;
+}
+.jours-row input {
+  width: 4rem;
+  text-align: center;
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 0.35rem;
+  border: 2px solid var(--blue);
+  border-radius: var(--radius-sm);
+  background: white;
+}
+.jours-row .half-btn {
+  font-size: 10px;
+  padding: 0.3rem 0.6rem;
+  background: var(--blue-light);
+  color: var(--blue-dark);
+  border: 1px solid var(--blue);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.jours-row .half-btn:hover { background: var(--blue); color: white; }
 .rdv-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem; }
 .rdv-row input { font-size: 10px; }
 

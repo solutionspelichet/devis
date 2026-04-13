@@ -233,10 +233,12 @@ const PosteManager = {
             <label>RDV & Durée :</label>
             <div class="rdv-container"></div>
             <button type="button" class="add-row-btn rdv mt-1">+ Ajouter jour</button>
-            <div class="mt-3 flex items-center gap-2">
-              <label style="font-size:9px;font-weight:700;color:var(--blue-dark);text-transform:uppercase">Jours :</label>
-              <input type="number" name="nbJours" step="0.5" value="1" style="width:3rem;text-align:center;font-weight:700">
-              <button type="button" class="btn" style="font-size:10px;padding:0.25rem 0.5rem;background:var(--blue-light);color:var(--blue-dark)" data-half>0.5 J</button>
+            <div class="jours-row">
+              <label>Nombre de jours :</label>
+              <input type="number" name="nbJours" step="0.5" value="1" min="0.5">
+              <button type="button" class="half-btn" data-half>0.5 J</button>
+              <button type="button" class="half-btn" data-one>1 J</button>
+              <button type="button" class="half-btn" data-two>2 J</button>
             </div>
           </div>
           <div class="detail-section engins">
@@ -284,9 +286,10 @@ const PosteManager = {
         rdvContainer.appendChild(this._createRDVRow());
       });
 
-      div.querySelector('[data-half]').addEventListener('click', () => {
-        div.querySelector('[name="nbJours"]').value = '0.5';
-      });
+      const nbJoursInput = div.querySelector('[name="nbJours"]');
+      div.querySelector('[data-half]').addEventListener('click', () => { nbJoursInput.value = '0.5'; });
+      div.querySelector('[data-one]').addEventListener('click', () => { nbJoursInput.value = '1'; });
+      div.querySelector('[data-two]').addEventListener('click', () => { nbJoursInput.value = '2'; });
 
       ['engins', 'personnel', 'vehicules', 'materiel'].forEach(type => {
         const section = div.querySelector(`.detail-section.${type}`);
