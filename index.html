@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pelichet NLC SA - Devis & Logistique</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- NAV -->
+    <nav class="nav">
+        <h1>Pelichet Logistique</h1>
+        <span class="version">v2.0</span>
+    </nav>
+
+    <!-- BARRE DE RECHERCHE -->
+    <div class="container mt-4">
+        <div class="search-bar">
+            <input type="text" id="searchRef" placeholder="Charger un dossier (Réf...)" class="font-mono uppercase" style="flex:1">
+            <button type="button" id="loadBtn" class="btn btn-blue">Ouvrir</button>
+            <button type="button" id="listBtn" class="btn" style="background:var(--slate-600);color:white;white-space:nowrap">Tous les dossiers</button>
+        </div>
+        <!-- Liste dossiers (masquée par défaut) -->
+        <div id="dossierListPanel" class="hidden" style="margin-top:0.5rem">
+            <div class="card" style="padding:0;overflow:hidden;max-height:24rem;display:flex;flex-direction:column">
+                <div style="padding:0.75rem 1rem;background:var(--slate-800);display:flex;gap:0.5rem;align-items:center">
+                    <input type="text" id="dossierFilter" placeholder="Filtrer par réf ou client..." style="flex:1;padding:0.4rem 0.75rem;border-radius:0.5rem;font-size:0.75rem;border:none">
+                    <button type="button" id="closeDossierList" style="background:none;border:none;color:var(--slate-400);font-size:1.2rem;cursor:pointer;padding:0 0.25rem">&times;</button>
+                </div>
+                <div id="dossierListBody" style="overflow-y:auto;flex:1"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mt-6">
+        <form id="devisForm" class="space-y-6" novalidate>
+
+            <!-- 1. EMETTEUR -->
+            <div class="card">
+                <h3 class="card-title">1. Emetteur & Suivi</h3>
+
+                <div class="radio-group">
+                    <label><input type="radio" name="typeSociete" value="Pelichet" checked onchange="togglePelichet(true)"> Pelichet NLC</label>
+                    <label><input type="radio" name="typeSociete" value="Autre" onchange="togglePelichet(false)"> Autre</label>
+                </div>
+
+                <div class="grid-2">
+                    <div class="col-span-2">
+                        <label class="field-label">WhatsApp de Réception</label>
+                        <input type="tel" id="mobileSociete" name="mobileSociete" value="+41 79 688 27 35" class="font-bold bg-slate-50">
+                    </div>
+                    <div class="pelichet-only">
+                        <label class="field-label">Conseiller</label>
+                        <input type="text" id="vendeur" name="vendeur" value="ARNAUD GUEDOU" class="text-xs font-semibold">
+                        <input type="text" id="vendeurTel" name="vendeurTel" value="+41 79 688 27 35" class="mt-1 text-xs italic" style="color:var(--slate-500);padding:0.25rem 1rem;font-size:10px">
+                    </div>
+                    <div class="pelichet-only">
+                        <label class="field-label">Coordinateur</label>
+                        <input type="text" name="coordinateur" value="WOTQUENNE LILOU" class="text-xs font-semibold">
+                        <input type="text" name="coordinateurTel" value="022 827 36 97" class="mt-1 text-xs italic" style="color:var(--slate-500);padding:0.25rem 1rem;font-size:10px">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. CLIENT -->
+            <div class="card">
+                <h3 class="card-title">2. Informations Client</h3>
+                <div class="grid-2">
+                    <div class="col-span-2">
+                        <label class="field-label">Référence Dossier</label>
+                        <input type="text" name="ref" class="font-mono uppercase bg-slate-50">
+                        <div class="error-msg">Référence dossier requise</div>
+                    </div>
+                    <div>
+                        <label class="field-label">Salutation</label>
+                        <select name="genre" class="font-bold">
+                            <option value="Monsieur">Monsieur</option>
+                            <option value="Madame">Madame</option>
+                            <option value="Messieurs">Messieurs</option>
+                            <option value="Madame, Monsieur">Madame, Monsieur</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="field-label">Société Cliente</label>
+                        <input type="text" name="client" class="font-bold">
+                        <div class="error-msg">Nom du client requis</div>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="field-label">Adresse Facturation</label>
+                        <textarea id="adresseFacturation" name="adresseClient" rows="2" class="text-sm"></textarea>
+                        <div class="error-msg">Adresse de facturation requise</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. LOGISTIQUE -->
+            <div class="card">
+                <h3 class="card-title">3. Logistique</h3>
+                <div class="space-y-4">
+                    <div class="zone-depart">
+                        <label class="zone-label">Enlèvement (DEPART) :</label>
+                        <textarea id="adresseDepart" name="adresseDepart" rows="2" class="text-sm mb-3"></textarea>
+                        <div class="error-msg">Adresse de départ requise</div>
+                        <div class="grid-2 mt-2">
+                            <input type="text" name="contact" placeholder="Nom Contact" class="text-xs font-bold">
+                            <input type="tel" name="contactTel" placeholder="Tél Contact" class="text-xs font-bold">
+                        </div>
+                    </div>
+                    <div class="zone-arrivee">
+                        <label class="zone-label">Livraison (ARRIVEE) :</label>
+                        <textarea name="adresseArrivee" rows="2" class="text-sm"></textarea>
+                        <div class="error-msg">Adresse d'arrivée requise</div>
+                    </div>
+                    <div>
+                        <label class="field-label">Volume Estimé (m3)</label>
+                        <input type="number" name="volumeEstime" placeholder="200" value="200" style="width:8rem" class="font-bold">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. PRESTATIONS -->
+            <div class="card">
+                <h3 class="card-title">4. Prestations</h3>
+                <div id="prestationsContainer" class="space-y-8"></div>
+                <div class="grid-2 mt-8">
+                    <button type="button" class="add-poste-btn simple" onclick="PosteManager.addPoste('simple')">+ Poste Simple</button>
+                    <button type="button" class="add-poste-btn detail" onclick="PosteManager.addPoste('detail')">+ Besoin Logistique</button>
+                </div>
+            </div>
+
+            <!-- 5. TOTAL -->
+            <div class="card">
+                <h3 class="card-title">5. Chiffre d'Affaires HT</h3>
+                <div class="total-input-wrap">
+                    <span class="currency">CHF</span>
+                    <input type="number" name="montantHT" step="0.01">
+                    <div class="error-msg">Montant HT requis (> 0)</div>
+                </div>
+                <div class="auto-total mt-2">
+                    <button type="button" id="autoTotalBtn">Calculer depuis les postes</button>
+                </div>
+                <div id="totalBreakdown" class="total-breakdown"></div>
+            </div>
+
+            <!-- SUBMIT -->
+            <button type="submit" id="submitBtn" class="btn-submit">
+                <span id="btnText" class="uppercase">Générer Devis + RESA</span>
+                <div id="loader" class="spinner hidden"></div>
+            </button>
+
+        </form>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
