@@ -11,8 +11,39 @@
     <!-- NAV -->
     <nav class="nav">
         <h1>Pelichet Logistique</h1>
-        <span class="version">v2.0</span>
+        <div style="display:flex;align-items:center;gap:0.75rem">
+            <button type="button" id="settingsBtn" class="nav-settings-btn" title="Tarifs & Marges">&#9881;</button>
+            <span class="version">v2.1</span>
+        </div>
     </nav>
+
+    <!-- PANNEAU SETTINGS -->
+    <div id="settingsPanel" class="settings-overlay hidden">
+        <div class="settings-modal">
+            <div class="settings-header">
+                <h3>Tarifs & Marges</h3>
+                <button type="button" id="settingsClose" class="settings-close-btn">&times;</button>
+            </div>
+            <div class="settings-body">
+                <h4 class="settings-section-title">Marges par categorie</h4>
+                <div id="settingsMarges" class="settings-marges-grid"></div>
+
+                <h4 class="settings-section-title mt-6">Tarifs unitaires</h4>
+                <div class="settings-table-wrap">
+                    <table class="settings-table">
+                        <thead>
+                            <tr><th>Type</th><th>Item</th><th>Cout (CHF)</th><th>Unite</th><th></th></tr>
+                        </thead>
+                        <tbody id="settingsTarifsBody"></tbody>
+                    </table>
+                </div>
+                <button type="button" id="settingsAddRow" class="btn" style="margin-top:0.5rem;background:var(--slate-200);color:var(--slate-700);font-size:11px">+ Ajouter un tarif</button>
+            </div>
+            <div class="settings-footer">
+                <button type="button" id="settingsSave" class="btn btn-primary">Sauvegarder</button>
+            </div>
+        </div>
+    </div>
 
     <!-- BARRE DE RECHERCHE -->
     <div class="container mt-4">

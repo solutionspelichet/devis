@@ -18,6 +18,297 @@ const CONFIG = {
 };
 
 // ============================================
+// CUSTOM ITEMS (persistance localStorage)
+// ============================================
+const CustomItems = {
+  _cache: null,
+  _loaded: false,
+
+  /** Charge les items depuis le serveur (avec cache local) */
+  load() {
+    // Retourne le cache synchrone (chargé au démarrage)
+    if (this._cache) return this._cache;
+    // Fallback localStorage en attendant le serveur
+    try {
+      const raw = localStorage.getItem('pelichet_custom_items');
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* silencieux */ }
+    return { personnel: [], vehicules: [], engins: [], materiel: [] };
+  },
+
+  /** Charge depuis le serveur et met à jour le cache */
+  async fetchFromServer() {
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=custom_get`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+      if (result.status === 'success' && result.data) {
+        this._cache = result.data;
+        this._loaded = true;
+        // Sauvegarder en localStorage comme fallback
+        localStorage.setItem('pelichet_custom_items', JSON.stringify(this._cache));
+      }
+    } catch (e) {
+      console.log('CustomItems fetch failed, using localStorage fallback');
+    }
+  },
+
+  /** Ajoute un item sur le serveur + cache local */
+  async add(type, value) {
+    if (!value || !value.trim()) return false;
+    const val = value.trim();
+    // Vérifier qu'il n'est pas déjà dans la liste par défaut
+    if (CONFIG.LISTS[type] && CONFIG.LISTS[type].includes(val)) return false;
+    // Vérifier doublon dans le cache
+    const data = this.load();
+    if (data[type] && data[type].includes(val)) return false;
+
+    // Ajouter au cache local immédiatement
+    if (!data[type]) data[type] = [];
+    data[type].push(val);
+    this._cache = data;
+    localStorage.setItem('pelichet_custom_items', JSON.stringify(data));
+
+    // Envoyer au serveur en arrière-plan
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=custom_add&type=${encodeURIComponent(type)}&value=${encodeURIComponent(val)}`;
+      fetch(url).catch(() => {}); // fire & forget
+    } catch (e) { /* silencieux */ }
+
+    return true;
+  },
+
+  /** Retourne la liste complète (défaut + custom) pour un type */
+  getFullList(type) {
+    const defaults = CONFIG.LISTS[type] || [];
+    const customs = this.load()[type] || [];
+    return [...defaults, ...customs];
+  }
+};
+
+// ============================================
+// TARIF MANAGER (tarifs + marges depuis serveur)
+// ============================================
+const TarifManager = {
+  _data: null, // { items: { personnel: [{item, cout, unite},...] }, marges: { personnel: 35, ... } }
+  _loaded: false,
+
+  async fetchFromServer() {
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=tarifs_get`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+      if (result.status === 'success' && result.data) {
+        this._data = result.data;
+        this._loaded = true;
+        localStorage.setItem('pelichet_tarifs', JSON.stringify(this._data));
+      }
+    } catch (e) {
+      console.log('TarifManager fetch failed, using localStorage');
+    }
+    if (!this._data) {
+      try {
+        const raw = localStorage.getItem('pelichet_tarifs');
+        if (raw) this._data = JSON.parse(raw);
+      } catch (e) { /* silencieux */ }
+    }
+    if (!this._data) this._data = { items: {}, marges: {} };
+  },
+
+  async saveToServer() {
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=tarifs_save&data=${encodeURIComponent(JSON.stringify(this._data))}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+      if (result.status === 'success') {
+        localStorage.setItem('pelichet_tarifs', JSON.stringify(this._data));
+        return true;
+      }
+    } catch (e) { /* silencieux */ }
+    return false;
+  },
+
+  /** Retourne le coût unitaire d'un item */
+  getCout(type, itemName) {
+    if (!this._data || !this._data.items || !this._data.items[type]) return 0;
+    const found = this._data.items[type].find(t => t.item === itemName);
+    return found ? (parseFloat(found.cout) || 0) : 0;
+  },
+
+  /** Retourne l'unité d'un item ('jour', 'piece', 'forfait') */
+  getUnite(type, itemName) {
+    if (!this._data || !this._data.items || !this._data.items[type]) return 'jour';
+    const found = this._data.items[type].find(t => t.item === itemName);
+    return found ? (found.unite || 'jour') : 'jour';
+  },
+
+  /** Retourne la marge % d'une catégorie */
+  getMarge(type) {
+    if (!this._data || !this._data.marges) return 0;
+    return parseFloat(this._data.marges[type]) || 0;
+  },
+
+  /** Calcule le prix d'un poste détail à partir de ses ressources */
+  calculerPrixPoste(card) {
+    const nbJours = parseFloat(card.querySelector('[name="nbJours"]')?.value) || 1;
+    const types = ['engins', 'personnel', 'vehicules', 'materiel'];
+    const sections = card.querySelectorAll('.detail-section .rows');
+    let totalCout = 0;
+    let totalPrix = 0;
+    const details = [];
+
+    types.forEach((type, idx) => {
+      const rows = sections[idx]?.querySelectorAll('.row-item') || [];
+      let coutCategorie = 0;
+
+      rows.forEach(row => {
+        const selectVal = row.querySelector('select')?.value || '';
+        const customVal = row.querySelector('input[name="customValue"]')?.value || '';
+        const label = (selectVal === '__autre__') ? customVal : selectVal;
+        if (!label) return;
+
+        const qty = parseFloat(row.querySelector('input[name="qty"]')?.value) || 1;
+        const coutUnit = this.getCout(type, label);
+        const unite = this.getUnite(type, label);
+
+        // Jour = multiplié par nbJours, pièce/forfait = quantité seule
+        const coutItem = unite === 'jour' ? (qty * coutUnit * nbJours) : (qty * coutUnit);
+        coutCategorie += coutItem;
+      });
+
+      const marge = this.getMarge(type);
+      const prixCategorie = coutCategorie * (1 + marge / 100);
+      totalCout += coutCategorie;
+      totalPrix += prixCategorie;
+
+      if (coutCategorie > 0) {
+        details.push({ type, cout: coutCategorie, marge, prix: prixCategorie });
+      }
+    });
+
+    return { cout: Math.round(totalCout * 100) / 100, prix: Math.round(totalPrix * 100) / 100, details };
+  },
+
+  /** Met à jour les données en mémoire */
+  setData(data) {
+    this._data = data;
+  },
+
+  getData() {
+    return this._data || { items: {}, marges: {} };
+  }
+};
+
+// ============================================
+// SETTINGS PANEL (édition des tarifs)
+// ============================================
+const SettingsPanel = {
+  _panel: null,
+  _open: false,
+
+  init() {
+    this._panel = document.getElementById('settingsPanel');
+    document.getElementById('settingsBtn')?.addEventListener('click', () => this.toggle());
+    document.getElementById('settingsClose')?.addEventListener('click', () => this.close());
+    document.getElementById('settingsSave')?.addEventListener('click', () => this.save());
+    document.getElementById('settingsAddRow')?.addEventListener('click', () => this.addRow());
+  },
+
+  toggle() {
+    this._open ? this.close() : this.open();
+  },
+
+  open() {
+    this._open = true;
+    this._panel.classList.remove('hidden');
+    this.render();
+  },
+
+  close() {
+    this._open = false;
+    this._panel.classList.add('hidden');
+  },
+
+  render() {
+    const data = TarifManager.getData();
+    const marges = data.marges || {};
+    const items = data.items || {};
+
+    // Marges
+    let margesHTML = '';
+    ['personnel', 'vehicules', 'engins', 'materiel'].forEach(cat => {
+      margesHTML += `
+        <div class="settings-marge-row">
+          <span class="settings-marge-label">${cat}</span>
+          <input type="number" data-marge="${cat}" value="${marges[cat] || 0}" min="0" max="200" step="1">
+          <span class="settings-marge-unit">%</span>
+        </div>`;
+    });
+    document.getElementById('settingsMarges').innerHTML = margesHTML;
+
+    // Tarifs
+    let tarifsHTML = '';
+    const allTypes = ['personnel', 'vehicules', 'engins', 'materiel'];
+    allTypes.forEach(type => {
+      const list = items[type] || [];
+      list.forEach((t, idx) => {
+        tarifsHTML += `
+          <tr data-type="${type}" data-idx="${idx}">
+            <td><select class="tarif-type">${allTypes.map(tt => `<option value="${tt}" ${tt === type ? 'selected' : ''}>${tt}</option>`).join('')}</select></td>
+            <td><input type="text" class="tarif-item" value="${t.item || ''}"></td>
+            <td><input type="number" class="tarif-cout" value="${t.cout || 0}" min="0" step="0.5"></td>
+            <td><select class="tarif-unite"><option value="jour" ${t.unite === 'jour' ? 'selected' : ''}>jour</option><option value="piece" ${t.unite === 'piece' ? 'selected' : ''}>piece</option><option value="forfait" ${t.unite === 'forfait' ? 'selected' : ''}>forfait</option></select></td>
+            <td><button type="button" class="tarif-remove" onclick="this.closest('tr').remove()">&times;</button></td>
+          </tr>`;
+      });
+    });
+    document.getElementById('settingsTarifsBody').innerHTML = tarifsHTML;
+  },
+
+  addRow() {
+    const tbody = document.getElementById('settingsTarifsBody');
+    const allTypes = ['personnel', 'vehicules', 'engins', 'materiel'];
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr data-type="" data-idx="new">
+        <td><select class="tarif-type">${allTypes.map(tt => `<option value="${tt}">${tt}</option>`).join('')}</select></td>
+        <td><input type="text" class="tarif-item" value="" placeholder="Nom item"></td>
+        <td><input type="number" class="tarif-cout" value="0" min="0" step="0.5"></td>
+        <td><select class="tarif-unite"><option value="jour">jour</option><option value="piece">piece</option><option value="forfait">forfait</option></select></td>
+        <td><button type="button" class="tarif-remove" onclick="this.closest('tr').remove()">&times;</button></td>
+      </tr>`);
+  },
+
+  async save() {
+    const data = { items: {}, marges: {} };
+
+    // Lire les marges
+    document.querySelectorAll('[data-marge]').forEach(input => {
+      data.marges[input.dataset.marge] = parseFloat(input.value) || 0;
+    });
+
+    // Lire les tarifs
+    document.querySelectorAll('#settingsTarifsBody tr').forEach(tr => {
+      const type = tr.querySelector('.tarif-type')?.value;
+      const item = tr.querySelector('.tarif-item')?.value?.trim();
+      const cout = parseFloat(tr.querySelector('.tarif-cout')?.value) || 0;
+      const unite = tr.querySelector('.tarif-unite')?.value || 'jour';
+      if (!type || !item) return;
+      if (!data.items[type]) data.items[type] = [];
+      data.items[type].push({ item, cout, unite });
+    });
+
+    TarifManager.setData(data);
+    Toast.info('Sauvegarde en cours...');
+    const ok = await TarifManager.saveToServer();
+    if (ok) {
+      Toast.success('Tarifs sauvegardés !');
+    } else {
+      Toast.error('Erreur de sauvegarde');
+    }
+  }
+};
+
+// ============================================
 // TOAST NOTIFICATIONS
 // ============================================
 const Toast = {
@@ -157,10 +448,32 @@ const PosteManager = {
     this.addPoste('simple');
   },
 
-  _createOptionsHTML(list) {
-    return '<option value="">-- Type --</option>'
-      + list.map(i => `<option value="${i}">${i}</option>`).join('')
-      + '<option value="__autre__">Autre (personnalisé)</option>';
+  _createOptionsHTML(type) {
+    const fullList = CustomItems.getFullList(type);
+    const defaults = CONFIG.LISTS[type] || [];
+    const customs = CustomItems.load()[type] || [];
+
+    let html = '<option value="">-- Type --</option>';
+    // Options par défaut
+    html += defaults.map(i => `<option value="${i}">${i}</option>`).join('');
+    // Séparateur + options personnalisées
+    if (customs.length > 0) {
+      html += '<option disabled>────────────</option>';
+      html += customs.map(i => `<option value="${i}">${i} ★</option>`).join('');
+    }
+    // Option "Autre"
+    html += '<option value="__autre__">+ Autre (personnalisé)</option>';
+    return html;
+  },
+
+  /** Rafraîchit toutes les listes déroulantes d'un type donné */
+  _refreshSelects(type) {
+    const newHTML = this._createOptionsHTML(type);
+    document.querySelectorAll(`.row-item[data-type="${type}"] select`).forEach(sel => {
+      const currentVal = sel.value;
+      sel.innerHTML = newHTML;
+      if (currentVal && currentVal !== '__autre__') sel.value = currentVal;
+    });
   },
 
   _createRow(type) {
@@ -169,7 +482,7 @@ const PosteManager = {
     div.className = 'row-item';
     div.dataset.type = type;
     div.innerHTML = `
-      <select style="flex:1">${this._createOptionsHTML(CONFIG.LISTS[type])}</select>
+      <select style="flex:1">${this._createOptionsHTML(type)}</select>
       <input type="text" name="customValue" placeholder="Précisez..." class="custom-input hidden" style="flex:1">
       ${isEngin ? `
         <div style="position:relative;display:flex;align-items:center">
@@ -183,9 +496,11 @@ const PosteManager = {
       ` : `<input type="number" name="qty" value="1" style="width:3rem;text-align:center">`}
       <button type="button" class="row-remove" title="Supprimer">&times;</button>
     `;
-    // Toggle champ personnalisé quand "Autre" est sélectionné
     const select = div.querySelector('select');
     const customInput = div.querySelector('.custom-input');
+    const self = this;
+
+    // Toggle champ personnalisé quand "Autre" est sélectionné
     select.addEventListener('change', () => {
       if (select.value === '__autre__') {
         customInput.classList.remove('hidden');
@@ -195,6 +510,30 @@ const PosteManager = {
         customInput.value = '';
       }
     });
+
+    // Enregistrer la valeur personnalisée quand on quitte le champ
+    customInput.addEventListener('blur', async () => {
+      const val = customInput.value.trim();
+      if (!val) return;
+      const added = await CustomItems.add(type, val);
+      if (added) {
+        Toast.info('"' + val + '" ajouté à la liste ' + type);
+      }
+      // Rafraîchir tous les selects de ce type + sélectionner la nouvelle valeur
+      self._refreshSelects(type);
+      select.value = val;
+      customInput.classList.add('hidden');
+      customInput.value = '';
+    });
+
+    // Aussi enregistrer sur Entrée
+    customInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        customInput.blur();
+      }
+    });
+
     div.querySelector('.row-remove').addEventListener('click', () => div.remove());
     return div;
   },
@@ -262,6 +601,10 @@ const PosteManager = {
             <button type="button" class="add-row-btn materiel">+ Ajouter</button>
           </div>
           <textarea name="tache" rows="2" placeholder="Instructions..." class="text-sm"></textarea>
+          <div class="prix-auto-info hidden">
+            <div class="prix-auto-detail"></div>
+            <button type="button" class="prix-auto-apply">Appliquer le prix calculé</button>
+          </div>
         </div>
       `}
     `;
@@ -273,9 +616,15 @@ const PosteManager = {
       PriceCalc.updateBreakdown();
     });
 
-    // Prix change -> update breakdown
+    // Prix change -> update breakdown + indicateur écart
     const prixInput = div.querySelector('[name="postePrix"]');
-    if (prixInput) prixInput.addEventListener('input', () => PriceCalc.updateBreakdown());
+    if (prixInput) {
+      prixInput.addEventListener('input', () => {
+        prixInput.dataset.manual = 'true';
+        PriceCalc.updateBreakdown();
+        this._updatePrixIndicator(div);
+      });
+    }
 
     // Detail mode event bindings
     if (mode === 'detail') {
@@ -287,20 +636,81 @@ const PosteManager = {
       });
 
       const nbJoursInput = div.querySelector('[name="nbJours"]');
-      div.querySelector('[data-half]').addEventListener('click', () => { nbJoursInput.value = '0.5'; });
-      div.querySelector('[data-one]').addEventListener('click', () => { nbJoursInput.value = '1'; });
-      div.querySelector('[data-two]').addEventListener('click', () => { nbJoursInput.value = '2'; });
+      const recalc = () => this._recalculerPoste(div);
+      div.querySelector('[data-half]').addEventListener('click', () => { nbJoursInput.value = '0.5'; recalc(); });
+      div.querySelector('[data-one]').addEventListener('click', () => { nbJoursInput.value = '1'; recalc(); });
+      div.querySelector('[data-two]').addEventListener('click', () => { nbJoursInput.value = '2'; recalc(); });
+      nbJoursInput.addEventListener('input', recalc);
+
+      // Bouton "Appliquer prix calculé"
+      div.querySelector('.prix-auto-apply')?.addEventListener('click', () => {
+        const calc = TarifManager.calculerPrixPoste(div);
+        const pi = div.querySelector('[name="postePrix"]');
+        if (pi) { pi.value = calc.prix.toFixed(2); pi.dataset.manual = ''; PriceCalc.updateBreakdown(); }
+        this._updatePrixIndicator(div);
+      });
 
       ['engins', 'personnel', 'vehicules', 'materiel'].forEach(type => {
         const section = div.querySelector(`.detail-section.${type}`);
         section.querySelector('.add-row-btn').addEventListener('click', () => {
-          section.querySelector('.rows').appendChild(this._createRow(type));
+          const row = this._createRow(type);
+          section.querySelector('.rows').appendChild(row);
+          // Recalculer quand on change select ou qty dans la nouvelle ligne
+          row.querySelector('select')?.addEventListener('change', recalc);
+          row.querySelector('input[name="qty"]')?.addEventListener('input', recalc);
         });
       });
     }
 
     this._container.appendChild(div);
     this.renumber();
+  },
+
+  /** Recalcule le prix d'un poste détail et met à jour l'affichage */
+  _recalculerPoste(card) {
+    const calc = TarifManager.calculerPrixPoste(card);
+    const prixInput = card.querySelector('[name="postePrix"]');
+    if (!prixInput) return;
+
+    // Si pas de modification manuelle, pré-remplir
+    if (!prixInput.dataset.manual && calc.prix > 0) {
+      prixInput.value = calc.prix.toFixed(2);
+      PriceCalc.updateBreakdown();
+    }
+
+    this._updatePrixIndicator(card);
+  },
+
+  /** Met à jour l'indicateur de prix calculé sous le champ prix */
+  _updatePrixIndicator(card) {
+    const infoDiv = card.querySelector('.prix-auto-info');
+    const detailDiv = card.querySelector('.prix-auto-detail');
+    if (!infoDiv || !detailDiv) return;
+
+    const calc = TarifManager.calculerPrixPoste(card);
+    if (calc.prix === 0 && calc.cout === 0) {
+      infoDiv.classList.add('hidden');
+      return;
+    }
+
+    infoDiv.classList.remove('hidden');
+    const fmtCHF = v => v.toLocaleString('fr-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    const prixManuel = parseFloat(card.querySelector('[name="postePrix"]')?.value) || 0;
+    const ecart = prixManuel - calc.prix;
+    const ecartPct = calc.prix > 0 ? ((ecart / calc.prix) * 100).toFixed(1) : 0;
+
+    let html = `<div class="prix-auto-ligne"><span>Cout de revient</span><span>${fmtCHF(calc.cout)} CHF</span></div>`;
+    calc.details.forEach(d => {
+      html += `<div class="prix-auto-ligne sub"><span>${d.type} (+${d.marge}%)</span><span>${fmtCHF(d.prix)} CHF</span></div>`;
+    });
+    html += `<div class="prix-auto-ligne total"><span>Prix calculé</span><span>${fmtCHF(calc.prix)} CHF</span></div>`;
+
+    if (prixManuel > 0 && Math.abs(ecart) > 1) {
+      const cls = ecart > 0 ? 'ecart-positif' : 'ecart-negatif';
+      html += `<div class="prix-auto-ligne ${cls}"><span>Ecart</span><span>${ecart > 0 ? '+' : ''}${fmtCHF(ecart)} CHF (${ecartPct}%)</span></div>`;
+    }
+
+    detailDiv.innerHTML = html;
   },
 
   renumber() {
@@ -416,19 +826,17 @@ const PosteManager = {
             const select = row.querySelector('select');
             const qtyInput = row.querySelector('input[name="qty"]');
 
-            // Essayer de sélectionner dans la liste, sinon choisir "Autre"
+            // Essayer de sélectionner dans la liste (défaut + custom)
             if (select) {
               const option = Array.from(select.options).find(o => o.value === label);
               if (option) {
                 select.value = label;
               } else {
-                // Valeur personnalisée : sélectionner "Autre" et remplir le champ
-                select.value = '__autre__';
-                const customInput = row.querySelector('.custom-input');
-                if (customInput) {
-                  customInput.classList.remove('hidden');
-                  customInput.value = label;
-                }
+                // Valeur inconnue : l'enregistrer en custom puis sélectionner
+                CustomItems.add(type, label); // async mais pas besoin d'attendre
+                // Recréer les options avec la nouvelle valeur
+                select.innerHTML = this._createOptionsHTML(type);
+                select.value = label;
               }
             }
 
@@ -743,11 +1151,18 @@ function togglePelichet(isPelichet) {
 // ============================================
 // INIT
 // ============================================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // Charger les données depuis le serveur
+  await Promise.all([
+    CustomItems.fetchFromServer(),
+    TarifManager.fetchFromServer()
+  ]);
+
   SyncManager.init();
   PosteManager.init();
   PriceCalc.init();
   DossierList.init();
+  SettingsPanel.init();
 
   // Search bar
   document.getElementById('loadBtn')?.addEventListener('click', () => {
