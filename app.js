@@ -686,6 +686,11 @@ const FormSubmitter = {
 
       if (res.status === 'success') {
         Toast.success('Devis généré avec succès !');
+        if (res.resa === 'ok') {
+          Toast.success('Fiche RESA créée !');
+        } else if (res.resa === 'error') {
+          Toast.error('Erreur RESA : ' + (res.resaError || 'Inconnue'));
+        }
         const waNumber = (data.mobileSociete || '').replace(/\s+/g, '');
         const waText = encodeURIComponent(`Documents ${data.ref}:\nPDF: ${res.pdfUrl}`);
         window.open(`https://wa.me/${waNumber}?text=${waText}`, '_blank');
