@@ -1038,6 +1038,17 @@ function doGet(e) {
       }
     }
 
+    if (action === 'planning_generate') {
+      try {
+        var planUserId = e.parameter.user || '';
+        if (!planUserId) return jsonResponse({ status: 'error', message: 'userId requis' });
+        var planResult = genererPlanning(planUserId);
+        return jsonResponse(planResult);
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur planning: ' + err });
+      }
+    }
+
     if (action === 'ventilation') {
       try {
         var ventilData = JSON.parse(e.parameter.data || '{}');
@@ -1229,17 +1240,514 @@ function rechercherDossier(ref, userId) {
 }
 
 // ============================================
+// PLANNING CONSOLIDÉ
+// ============================================
+
+/**
+ * Jours fériés suisses (Genève) pour les années courantes.
+ * Retourne un Set de strings au format 'YYYY-MM-DD'
+ */
+function getJoursFeries(year) {
+  var feries = [];
+  // Fériés fixes
+  feries.push(year + '-01-01'); // Nouvel An
+  feries.push(year + '-01-02'); // 2 janvier
+  feries.push(year + '-03-01'); // Instauration de la République (GE)
+  feries.push(year + '-05-01'); // Fête du Travail
+  feries.push(year + '-06-01'); // Lundi de Pentecôte (approximatif)
+  feries.push(year + '-08-01'); // Fête nationale
+  feries.push(year + '-09-11'); // Jeûne genevois (GE, variable)
+  feries.push(year + '-12-25'); // Noël
+  feries.push(year + '-12-31'); // Restauration de la République (GE)
+
+  // Pâques (algorithme de Gauss)
+  var a = year % 19;
+  var b = Math.floor(year / 100);
+  var c = year % 100;
+  var d = Math.floor(b / 4);
+  var e2 = b % 4;
+  var f = Math.floor((b + 8) / 25);
+  var g = Math.floor((b - f + 1) / 3);
+  var h = (19 * a + b - d - g + 15) % 30;
+  var i = Math.floor(c / 4);
+  var k = c % 4;
+  var l = (32 + 2 * e2 + 2 * i - h - k) % 7;
+  var m = Math.floor((a + 11 * h + 22 * l) / 451);
+  var month = Math.floor((h + l - 7 * m + 114) / 31);
+  var day = ((h + l - 7 * m + 114) % 31) + 1;
+  var easter = new Date(year, month - 1, day);
+
+  function addDays(d, n) { var r = new Date(d); r.setDate(r.getDate() + n); return r; }
+  function fmt(d) {
+    var mm = String(d.getMonth() + 1); if (mm.length < 2) mm = '0' + mm;
+    var dd = String(d.getDate()); if (dd.length < 2) dd = '0' + dd;
+    return d.getFullYear() + '-' + mm + '-' + dd;
+  }
+
+  feries.push(fmt(addDays(easter, -2)));  // Vendredi Saint
+  feries.push(fmt(addDays(easter, 1)));   // Lundi de Pâques
+  feries.push(fmt(addDays(easter, 39)));  // Ascension
+  feries.push(fmt(addDays(easter, 50)));  // Lundi de Pentecôte
+
+  var set = {};
+  feries.forEach(function(f) { set[f] = true; });
+  return set;
+}
+
+/**
+ * Nom du jour férié (pour affichage)
+ */
+function getNomFerie(dateStr, year) {
+  var feries = {};
+  feries[year + '-01-01'] = 'Nouvel An';
+  feries[year + '-01-02'] = '2 Janvier';
+  feries[year + '-03-01'] = 'Instauration République';
+  feries[year + '-05-01'] = 'Fête du Travail';
+  feries[year + '-08-01'] = 'Fête nationale';
+  feries[year + '-12-25'] = 'Noël';
+  feries[year + '-12-31'] = 'Restauration République';
+
+  // Pâques
+  var a = year % 19;
+  var b = Math.floor(year / 100);
+  var c = year % 100;
+  var d = Math.floor(b / 4);
+  var e2 = b % 4;
+  var f = Math.floor((b + 8) / 25);
+  var g = Math.floor((b - f + 1) / 3);
+  var h = (19 * a + b - d - g + 15) % 30;
+  var i = Math.floor(c / 4);
+  var k = c % 4;
+  var l = (32 + 2 * e2 + 2 * i - h - k) % 7;
+  var m = Math.floor((a + 11 * h + 22 * l) / 451);
+  var month = Math.floor((h + l - 7 * m + 114) / 31);
+  var day = ((h + l - 7 * m + 114) % 31) + 1;
+  var easter = new Date(year, month - 1, day);
+  function addDays(d, n) { var r = new Date(d); r.setDate(r.getDate() + n); return r; }
+  function fmt(d) {
+    var mm = String(d.getMonth() + 1); if (mm.length < 2) mm = '0' + mm;
+    var dd = String(d.getDate()); if (dd.length < 2) dd = '0' + dd;
+    return d.getFullYear() + '-' + mm + '-' + dd;
+  }
+  feries[fmt(addDays(easter, -2))] = 'Vendredi Saint';
+  feries[fmt(addDays(easter, 1))] = 'Lundi de Pâques';
+  feries[fmt(addDays(easter, 39))] = 'Ascension';
+  feries[fmt(addDays(easter, 50))] = 'Lundi de Pentecôte';
+
+  return feries[dateStr] || '';
+}
+
+/**
+ * Génère les jours ouvrés à partir d'une date de début + nb jours
+ */
+function genererJoursOuvres(dateDebut, nbJours, feriesSet) {
+  var jours = [];
+  var current = new Date(dateDebut);
+  var count = 0;
+  var maxIter = nbJours * 3 + 30; // sécurité
+
+  while (count < nbJours && maxIter > 0) {
+    maxIter--;
+    var dow = current.getDay(); // 0=dim, 6=sam
+    var mm = String(current.getMonth() + 1); if (mm.length < 2) mm = '0' + mm;
+    var dd = String(current.getDate()); if (dd.length < 2) dd = '0' + dd;
+    var key = current.getFullYear() + '-' + mm + '-' + dd;
+
+    if (dow !== 0 && dow !== 6 && !feriesSet[key]) {
+      jours.push(new Date(current));
+      count++;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  return jours;
+}
+
+/**
+ * Génère le planning consolidé Google Sheet pour un utilisateur.
+ * Lit tous les dossiers, extrait les postes détail avec dates,
+ * et crée un Sheet avec colonnes par client.
+ */
+function genererPlanning(userId) {
+  var sheet = getSheet(userId);
+  if (!sheet) return { status: 'error', message: 'Aucun dossier trouvé' };
+
+  var values = sheet.getDataRange().getValues();
+  if (values.length < 2) return { status: 'error', message: 'Aucun dossier' };
+
+  // Récupérer tous les dossiers avec JSON
+  var dossiers = [];
+  for (var i = 1; i < values.length; i++) {
+    var jsonStr = null;
+    for (var c = values[i].length - 1; c >= 0; c--) {
+      var cellVal = values[i][c];
+      if (cellVal && String(cellVal).trim().startsWith('{"')) {
+        try {
+          jsonStr = JSON.parse(cellVal);
+          break;
+        } catch (e) { /* pas du JSON */ }
+      }
+    }
+    if (!jsonStr) continue;
+
+    var postes = jsonStr.postes || [];
+    var postesDetail = postes.filter(function(p) { return p.mode === 'detail'; });
+
+    // Vérifier qu'au moins un poste a une date RDV
+    var hasDate = postesDetail.some(function(p) {
+      return p.rdvs && p.rdvs.length > 0 && p.rdvs[0].date;
+    });
+    if (!hasDate || postesDetail.length === 0) continue;
+
+    dossiers.push({
+      ref: safe(jsonStr.ref, 'SANS_REF'),
+      client: safe(jsonStr.client, 'CLIENT'),
+      data: jsonStr,
+      postesDetail: postesDetail
+    });
+  }
+
+  if (dossiers.length === 0) {
+    return { status: 'error', message: 'Aucun dossier avec postes détaillés et dates' };
+  }
+
+  // Collecter toutes les années pour les fériés
+  var allYears = {};
+  dossiers.forEach(function(d) {
+    d.postesDetail.forEach(function(p) {
+      if (p.rdvs && p.rdvs[0] && p.rdvs[0].date) {
+        var y = new Date(p.rdvs[0].date).getFullYear();
+        allYears[y] = true;
+      }
+    });
+  });
+  var feriesSet = {};
+  Object.keys(allYears).forEach(function(y) {
+    var yf = getJoursFeries(parseInt(y));
+    for (var k in yf) feriesSet[k] = true;
+  });
+
+  // Pour chaque dossier, générer la liste des jours avec ressources
+  var clientsData = []; // { label, ref, jourMap: { 'YYYY-MM-DD': { effectif, vehicules, materiel, instructions } } }
+
+  dossiers.forEach(function(d) {
+    var jourMap = {};
+
+    d.postesDetail.forEach(function(p) {
+      var dateDebut = p.rdvs && p.rdvs[0] && p.rdvs[0].date ? new Date(p.rdvs[0].date) : null;
+      if (!dateDebut || isNaN(dateDebut.getTime())) return;
+
+      var nbJours = parseFloat(p.jours) || 1;
+      var joursOuvres = genererJoursOuvres(dateDebut, Math.ceil(nbJours), feriesSet);
+
+      // Extraire les ressources
+      var effectifTotal = 0;
+      (p.personnel || []).forEach(function(s) {
+        var m = String(s).match(/^(\d+)x/);
+        if (m) effectifTotal += parseInt(m[1]);
+      });
+
+      var vehiculesStr = (p.vehicules || []).join(', ');
+      var enginsStr = (p.engins || []).join(', ');
+      var allVehicules = [vehiculesStr, enginsStr].filter(function(s) { return s; }).join(', ');
+
+      var materielStr = (p.materiel || []).join(', ');
+      var instructions = safe(p.tache, p.titre || '');
+
+      joursOuvres.forEach(function(jour) {
+        var mm = String(jour.getMonth() + 1); if (mm.length < 2) mm = '0' + mm;
+        var dd = String(jour.getDate()); if (dd.length < 2) dd = '0' + dd;
+        var key = jour.getFullYear() + '-' + mm + '-' + dd;
+
+        if (!jourMap[key]) {
+          jourMap[key] = { effectif: 0, vehicules: [], materiel: [], instructions: [] };
+        }
+        jourMap[key].effectif += effectifTotal;
+        if (allVehicules) jourMap[key].vehicules.push(allVehicules);
+        if (materielStr) jourMap[key].materiel.push(materielStr);
+        if (instructions) jourMap[key].instructions.push(instructions);
+      });
+    });
+
+    if (Object.keys(jourMap).length > 0) {
+      clientsData.push({
+        label: d.client + ' (' + d.ref + ')',
+        ref: d.ref,
+        jourMap: jourMap
+      });
+    }
+  });
+
+  if (clientsData.length === 0) {
+    return { status: 'error', message: 'Aucun poste avec dates valides' };
+  }
+
+  // Déterminer la plage de dates (min-max)
+  var allDates = {};
+  clientsData.forEach(function(c) {
+    for (var k in c.jourMap) allDates[k] = true;
+  });
+  var dateKeys = Object.keys(allDates).sort();
+  var minDate = new Date(dateKeys[0]);
+  var maxDate = new Date(dateKeys[dateKeys.length - 1]);
+
+  // Générer toutes les dates ouvrées entre min et max (inclure aussi les fériés pour les afficher)
+  var allRows = [];
+  var current = new Date(minDate);
+  while (current <= maxDate) {
+    var dow = current.getDay();
+    if (dow !== 0 && dow !== 6) { // Seulement lun-ven
+      allRows.push(new Date(current));
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  // Couleurs par client
+  var clientColors = [
+    '#DBEAFE', // bleu clair
+    '#DCFCE7', // vert clair
+    '#FEF3C7', // jaune clair
+    '#F3E8FF', // violet clair
+    '#FFE4E6', // rose clair
+    '#E0F2FE', // cyan clair
+    '#FEF9C3', // lime clair
+    '#FFEDD5'  // orange clair
+  ];
+  var headerColors = [
+    '#3B82F6', // bleu
+    '#16A34A', // vert
+    '#F59E0B', // jaune
+    '#8B5CF6', // violet
+    '#EF4444', // rose
+    '#06B6D4', // cyan
+    '#84CC16', // lime
+    '#F97316'  // orange
+  ];
+
+  // NOMS DE JOURS
+  var nomJours = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+
+  // Créer le Google Sheet
+  var folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+  var user = getUserById(userId);
+  var userName = user ? (user.prenom + ' ' + user.nom) : userId;
+  var ssName = 'Planning_Consolidé_' + userName.replace(/\s+/g, '_');
+
+  // Chercher si le fichier existe déjà
+  var existingFiles = folder.getFilesByName(ssName);
+  var planSS;
+  if (existingFiles.hasNext()) {
+    planSS = SpreadsheetApp.open(existingFiles.next());
+  } else {
+    planSS = SpreadsheetApp.create(ssName);
+    // Déplacer dans le bon dossier
+    var file = DriveApp.getFileById(planSS.getId());
+    folder.addFile(file);
+    var parents = file.getParents();
+    while (parents.hasNext()) {
+      var parent = parents.next();
+      if (parent.getId() !== folder.getId()) parent.removeFile(file);
+    }
+  }
+
+  // Utiliser la première feuille ou en créer une
+  var planSheet = planSS.getSheets()[0];
+  planSheet.setName('Planning Consolidé');
+  planSheet.clear();
+
+  // ---- CONSTRUIRE LES DONNÉES ----
+  var nbClients = clientsData.length;
+  var nbCols = 3 + (nbClients * 4) + 2; // A-C + 4 par client + 2 totaux
+
+  // En-tête ligne 1 : fusion par client
+  var header1 = ['Date', 'Jour', 'Férié'];
+  for (var ci = 0; ci < nbClients; ci++) {
+    header1.push(clientsData[ci].label);
+    header1.push('');
+    header1.push('');
+    header1.push('');
+  }
+  header1.push('TOTAL');
+  header1.push('');
+
+  // En-tête ligne 2 : sous-colonnes
+  var header2 = ['', '', ''];
+  for (var ci = 0; ci < nbClients; ci++) {
+    header2.push('Effectif');
+    header2.push('Véhicules');
+    header2.push('Matériel');
+    header2.push('Activités');
+  }
+  header2.push('Hommes');
+  header2.push('Véhicules');
+
+  // Lignes de données
+  var dataRows = [];
+  allRows.forEach(function(date) {
+    var mm = String(date.getMonth() + 1); if (mm.length < 2) mm = '0' + mm;
+    var dd = String(date.getDate()); if (dd.length < 2) dd = '0' + dd;
+    var key = date.getFullYear() + '-' + mm + '-' + dd;
+    var dateFmt = dd + '.' + mm + '.' + date.getFullYear();
+    var jourNom = nomJours[date.getDay()];
+    var ferieName = getNomFerie(key, date.getFullYear());
+
+    var row = [dateFmt, jourNom, ferieName];
+    var totalHommes = 0;
+    var totalVehiculesList = [];
+
+    for (var ci = 0; ci < nbClients; ci++) {
+      var cd = clientsData[ci].jourMap[key];
+      if (cd) {
+        row.push(cd.effectif || '');
+        row.push(cd.vehicules.join('\n'));
+        row.push(cd.materiel.join('\n'));
+        row.push(cd.instructions.join('\n'));
+        totalHommes += (cd.effectif || 0);
+        if (cd.vehicules.length > 0) totalVehiculesList.push(cd.vehicules.join(', '));
+      } else {
+        row.push('');
+        row.push('');
+        row.push('');
+        row.push('');
+      }
+    }
+
+    row.push(totalHommes || '');
+    row.push(totalVehiculesList.join('\n'));
+    dataRows.push(row);
+  });
+
+  // Écrire tout d'un coup
+  var allData = [header1, header2].concat(dataRows);
+  if (allData.length > 0 && allData[0].length > 0) {
+    planSheet.getRange(1, 1, allData.length, nbCols).setValues(allData);
+  }
+
+  // ---- FORMATAGE ----
+
+  // Largeurs de colonnes
+  planSheet.setColumnWidth(1, 100); // Date
+  planSheet.setColumnWidth(2, 85);  // Jour
+  planSheet.setColumnWidth(3, 140); // Férié
+  for (var ci = 0; ci < nbClients; ci++) {
+    var baseCol = 4 + ci * 4;
+    planSheet.setColumnWidth(baseCol, 65);     // Effectif
+    planSheet.setColumnWidth(baseCol + 1, 160); // Véhicules
+    planSheet.setColumnWidth(baseCol + 2, 140); // Matériel
+    planSheet.setColumnWidth(baseCol + 3, 180); // Activités
+  }
+  var totalCol1 = 4 + nbClients * 4;
+  planSheet.setColumnWidth(totalCol1, 70);
+  planSheet.setColumnWidth(totalCol1 + 1, 160);
+
+  // Style en-tête ligne 1
+  var h1Range = planSheet.getRange(1, 1, 1, nbCols);
+  h1Range.setFontWeight('bold').setFontSize(10).setHorizontalAlignment('center')
+    .setBackground('#1E293B').setFontColor('white');
+
+  // Fusion en-têtes clients (ligne 1)
+  for (var ci = 0; ci < nbClients; ci++) {
+    var baseCol = 4 + ci * 4;
+    planSheet.getRange(1, baseCol, 1, 4).merge()
+      .setBackground(headerColors[ci % headerColors.length]).setFontColor('white');
+  }
+  // Fusion TOTAL
+  planSheet.getRange(1, totalCol1, 1, 2).merge().setBackground('#1E293B').setFontColor('white');
+
+  // Style en-tête ligne 2
+  var h2Range = planSheet.getRange(2, 1, 1, nbCols);
+  h2Range.setFontWeight('bold').setFontSize(9).setHorizontalAlignment('center')
+    .setBackground('#E2E8F0').setFontColor('#334155');
+
+  // Couleurs de fond par client (lignes de données)
+  if (dataRows.length > 0) {
+    for (var ci = 0; ci < nbClients; ci++) {
+      var baseCol = 4 + ci * 4;
+      var color = clientColors[ci % clientColors.length];
+      planSheet.getRange(3, baseCol, dataRows.length, 4).setBackground(color);
+    }
+
+    // Colonnes TOTAL en gris clair
+    planSheet.getRange(3, totalCol1, dataRows.length, 2).setBackground('#F1F5F9')
+      .setFontWeight('bold');
+
+    // Lignes fériées en rouge clair
+    for (var r = 0; r < dataRows.length; r++) {
+      if (dataRows[r][2]) { // colonne Férié non vide
+        planSheet.getRange(3 + r, 1, 1, nbCols).setBackground('#FECACA')
+          .setFontColor('#991B1B');
+      }
+    }
+
+    // Format général données
+    var dataRange = planSheet.getRange(3, 1, dataRows.length, nbCols);
+    dataRange.setFontSize(9).setVerticalAlignment('top').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+
+    // Colonne Effectif centrée
+    for (var ci = 0; ci < nbClients; ci++) {
+      var baseCol = 4 + ci * 4;
+      planSheet.getRange(3, baseCol, dataRows.length, 1).setHorizontalAlignment('center');
+    }
+    planSheet.getRange(3, totalCol1, dataRows.length, 1).setHorizontalAlignment('center');
+  }
+
+  // Figer les 2 premières lignes et 3 premières colonnes
+  planSheet.setFrozenRows(2);
+  planSheet.setFrozenColumns(3);
+
+  // Bordures
+  planSheet.getRange(1, 1, allData.length, nbCols)
+    .setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
+
+  Logger.log('Planning généré: ' + planSS.getUrl());
+
+  return {
+    status: 'success',
+    url: planSS.getUrl(),
+    nbClients: nbClients,
+    nbJours: dataRows.length
+  };
+}
+
+// ============================================
 // TRAITEMENT PRINCIPAL (POST)
 // ============================================
 function doPost(e) {
-  const lock = LockService.getScriptLock();
-
   try {
+    var data = JSON.parse(e.postData.contents);
+
+    // --- Routage actions utilisateur (pas de lock nécessaire) ---
+    if (data._action === 'user_add') {
+      try {
+        var newUser = addUser(data);
+        if (newUser) {
+          return jsonResponse({ status: 'success', data: newUser });
+        }
+        return jsonResponse({ status: 'error', message: 'Nom et prenom requis ou doublon' });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur creation: ' + err });
+      }
+    }
+
+    if (data._action === 'user_upload_signature') {
+      try {
+        var sigUserId = data.userId || '';
+        var sigData = data.data || '';
+        if (!sigUserId || !sigData) return jsonResponse({ status: 'error', message: 'userId et data requis' });
+        var sigId = updateUserSignature(sigUserId, sigData);
+        if (sigId) {
+          return jsonResponse({ status: 'success', signatureId: sigId });
+        }
+        return jsonResponse({ status: 'error', message: 'Utilisateur introuvable' });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur upload signature: ' + err });
+      }
+    }
+
+    // --- Traitement devis standard (avec lock) ---
+    var lock = LockService.getScriptLock();
     if (!lock.tryLock(CONFIG.LOCK_TIMEOUT_MS)) {
       return jsonResponse({ status: 'error', message: 'Serveur occupé, réessayez dans quelques secondes.' });
     }
-
-    const data = JSON.parse(e.postData.contents);
 
     // Validation
     const errors = validateData(data);
@@ -1346,7 +1854,7 @@ function doPost(e) {
     Logger.log('ERREUR CRITIQUE doPost: ' + error + '\n' + error.stack);
     return jsonResponse({ status: 'error', message: error.toString() });
   } finally {
-    lock.releaseLock();
+    if (lock) lock.releaseLock();
   }
 }
 

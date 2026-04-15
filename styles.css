@@ -212,6 +212,30 @@ select {
 .btn-submit:hover:not(:disabled) { background: var(--pelichet-red-dark); transform: translateY(-1px); }
 .btn-submit:active:not(:disabled) { transform: scale(0.98); }
 
+/* ---- PLANNING CONSOLIDÉ ---- */
+.planning-card {
+  border-left: 4px solid var(--blue);
+}
+.planning-btn {
+  background: linear-gradient(135deg, #3B82F6, #1D4ED8);
+  color: white;
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  transition: all var(--transition);
+}
+.planning-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563EB, #1E40AF);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+.planning-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 /* ---- POSTE CARDS ---- */
 .poste-card {
   background: white;

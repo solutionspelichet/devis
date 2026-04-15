@@ -1664,6 +1664,42 @@ const VentilationExport = {
 };
 
 // ============================================
+// PLANNING CONSOLIDÉ
+// ============================================
+const PlanningExport = {
+
+  async generate() {
+    const userId = UserManager.getUserId();
+    if (!userId) {
+      Toast.error('Veuillez vous connecter d\'abord.');
+      return;
+    }
+
+    const btn = document.getElementById('planningBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Génération en cours...'; }
+
+    Toast.info('Génération du planning consolidé...');
+
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=planning_generate&user=${encodeURIComponent(userId)}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+
+      if (result.status === 'success' && result.url) {
+        Toast.success(`Planning généré ! ${result.nbClients} client(s), ${result.nbJours} jours.`);
+        window.open(result.url, '_blank');
+      } else {
+        Toast.error('Erreur : ' + (result.message || 'Inconnue'));
+      }
+    } catch (err) {
+      Toast.error('Erreur : ' + err.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '📅 Générer Planning Consolidé'; }
+    }
+  }
+};
+
+// ============================================
 // PELICHET / AUTRE TOGGLE
 // ============================================
 function togglePelichet(isPelichet) {
@@ -1713,6 +1749,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Export ventilation
   document.getElementById('exportVentilBtn')?.addEventListener('click', () => VentilationExport.generate());
+
+  // Planning consolidé
+  document.getElementById('planningBtn')?.addEventListener('click', () => PlanningExport.generate());
 
   // Form submit
   document.getElementById('devisForm')?.addEventListener('submit', (e) => {
