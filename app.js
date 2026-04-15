@@ -265,6 +265,9 @@ const UserManager = {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.classList.remove('hidden');
 
+    const profileBtn = document.getElementById('profileBtn');
+    if (profileBtn) profileBtn.classList.remove('hidden');
+
     // Pre-remplir vendeur
     const vendeur = document.getElementById('vendeur');
     const vendeurTel = document.getElementById('vendeurTel');
@@ -597,6 +600,155 @@ const SettingsPanel = {
       Toast.success('Tarifs sauvegardés !');
     } else {
       Toast.error('Erreur de sauvegarde');
+    }
+  }
+};
+
+// ============================================
+// PROFILE PANEL (edition profil utilisateur)
+// ============================================
+const ProfilePanel = {
+  _panel: null,
+  _open: false,
+
+  init() {
+    this._panel = document.getElementById('profilePanel');
+    document.getElementById('profileBtn')?.addEventListener('click', () => this.toggle());
+    document.getElementById('profileClose')?.addEventListener('click', () => this.close());
+    document.getElementById('profileSave')?.addEventListener('click', () => this.save());
+    this._initSignatureUpload();
+  },
+
+  toggle() {
+    this._open ? this.close() : this.open();
+  },
+
+  open() {
+    this._open = true;
+    this._panel.classList.remove('hidden');
+    this.render();
+  },
+
+  close() {
+    this._open = false;
+    this._panel.classList.add('hidden');
+  },
+
+  render() {
+    const u = UserManager.getUser();
+    if (!u) return;
+
+    document.getElementById('profPrenom').value = u.prenom || '';
+    document.getElementById('profNom').value = u.nom || '';
+    document.getElementById('profTelephone').value = u.telephone || '';
+    document.getElementById('profTitre').value = u.titre || '';
+
+    // Afficher la signature actuelle si elle existe
+    const currentDiv = document.getElementById('profSignatureCurrent');
+    const currentImg = document.getElementById('profSignatureImg');
+    if (u.signatureId && currentDiv && currentImg) {
+      currentImg.src = `https://drive.google.com/thumbnail?id=${u.signatureId}&sz=w400`;
+      currentDiv.classList.remove('hidden');
+    } else if (currentDiv) {
+      currentDiv.classList.add('hidden');
+    }
+
+    // Reset le preview
+    const preview = document.getElementById('profSignaturePreview');
+    if (preview) {
+      preview.innerHTML = '<span class="signature-placeholder">Cliquez ou glissez une nouvelle signature</span>';
+      preview.classList.remove('has-image');
+    }
+    const fileInput = document.getElementById('profSignatureFile');
+    if (fileInput) fileInput.value = '';
+  },
+
+  _initSignatureUpload() {
+    const fileInput = document.getElementById('profSignatureFile');
+    const preview = document.getElementById('profSignaturePreview');
+    if (!fileInput || !preview) return;
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      preview.innerHTML = `<img src="${url}" alt="Nouvelle signature">`;
+      preview.classList.add('has-image');
+    });
+
+    // Drag & drop
+    const zone = document.getElementById('profSignatureZone');
+    if (zone) {
+      zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          fileInput.files = dt.files;
+          const url = URL.createObjectURL(file);
+          preview.innerHTML = `<img src="${url}" alt="Nouvelle signature">`;
+          preview.classList.add('has-image');
+        }
+      });
+    }
+  },
+
+  async save() {
+    const u = UserManager.getUser();
+    if (!u) return;
+
+    const titre = document.getElementById('profTitre')?.value?.trim() || '';
+    const signatureFile = document.getElementById('profSignatureFile')?.files?.[0];
+    const saveBtn = document.getElementById('profileSave');
+
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Sauvegarde...'; }
+
+    try {
+      // 1. Mettre a jour le titre (via user_update_profile)
+      const profileData = { userId: u.id, titre: titre };
+      const urlProfile = `${CONFIG.SCRIPT_URL}?action=user_update_profile&data=${encodeURIComponent(JSON.stringify(profileData))}`;
+      const respProfile = await fetch(urlProfile);
+      const resultProfile = await respProfile.json();
+
+      if (resultProfile.status === 'success') {
+        // Mettre a jour le user local
+        u.titre = titre;
+        localStorage.setItem('pelichet_users', JSON.stringify(UserManager._users));
+      }
+
+      // 2. Upload signature si nouvelle image selectionnee
+      if (signatureFile) {
+        Toast.info('Upload de la signature...');
+        const reader = new FileReader();
+        const base64 = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(signatureFile);
+        });
+
+        const urlSig = `${CONFIG.SCRIPT_URL}?action=user_upload_signature&userId=${encodeURIComponent(u.id)}&data=${encodeURIComponent(base64)}`;
+        const respSig = await fetch(urlSig);
+        const resultSig = await respSig.json();
+
+        if (resultSig.status === 'success' && resultSig.signatureId) {
+          u.signatureId = resultSig.signatureId;
+          localStorage.setItem('pelichet_users', JSON.stringify(UserManager._users));
+          Toast.success('Signature enregistree !');
+        } else {
+          Toast.error('Erreur signature : ' + (resultSig.message || 'Inconnue'));
+        }
+      }
+
+      Toast.success('Profil mis a jour !');
+      this.close();
+    } catch (err) {
+      Toast.error('Erreur : ' + err.message);
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Sauvegarder'; }
     }
   }
 };
@@ -1536,6 +1688,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   PriceCalc.init();
   DossierList.init();
   SettingsPanel.init();
+  ProfilePanel.init();
 
   // Logout
   document.getElementById('logoutBtn')?.addEventListener('click', () => {

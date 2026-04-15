@@ -76,11 +76,61 @@
         </div>
     </div>
 
+    <!-- PANNEAU MON PROFIL -->
+    <div id="profilePanel" class="settings-overlay hidden">
+        <div class="settings-modal" style="max-width:28rem">
+            <div class="settings-header">
+                <h3>Mon Profil</h3>
+                <button type="button" id="profileClose" class="settings-close-btn">&times;</button>
+            </div>
+            <div class="settings-body">
+                <form id="profileForm" class="register-form" novalidate>
+                    <div class="register-row">
+                        <div class="register-field">
+                            <label>Prenom</label>
+                            <input type="text" id="profPrenom" class="bg-slate-50" readonly>
+                        </div>
+                        <div class="register-field">
+                            <label>Nom</label>
+                            <input type="text" id="profNom" class="bg-slate-50" readonly>
+                        </div>
+                    </div>
+                    <div class="register-field">
+                        <label>Telephone</label>
+                        <input type="tel" id="profTelephone" class="bg-slate-50" readonly>
+                    </div>
+                    <div class="register-field">
+                        <label>Titre / Fonction</label>
+                        <input type="text" id="profTitre" placeholder="Ex: Responsable canton de Vaud">
+                    </div>
+                    <div class="register-field">
+                        <label>Signature</label>
+                        <div id="profSignatureCurrent" class="signature-current hidden">
+                            <img id="profSignatureImg" src="" alt="Signature actuelle">
+                            <span class="signature-ok-badge">Signature enregistree</span>
+                        </div>
+                        <div class="signature-upload-zone" id="profSignatureZone">
+                            <input type="file" id="profSignatureFile" accept="image/*" class="signature-file-input">
+                            <div id="profSignaturePreview" class="signature-preview">
+                                <span class="signature-placeholder">Cliquez ou glissez une nouvelle signature</span>
+                            </div>
+                        </div>
+                        <p class="signature-hint">Format: PNG ou JPG, fond transparent recommande</p>
+                    </div>
+                </form>
+            </div>
+            <div class="settings-footer">
+                <button type="button" id="profileSave" class="btn btn-primary">Sauvegarder</button>
+            </div>
+        </div>
+    </div>
+
     <!-- NAV -->
     <nav class="nav">
         <h1>Pelichet Logistique</h1>
         <div style="display:flex;align-items:center;gap:0.75rem">
             <span id="navUserName" class="nav-user-name"></span>
+            <button type="button" id="profileBtn" class="nav-profile-btn hidden" title="Mon Profil">&#9998;</button>
             <button type="button" id="logoutBtn" class="nav-logout-btn hidden" title="Deconnexion">&#x2716;</button>
             <button type="button" id="settingsBtn" class="nav-settings-btn" title="Tarifs & Marges">&#9881;</button>
             <span class="version">v2.2</span>

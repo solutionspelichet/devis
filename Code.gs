@@ -478,11 +478,12 @@ function addUser(userData) {
     }
   }
 
-  // S'assurer que la colonne telephone est en format texte
-  sheet.getRange('D:D').setNumberFormat('@');
+  // Ajouter la ligne SANS telephone (eviter #ERROR! sur +41...)
+  sheet.appendRow([id, nom, prenom, '', email, role, titre, signatureId]);
 
-  // Ajouter la ligne (8 colonnes : ID, Nom, Prenom, Tel, Email, Role, Titre, SignatureId)
-  sheet.appendRow([id, nom, prenom, telephone, email, role, titre, signatureId]);
+  // Ecrire le telephone en forcant le format texte sur la cellule
+  var lastRow = sheet.getLastRow();
+  sheet.getRange(lastRow, 4).setNumberFormat('@').setValue(telephone);
 
   // Creer l'onglet de suivi pour ce user
   ensureUserSheet(id);
@@ -566,6 +567,27 @@ function updateUserSignature(userId, signatureBase64) {
 }
 
 /**
+ * Met a jour le titre d'un utilisateur existant
+ */
+function updateUserProfile(userId, titre) {
+  var ss = getSs();
+  if (!ss) return false;
+  var sheet = ss.getSheetByName(CONFIG.USERS_SHEET);
+  if (!sheet) return false;
+
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim().toUpperCase() === userId.toUpperCase()) {
+      // Mettre a jour la colonne G (titre)
+      sheet.getRange(i + 1, 7).setValue(titre);
+      Logger.log('Profil mis a jour: ' + userId + ' titre=' + titre);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Cree l'onglet Users avec les utilisateurs par defaut
  */
 function creerOngletUsers(ss) {
@@ -573,12 +595,13 @@ function creerOngletUsers(ss) {
   sheet.appendRow(['ID', 'Nom', 'Prenom', 'Telephone', 'Email', 'Role', 'Titre', 'SignatureId']);
   sheet.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
 
-  // Forcer la colonne telephone en format texte pour eviter les erreurs +41...
-  sheet.getRange('D:D').setNumberFormat('@');
+  // Utilisateurs par defaut (sans telephone pour eviter #ERROR!)
+  sheet.appendRow(['ARNAUD', 'GUEDOU', 'Arnaud', '', '', 'vendeur', 'Responsable canton de Vaud', '']);
+  sheet.appendRow(['LILOU', 'WOTQUENNE', 'Lilou', '', '', 'coordinateur', 'Coordinatrice', '']);
 
-  // Utilisateurs par defaut
-  sheet.appendRow(['ARNAUD', 'GUEDOU', 'Arnaud', '+41 79 688 27 35', '', 'vendeur', 'Responsable canton de Vaud', '']);
-  sheet.appendRow(['LILOU', 'WOTQUENNE', 'Lilou', '022 827 36 97', '', 'coordinateur', 'Coordinatrice', '']);
+  // Ecrire les telephones en forcant le format texte cellule par cellule
+  sheet.getRange('D2').setNumberFormat('@').setValue('+41 79 688 27 35');
+  sheet.getRange('D3').setNumberFormat('@').setValue('022 827 36 97');
 
   sheet.setColumnWidth(1, 100);
   sheet.setColumnWidth(2, 150);
@@ -940,6 +963,19 @@ function doGet(e) {
         return jsonResponse({ status: 'error', message: 'Nom et prenom requis ou doublon' });
       } catch (err) {
         return jsonResponse({ status: 'error', message: 'Erreur creation: ' + err });
+      }
+    }
+
+    if (action === 'user_update_profile') {
+      try {
+        var profData = JSON.parse(e.parameter.data || '{}');
+        var profUserId = profData.userId || '';
+        var profTitre = profData.titre || '';
+        if (!profUserId) return jsonResponse({ status: 'error', message: 'userId requis' });
+        var updated = updateUserProfile(profUserId, profTitre);
+        return jsonResponse({ status: updated ? 'success' : 'error' });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur profil: ' + err });
       }
     }
 
