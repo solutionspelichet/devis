@@ -216,9 +216,11 @@ const UserManager = {
         signatureBase64 = await this._fileToBase64(signatureFile);
       }
 
-      const userData = { prenom, nom, telephone, email, role, titre, signatureBase64 };
-      const url = `${CONFIG.SCRIPT_URL}?action=user_add&data=${encodeURIComponent(JSON.stringify(userData))}`;
-      const resp = await fetch(url);
+      const userData = { _action: 'user_add', prenom, nom, telephone, email, role, titre, signatureBase64 };
+      const resp = await fetch(CONFIG.SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify(userData)
+      });
       const result = await resp.json();
 
       if (result.status === 'success' && result.data) {
@@ -730,8 +732,10 @@ const ProfilePanel = {
           reader.readAsDataURL(signatureFile);
         });
 
-        const urlSig = `${CONFIG.SCRIPT_URL}?action=user_upload_signature&userId=${encodeURIComponent(u.id)}&data=${encodeURIComponent(base64)}`;
-        const respSig = await fetch(urlSig);
+        const respSig = await fetch(CONFIG.SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ _action: 'user_upload_signature', userId: u.id, data: base64 })
+        });
         const resultSig = await respSig.json();
 
         if (resultSig.status === 'success' && resultSig.signatureId) {
