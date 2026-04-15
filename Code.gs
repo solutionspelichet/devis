@@ -13,6 +13,7 @@ const CONFIG = {
   TEMPLATE_AUTRE_ID: '1QWDp-ACk1dL7bXF2fq5VQRbPW4jxwXtUmq8hA1z4cD0',
   TEMPLATE_RESA_ID: '15QenLctlfoeBb--sC8WRM-Mi5NJjUn8kr01CMsnrwQg',
   FOLDER_ID: '1DKVN4T2gKhPf26qOpT0sGiXrWHzSUBDk',
+  SIGNATURES_FOLDER_NAME: 'Signatures',
   SPREADSHEET_ID: '1AUfeykbUZ07SG-WkqVuxWJY6plH43EZp0tJgrp_gwYM',
   COLOR_PELICHET: '#D32F2F',
   TVA_RATE: 0.081,
@@ -354,7 +355,7 @@ function getUsers() {
 
   var values = sheet.getDataRange().getValues();
   var users = [];
-  // En-tetes : ID | Nom | Prenom | Telephone | Email | Role
+  // En-tetes : ID | Nom | Prenom | Telephone | Email | Role | Titre | SignatureId
   for (var i = 1; i < values.length; i++) {
     var id = String(values[i][0] || '').trim();
     if (!id) continue;
@@ -364,7 +365,9 @@ function getUsers() {
       prenom: String(values[i][2] || '').trim(),
       telephone: String(values[i][3] || '').trim(),
       email: String(values[i][4] || '').trim(),
-      role: String(values[i][5] || 'vendeur').trim()
+      role: String(values[i][5] || 'vendeur').trim(),
+      titre: String(values[i][6] || '').trim(),
+      signatureId: String(values[i][7] || '').trim()
     });
   }
   return users;
@@ -436,6 +439,8 @@ function addUser(userData) {
   var telephone = String(userData.telephone || '').trim();
   var email = String(userData.email || '').trim();
   var role = String(userData.role || 'vendeur').trim();
+  var titre = String(userData.titre || '').trim();
+  var signatureBase64 = String(userData.signatureBase64 || '').trim();
 
   if (!nom || !prenom) return null;
 
@@ -463,13 +468,26 @@ function addUser(userData) {
   }
   id = candidateId;
 
-  // Ajouter la ligne
-  sheet.appendRow([id, nom, prenom, telephone, email, role]);
+  // Upload signature dans Google Drive si fournie
+  var signatureId = '';
+  if (signatureBase64) {
+    try {
+      signatureId = uploadSignature(id, signatureBase64);
+    } catch (err) {
+      Logger.log('Erreur upload signature: ' + err);
+    }
+  }
+
+  // S'assurer que la colonne telephone est en format texte
+  sheet.getRange('D:D').setNumberFormat('@');
+
+  // Ajouter la ligne (8 colonnes : ID, Nom, Prenom, Tel, Email, Role, Titre, SignatureId)
+  sheet.appendRow([id, nom, prenom, telephone, email, role, titre, signatureId]);
 
   // Creer l'onglet de suivi pour ce user
   ensureUserSheet(id);
 
-  Logger.log('Utilisateur cree: ' + id + ' - ' + prenom + ' ' + nom);
+  Logger.log('Utilisateur cree: ' + id + ' - ' + prenom + ' ' + nom + ' (signature: ' + signatureId + ')');
 
   return {
     id: id,
@@ -477,8 +495,74 @@ function addUser(userData) {
     prenom: prenom,
     telephone: telephone,
     email: email,
-    role: role
+    role: role,
+    titre: titre,
+    signatureId: signatureId
   };
+}
+
+/**
+ * Upload une image de signature dans Google Drive
+ * signatureBase64 = "data:image/png;base64,iVBOR..." ou juste le base64
+ * Retourne l'ID du fichier Drive
+ */
+function uploadSignature(userId, signatureBase64) {
+  var folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+
+  // Chercher ou creer le sous-dossier Signatures
+  var sigFolders = folder.getFoldersByName(CONFIG.SIGNATURES_FOLDER_NAME);
+  var sigFolder;
+  if (sigFolders.hasNext()) {
+    sigFolder = sigFolders.next();
+  } else {
+    sigFolder = folder.createFolder(CONFIG.SIGNATURES_FOLDER_NAME);
+  }
+
+  // Extraire le type MIME et les donnees
+  var mimeType = 'image/png';
+  var base64Data = signatureBase64;
+  if (signatureBase64.indexOf(',') !== -1) {
+    var parts = signatureBase64.split(',');
+    var header = parts[0]; // "data:image/png;base64"
+    base64Data = parts[1];
+    var mimeMatch = header.match(/data:([^;]+)/);
+    if (mimeMatch) mimeType = mimeMatch[1];
+  }
+
+  // Decoder et creer le fichier
+  var decoded = Utilities.base64Decode(base64Data);
+  var blob = Utilities.newBlob(decoded, mimeType, 'signature_' + userId + '.png');
+  var file = sigFolder.createFile(blob);
+
+  // Rendre le fichier accessible (pour insertion dans les docs)
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  Logger.log('Signature uploadee: ' + file.getId() + ' pour ' + userId);
+  return file.getId();
+}
+
+/**
+ * Met a jour la signature d'un utilisateur existant
+ */
+function updateUserSignature(userId, signatureBase64) {
+  var ss = getSs();
+  if (!ss) return null;
+  var sheet = ss.getSheetByName(CONFIG.USERS_SHEET);
+  if (!sheet) return null;
+
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim().toUpperCase() === userId.toUpperCase()) {
+      // Upload la nouvelle signature
+      var signatureId = uploadSignature(userId, signatureBase64);
+
+      // Mettre a jour la colonne H (signatureId)
+      sheet.getRange(i + 1, 8).setValue(signatureId);
+
+      return signatureId;
+    }
+  }
+  return null;
 }
 
 /**
@@ -486,12 +570,15 @@ function addUser(userData) {
  */
 function creerOngletUsers(ss) {
   var sheet = ss.insertSheet(CONFIG.USERS_SHEET);
-  sheet.appendRow(['ID', 'Nom', 'Prenom', 'Telephone', 'Email', 'Role']);
-  sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
+  sheet.appendRow(['ID', 'Nom', 'Prenom', 'Telephone', 'Email', 'Role', 'Titre', 'SignatureId']);
+  sheet.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
+
+  // Forcer la colonne telephone en format texte pour eviter les erreurs +41...
+  sheet.getRange('D:D').setNumberFormat('@');
 
   // Utilisateurs par defaut
-  sheet.appendRow(['ARNAUD', 'GUEDOU', 'Arnaud', '+41 79 688 27 35', '', 'vendeur']);
-  sheet.appendRow(['LILOU', 'WOTQUENNE', 'Lilou', '022 827 36 97', '', 'coordinateur']);
+  sheet.appendRow(['ARNAUD', 'GUEDOU', 'Arnaud', '+41 79 688 27 35', '', 'vendeur', 'Responsable canton de Vaud', '']);
+  sheet.appendRow(['LILOU', 'WOTQUENNE', 'Lilou', '022 827 36 97', '', 'coordinateur', 'Coordinatrice', '']);
 
   sheet.setColumnWidth(1, 100);
   sheet.setColumnWidth(2, 150);
@@ -499,6 +586,8 @@ function creerOngletUsers(ss) {
   sheet.setColumnWidth(4, 160);
   sheet.setColumnWidth(5, 200);
   sheet.setColumnWidth(6, 120);
+  sheet.setColumnWidth(7, 220);
+  sheet.setColumnWidth(8, 200);
 
   // Figer la premiere ligne
   sheet.setFrozenRows(1);
@@ -854,6 +943,21 @@ function doGet(e) {
       }
     }
 
+    if (action === 'user_upload_signature') {
+      try {
+        var sigUserId = e.parameter.userId || '';
+        var sigData = e.parameter.data || '';
+        if (!sigUserId || !sigData) return jsonResponse({ status: 'error', message: 'userId et data requis' });
+        var sigId = updateUserSignature(sigUserId, sigData);
+        if (sigId) {
+          return jsonResponse({ status: 'success', signatureId: sigId });
+        }
+        return jsonResponse({ status: 'error', message: 'Utilisateur introuvable' });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur upload signature: ' + err });
+      }
+    }
+
     if (action === 'rechercher') {
       const ref = e.parameter.ref || '';
       const userId = e.parameter.user || '';
@@ -1129,12 +1233,18 @@ function doPost(e) {
     const rplp = montantHT * CONFIG.RPLP_RATE;
     const totalTTC = montantHT + tva + rplp;
 
+    // Recuperer les infos utilisateur (titre + signature)
+    var userId = safe(data.userId);
+    var userInfo = userId ? getUserById(userId) : null;
+    var vendeurTitre = safe(data.vendeurTitre, userInfo ? userInfo.titre : '');
+
     const replacements = {
       '{{nom_societe}}': estPelichet ? 'PELICHET NLC SA' : safe(data.nomPrestataire, 'Société'),
       '{{ref}}': ref,
       '{{date}}': dateJour(),
       '{{salutation}}': safe(data.genre, 'Monsieur'),
       '{{vendeur}}': safe(data.vendeur, 'ARNAUD GUEDOU'),
+      '{{vendeur_titre}}': vendeurTitre,
       '{{vendeur_tel}}': safe(data.vendeurTel, '+41 79 688 27 35'),
       '{{client}}': client,
       '{{adresse_client}}': safe(data.adresseClient),
@@ -1151,6 +1261,20 @@ function doPost(e) {
     for (const key in replacements) {
       bodyDevis.replaceText(key.replace(/[{}]/g, '\\$&'), replacements[key]);
     }
+
+    // Inserer l'image de signature si disponible
+    var signatureId = userInfo ? userInfo.signatureId : '';
+    if (signatureId) {
+      try {
+        insererSignature(bodyDevis, signatureId);
+      } catch (sigErr) {
+        Logger.log('Erreur insertion signature: ' + sigErr);
+      }
+    } else {
+      // Supprimer le placeholder {{signature}} s'il existe mais pas de signature
+      bodyDevis.replaceText('\\{\\{signature\\}\\}', '');
+    }
+
     docDevis.saveAndClose();
 
     // 2. FICHE RESA
@@ -1472,6 +1596,49 @@ function genererFicheResa(data, folder, ref, client) {
   }
 
   docResa.saveAndClose();
+}
+
+// ============================================
+// INSERTION SIGNATURE DANS UN DOCUMENT
+// ============================================
+
+/**
+ * Insere l'image de signature a la place du placeholder {{signature}}
+ * La signature est redimensionnee a ~150px de large
+ */
+function insererSignature(body, signatureFileId) {
+  if (!signatureFileId) return;
+
+  var sigRange = body.findText('\\{\\{signature\\}\\}');
+  if (!sigRange) {
+    Logger.log('Placeholder {{signature}} non trouve dans le document');
+    return;
+  }
+
+  var element = sigRange.getElement();
+  var paragraph = element.getParent().asParagraph();
+
+  // Recuperer l'image depuis Drive
+  var sigFile = DriveApp.getFileById(signatureFileId);
+  var sigBlob = sigFile.getBlob();
+
+  // Supprimer le texte placeholder
+  paragraph.clear();
+
+  // Inserer l'image
+  var img = paragraph.appendInlineImage(sigBlob);
+
+  // Redimensionner (largeur max 200px, hauteur proportionnelle)
+  var origW = img.getWidth();
+  var origH = img.getHeight();
+  var maxW = 200;
+  if (origW > maxW) {
+    var ratio = maxW / origW;
+    img.setWidth(maxW);
+    img.setHeight(Math.round(origH * ratio));
+  }
+
+  Logger.log('Signature inseree (ID: ' + signatureFileId + ')');
 }
 
 // ============================================

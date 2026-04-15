@@ -52,6 +52,20 @@
                             <option value="admin">Administrateur</option>
                         </select>
                     </div>
+                    <div class="register-field">
+                        <label>Titre / Fonction *</label>
+                        <input type="text" id="regTitre" required placeholder="Ex: Responsable canton de Vaud">
+                    </div>
+                    <div class="register-field">
+                        <label>Signature (image)</label>
+                        <div class="signature-upload-zone" id="signatureZone">
+                            <input type="file" id="regSignature" accept="image/*" class="signature-file-input">
+                            <div id="signaturePreview" class="signature-preview">
+                                <span class="signature-placeholder">Cliquez ou glissez votre signature ici</span>
+                            </div>
+                        </div>
+                        <p class="signature-hint">Format: PNG ou JPG, fond transparent recommande</p>
+                    </div>
                     <div class="register-actions">
                         <button type="button" id="backToLoginBtn" class="btn" style="background:var(--slate-200);color:var(--slate-700);flex:1">Retour</button>
                         <button type="submit" id="registerSubmitBtn" class="btn btn-primary" style="flex:2">Creer mon compte</button>

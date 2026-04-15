@@ -959,6 +959,55 @@ select {
   font-weight: 600;
   text-align: center;
 }
+/* Signature upload */
+.signature-upload-zone {
+  position: relative;
+}
+.signature-file-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+.signature-preview {
+  border: 2px dashed var(--slate-300);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  text-align: center;
+  background: var(--slate-50);
+  transition: all var(--transition);
+  min-height: 5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.signature-preview.has-image {
+  border-color: var(--green);
+  background: white;
+  padding: 0.5rem;
+}
+.signature-preview img {
+  max-width: 100%;
+  max-height: 6rem;
+  object-fit: contain;
+}
+.signature-placeholder {
+  font-size: 0.75rem;
+  color: var(--slate-400);
+  font-weight: 600;
+}
+.signature-upload-zone.dragover .signature-preview {
+  border-color: var(--pelichet-red);
+  background: #fff5f5;
+}
+.signature-hint {
+  font-size: 0.65rem;
+  color: var(--slate-400);
+  margin-top: 0.25rem;
+  font-style: italic;
+}
+
 @media (max-width: 480px) {
   .register-row { grid-template-columns: 1fr; }
 }

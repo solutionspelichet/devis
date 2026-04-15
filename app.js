@@ -79,6 +79,7 @@ const UserManager = {
       document.getElementById('showRegisterBtn')?.addEventListener('click', () => {
         if (loginView) loginView.classList.add('hidden');
         if (registerView) registerView.classList.remove('hidden');
+        this._initSignatureUpload();
       });
 
       // Bouton "Retour" -> revenir au login
@@ -106,7 +107,7 @@ const UserManager = {
         <div class="login-avatar">${(u.prenom || u.nom || '?')[0].toUpperCase()}</div>
         <div class="login-info">
           <div class="login-name">${u.prenom} ${u.nom}</div>
-          <div class="login-role">${u.role || 'vendeur'}</div>
+          <div class="login-role">${u.titre || u.role || 'vendeur'}</div>
         </div>
       </button>
     `).join('');
@@ -132,6 +133,52 @@ const UserManager = {
     });
   },
 
+  /** Convertit un fichier image en base64 */
+  _fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  },
+
+  /** Initialise la zone de preview de signature */
+  _initSignatureUpload() {
+    const fileInput = document.getElementById('regSignature');
+    const preview = document.getElementById('signaturePreview');
+    if (!fileInput || !preview) return;
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      preview.innerHTML = `<img src="${url}" alt="Signature">`;
+      preview.classList.add('has-image');
+    });
+
+    // Drag & drop
+    const zone = document.getElementById('signatureZone');
+    if (zone) {
+      zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+          // Mettre le fichier dans l'input
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          fileInput.files = dt.files;
+          const url = URL.createObjectURL(file);
+          preview.innerHTML = `<img src="${url}" alt="Signature">`;
+          preview.classList.add('has-image');
+        }
+      });
+    }
+  },
+
   /** Gere la soumission du formulaire d'inscription */
   async _handleRegister(resolve) {
     const prenom = document.getElementById('regPrenom')?.value?.trim();
@@ -139,6 +186,8 @@ const UserManager = {
     const telephone = document.getElementById('regTelephone')?.value?.trim();
     const email = document.getElementById('regEmail')?.value?.trim();
     const role = document.getElementById('regRole')?.value || 'vendeur';
+    const titre = document.getElementById('regTitre')?.value?.trim();
+    const signatureFile = document.getElementById('regSignature')?.files?.[0];
     const errorDiv = document.getElementById('registerError');
     const submitBtn = document.getElementById('registerSubmitBtn');
 
@@ -151,13 +200,23 @@ const UserManager = {
       if (errorDiv) { errorDiv.textContent = 'Le numero de telephone est obligatoire.'; errorDiv.classList.remove('hidden'); }
       return;
     }
+    if (!titre) {
+      if (errorDiv) { errorDiv.textContent = 'Le titre / fonction est obligatoire.'; errorDiv.classList.remove('hidden'); }
+      return;
+    }
 
     // Desactiver le bouton
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creation en cours...'; }
     if (errorDiv) errorDiv.classList.add('hidden');
 
     try {
-      const userData = { prenom, nom, telephone, email, role };
+      // Convertir la signature en base64 si presente
+      let signatureBase64 = '';
+      if (signatureFile) {
+        signatureBase64 = await this._fileToBase64(signatureFile);
+      }
+
+      const userData = { prenom, nom, telephone, email, role, titre, signatureBase64 };
       const url = `${CONFIG.SCRIPT_URL}?action=user_add&data=${encodeURIComponent(JSON.stringify(userData))}`;
       const resp = await fetch(url);
       const result = await resp.json();
@@ -196,6 +255,9 @@ const UserManager = {
     const u = this._currentUser;
     const fullName = (u.prenom + ' ' + u.nom).toUpperCase();
 
+    // Nettoyer le telephone (ignorer #ERROR!, #REF!, etc.)
+    const tel = (u.telephone && !u.telephone.startsWith('#')) ? u.telephone : '';
+
     // Mettre a jour le nav
     const navUser = document.getElementById('navUserName');
     if (navUser) navUser.textContent = u.prenom;
@@ -207,11 +269,11 @@ const UserManager = {
     const vendeur = document.getElementById('vendeur');
     const vendeurTel = document.getElementById('vendeurTel');
     if (vendeur) vendeur.value = fullName;
-    if (vendeurTel) vendeurTel.value = u.telephone || '';
+    if (vendeurTel) vendeurTel.value = tel;
 
     // Pre-remplir WhatsApp
     const waMob = document.getElementById('mobileSociete');
-    if (waMob) waMob.value = u.telephone || '';
+    if (waMob && tel) waMob.value = tel;
   },
 
   /** Deconnexion */
