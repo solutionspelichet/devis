@@ -18,6 +18,237 @@ const CONFIG = {
 };
 
 // ============================================
+// USER MANAGER (login multi-utilisateur)
+// ============================================
+const UserManager = {
+  _currentUser: null,
+  _users: [],
+
+  /** Charge les utilisateurs depuis le serveur */
+  async fetchUsers() {
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=users_get`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+      if (result.status === 'success' && Array.isArray(result.data)) {
+        this._users = result.data;
+        localStorage.setItem('pelichet_users', JSON.stringify(this._users));
+      }
+    } catch (e) {
+      console.log('UserManager fetch failed, using localStorage');
+      try {
+        const raw = localStorage.getItem('pelichet_users');
+        if (raw) this._users = JSON.parse(raw);
+      } catch (err) { /* silencieux */ }
+    }
+  },
+
+  /** Affiche l'ecran de login */
+  showLogin() {
+    return new Promise((resolve) => {
+      const overlay = document.getElementById('loginOverlay');
+      const grid = document.getElementById('loginUsersGrid');
+      const loginView = document.getElementById('loginView');
+      const registerView = document.getElementById('registerView');
+      if (!overlay || !grid) { resolve(null); return; }
+
+      // Stocker le resolve pour l'utiliser depuis register
+      this._loginResolve = resolve;
+
+      // Verifier si un user est deja sauvegarde
+      const savedId = localStorage.getItem('pelichet_current_user');
+      if (savedId) {
+        const saved = this._users.find(u => u.id === savedId);
+        if (saved) {
+          this._currentUser = saved;
+          this._applyUser();
+          overlay.classList.add('hidden');
+          resolve(saved);
+          return;
+        }
+      }
+
+      // Toujours afficher la vue login par defaut
+      if (loginView) loginView.classList.remove('hidden');
+      if (registerView) registerView.classList.add('hidden');
+
+      this._renderUserCards(resolve);
+      overlay.classList.remove('hidden');
+
+      // Bouton "Creer un compte" -> basculer vers le formulaire
+      document.getElementById('showRegisterBtn')?.addEventListener('click', () => {
+        if (loginView) loginView.classList.add('hidden');
+        if (registerView) registerView.classList.remove('hidden');
+      });
+
+      // Bouton "Retour" -> revenir au login
+      document.getElementById('backToLoginBtn')?.addEventListener('click', () => {
+        if (registerView) registerView.classList.add('hidden');
+        if (loginView) loginView.classList.remove('hidden');
+        document.getElementById('registerError')?.classList.add('hidden');
+      });
+
+      // Formulaire d'inscription
+      document.getElementById('registerForm')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this._handleRegister(resolve);
+      });
+    });
+  },
+
+  /** Genere les cartes utilisateurs dans la grille */
+  _renderUserCards(resolve) {
+    const grid = document.getElementById('loginUsersGrid');
+    if (!grid) return;
+
+    grid.innerHTML = this._users.map(u => `
+      <button type="button" class="login-user-card" data-uid="${u.id}">
+        <div class="login-avatar">${(u.prenom || u.nom || '?')[0].toUpperCase()}</div>
+        <div class="login-info">
+          <div class="login-name">${u.prenom} ${u.nom}</div>
+          <div class="login-role">${u.role || 'vendeur'}</div>
+        </div>
+      </button>
+    `).join('');
+
+    if (this._users.length === 0) {
+      grid.innerHTML = '<div style="text-align:center;color:var(--slate-400);padding:1.5rem;font-size:0.85rem">Aucun compte.<br>Creez votre premier compte ci-dessous.</div>';
+    }
+
+    // Ecouter les clics
+    grid.querySelectorAll('.login-user-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const uid = card.dataset.uid;
+        const user = this._users.find(u => u.id === uid);
+        if (user) {
+          this._currentUser = user;
+          localStorage.setItem('pelichet_current_user', uid);
+          this._applyUser();
+          document.getElementById('loginOverlay')?.classList.add('hidden');
+          Toast.success('Connecte : ' + user.prenom + ' ' + user.nom);
+          resolve(user);
+        }
+      });
+    });
+  },
+
+  /** Gere la soumission du formulaire d'inscription */
+  async _handleRegister(resolve) {
+    const prenom = document.getElementById('regPrenom')?.value?.trim();
+    const nom = document.getElementById('regNom')?.value?.trim();
+    const telephone = document.getElementById('regTelephone')?.value?.trim();
+    const email = document.getElementById('regEmail')?.value?.trim();
+    const role = document.getElementById('regRole')?.value || 'vendeur';
+    const errorDiv = document.getElementById('registerError');
+    const submitBtn = document.getElementById('registerSubmitBtn');
+
+    // Validation
+    if (!prenom || !nom) {
+      if (errorDiv) { errorDiv.textContent = 'Prenom et nom sont obligatoires.'; errorDiv.classList.remove('hidden'); }
+      return;
+    }
+    if (!telephone) {
+      if (errorDiv) { errorDiv.textContent = 'Le numero de telephone est obligatoire.'; errorDiv.classList.remove('hidden'); }
+      return;
+    }
+
+    // Desactiver le bouton
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creation en cours...'; }
+    if (errorDiv) errorDiv.classList.add('hidden');
+
+    try {
+      const userData = { prenom, nom, telephone, email, role };
+      const url = `${CONFIG.SCRIPT_URL}?action=user_add&data=${encodeURIComponent(JSON.stringify(userData))}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+
+      if (result.status === 'success' && result.data) {
+        const newUser = result.data;
+        // Ajouter a la liste locale
+        this._users.push(newUser);
+        localStorage.setItem('pelichet_users', JSON.stringify(this._users));
+
+        // Connecter directement le nouvel utilisateur
+        this._currentUser = newUser;
+        localStorage.setItem('pelichet_current_user', newUser.id);
+        this._applyUser();
+
+        document.getElementById('loginOverlay')?.classList.add('hidden');
+        Toast.success('Compte cree ! Bienvenue ' + newUser.prenom);
+
+        // Reset formulaire
+        document.getElementById('registerForm')?.reset();
+
+        resolve(newUser);
+      } else {
+        if (errorDiv) { errorDiv.textContent = result.message || 'Erreur lors de la creation.'; errorDiv.classList.remove('hidden'); }
+      }
+    } catch (err) {
+      if (errorDiv) { errorDiv.textContent = 'Erreur de connexion : ' + err.message; errorDiv.classList.remove('hidden'); }
+    } finally {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Creer mon compte'; }
+    }
+  },
+
+  /** Applique les infos utilisateur au formulaire */
+  _applyUser() {
+    if (!this._currentUser) return;
+    const u = this._currentUser;
+    const fullName = (u.prenom + ' ' + u.nom).toUpperCase();
+
+    // Mettre a jour le nav
+    const navUser = document.getElementById('navUserName');
+    if (navUser) navUser.textContent = u.prenom;
+
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.classList.remove('hidden');
+
+    // Pre-remplir vendeur
+    const vendeur = document.getElementById('vendeur');
+    const vendeurTel = document.getElementById('vendeurTel');
+    if (vendeur) vendeur.value = fullName;
+    if (vendeurTel) vendeurTel.value = u.telephone || '';
+
+    // Pre-remplir WhatsApp
+    const waMob = document.getElementById('mobileSociete');
+    if (waMob) waMob.value = u.telephone || '';
+  },
+
+  /** Deconnexion */
+  logout() {
+    this._currentUser = null;
+    localStorage.removeItem('pelichet_current_user');
+    const navUser = document.getElementById('navUserName');
+    if (navUser) navUser.textContent = '';
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.classList.add('hidden');
+
+    // Reafficher le login
+    const overlay = document.getElementById('loginOverlay');
+    const loginView = document.getElementById('loginView');
+    const registerView = document.getElementById('registerView');
+    if (loginView) loginView.classList.remove('hidden');
+    if (registerView) registerView.classList.add('hidden');
+    if (overlay) overlay.classList.remove('hidden');
+
+    // Re-render les cartes (avec un nouveau resolve)
+    this._renderUserCards((user) => {
+      // Callback quand un user est selectionne apres logout
+    });
+  },
+
+  /** Retourne l'ID de l'utilisateur connecte */
+  getUserId() {
+    return this._currentUser ? this._currentUser.id : '';
+  },
+
+  /** Retourne l'utilisateur connecte */
+  getUser() {
+    return this._currentUser;
+  }
+};
+
+// ============================================
 // CUSTOM ITEMS (persistance localStorage)
 // ============================================
 const CustomItems = {
@@ -947,7 +1178,7 @@ const DossierList = {
   async fetch() {
     this._body.innerHTML = '<div class="dossier-loading">Chargement des dossiers...</div>';
     try {
-      const url = `${CONFIG.SCRIPT_URL}?action=lister`;
+      const url = `${CONFIG.SCRIPT_URL}?action=lister&user=${encodeURIComponent(UserManager.getUserId())}`;
       const resp = await fetch(url);
       const result = await resp.json();
       if (result.status === 'success' && Array.isArray(result.data)) {
@@ -1021,7 +1252,7 @@ const DossierLoader = {
     btn.textContent = '...';
 
     try {
-      const url = `${CONFIG.SCRIPT_URL}?action=rechercher&ref=${encodeURIComponent(ref.trim())}`;
+      const url = `${CONFIG.SCRIPT_URL}?action=rechercher&ref=${encodeURIComponent(ref.trim())}&user=${encodeURIComponent(UserManager.getUserId())}`;
       const resp = await fetch(url);
       const result = await resp.json();
 
@@ -1071,6 +1302,7 @@ const FormSubmitter = {
     const fd = new FormData(form);
     const data = Object.fromEntries(fd.entries());
     data.postes = PosteManager.collectAll();
+    data.userId = UserManager.getUserId();
 
     Modal.show(data, () => this._doSubmit(data));
   },
@@ -1140,6 +1372,80 @@ const SyncManager = {
 };
 
 // ============================================
+// VENTILATION EXPORT (génération Excel)
+// ============================================
+const VentilationExport = {
+
+  async generate() {
+    // Collecter les données du formulaire
+    const form = document.getElementById('devisForm');
+    const fd = new FormData(form);
+    const data = Object.fromEntries(fd.entries());
+    data.postes = PosteManager.collectAll();
+    data.userId = UserManager.getUserId();
+
+    const postsDetail = data.postes.filter(p => p.mode === 'detail');
+    if (postsDetail.length === 0) {
+      Toast.warning('Aucun poste logistique détaillé à ventiler.');
+      return;
+    }
+
+    Toast.info('Génération de la ventilation...');
+
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=ventilation&data=${encodeURIComponent(JSON.stringify(data))}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+
+      if (result.status !== 'success' || !result.data) {
+        Toast.error('Erreur ventilation : ' + (result.message || 'Inconnue'));
+        return;
+      }
+
+      this._downloadExcel(result.data, data.ref || 'DEVIS');
+      Toast.success('Fichier Excel ventilation téléchargé !');
+    } catch (err) {
+      Toast.error('Erreur : ' + err.message);
+    }
+  },
+
+  _downloadExcel(lignes, ref) {
+    // Construire le CSV (compatible Excel avec séparateur ; pour la locale FR)
+    const BOM = '\uFEFF';
+    const headers = ['N°', 'Ventil', 'Poste', 'Libellé', 'Sst.', 'Montant', 'Dev', 'Mnt Réel', 'Dev', 'Mnt Reçu', 'Dev', 'TVA'];
+    let csv = BOM + headers.join(';') + '\n';
+
+    lignes.forEach(l => {
+      const montantFmt = (l.montant || 0).toFixed(2).replace('.', ',');
+      const row = [
+        l.n || '',
+        l.ventil || '',
+        l.poste || '',
+        '"' + (l.libelle || '').replace(/"/g, '""') + '"',
+        '', // Sst
+        montantFmt,
+        l.dev || 'CHF',
+        '', // Mnt Réel
+        'CHF',
+        '', // Mnt Reçu
+        'CHF',
+        '0'
+      ];
+      csv += row.join(';') + '\n';
+    });
+
+    // Télécharger
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Ventilation_${ref}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+};
+
+// ============================================
 // PELICHET / AUTRE TOGGLE
 // ============================================
 function togglePelichet(isPelichet) {
@@ -1152,17 +1458,28 @@ function togglePelichet(isPelichet) {
 // INIT
 // ============================================
 document.addEventListener('DOMContentLoaded', async () => {
-  // Charger les données depuis le serveur
+  // 1. Charger les utilisateurs + donnees en parallele
   await Promise.all([
+    UserManager.fetchUsers(),
     CustomItems.fetchFromServer(),
     TarifManager.fetchFromServer()
   ]);
 
+  // 2. Afficher l'ecran de login (ou auto-login si deja sauvegarde)
+  await UserManager.showLogin();
+
+  // 3. Init des modules
   SyncManager.init();
   PosteManager.init();
   PriceCalc.init();
   DossierList.init();
   SettingsPanel.init();
+
+  // Logout
+  document.getElementById('logoutBtn')?.addEventListener('click', () => {
+    DossierList._loaded = false;
+    UserManager.logout();
+  });
 
   // Search bar
   document.getElementById('loadBtn')?.addEventListener('click', () => {
@@ -1174,6 +1491,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Auto total button
   document.getElementById('autoTotalBtn')?.addEventListener('click', () => PriceCalc.applyAutoTotal());
+
+  // Export ventilation
+  document.getElementById('exportVentilBtn')?.addEventListener('click', () => VentilationExport.generate());
 
   // Form submit
   document.getElementById('devisForm')?.addEventListener('submit', (e) => {

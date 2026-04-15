@@ -8,12 +8,68 @@
 </head>
 <body>
 
+    <!-- LOGIN OVERLAY -->
+    <div id="loginOverlay" class="login-overlay hidden">
+        <div class="login-modal">
+            <div class="login-logo">PELICHET NLC SA</div>
+
+            <!-- VUE 1 : Selection utilisateur -->
+            <div id="loginView" class="login-view">
+                <h2 class="login-title">Connexion</h2>
+                <p class="login-subtitle">Selectionnez votre profil</p>
+                <div id="loginUsersGrid" class="login-users-grid"></div>
+                <button type="button" id="showRegisterBtn" class="login-create-btn">+ Creer un compte</button>
+            </div>
+
+            <!-- VUE 2 : Formulaire de creation -->
+            <div id="registerView" class="login-view hidden">
+                <h2 class="login-title">Nouveau compte</h2>
+                <p class="login-subtitle">Renseignez vos informations</p>
+                <form id="registerForm" class="register-form" novalidate>
+                    <div class="register-row">
+                        <div class="register-field">
+                            <label>Prenom *</label>
+                            <input type="text" id="regPrenom" required placeholder="Ex: Arnaud">
+                        </div>
+                        <div class="register-field">
+                            <label>Nom *</label>
+                            <input type="text" id="regNom" required placeholder="Ex: Guedou">
+                        </div>
+                    </div>
+                    <div class="register-field">
+                        <label>Telephone *</label>
+                        <input type="tel" id="regTelephone" required placeholder="+41 79 000 00 00">
+                    </div>
+                    <div class="register-field">
+                        <label>Email</label>
+                        <input type="email" id="regEmail" placeholder="prenom.nom@pelichet.ch">
+                    </div>
+                    <div class="register-field">
+                        <label>Role</label>
+                        <select id="regRole">
+                            <option value="vendeur">Vendeur / Conseiller</option>
+                            <option value="coordinateur">Coordinateur</option>
+                            <option value="admin">Administrateur</option>
+                        </select>
+                    </div>
+                    <div class="register-actions">
+                        <button type="button" id="backToLoginBtn" class="btn" style="background:var(--slate-200);color:var(--slate-700);flex:1">Retour</button>
+                        <button type="submit" id="registerSubmitBtn" class="btn btn-primary" style="flex:2">Creer mon compte</button>
+                    </div>
+                    <div id="registerError" class="register-error hidden"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- NAV -->
     <nav class="nav">
         <h1>Pelichet Logistique</h1>
         <div style="display:flex;align-items:center;gap:0.75rem">
+            <span id="navUserName" class="nav-user-name"></span>
+            <button type="button" id="logoutBtn" class="nav-logout-btn hidden" title="Deconnexion">&#x2716;</button>
             <button type="button" id="settingsBtn" class="nav-settings-btn" title="Tarifs & Marges">&#9881;</button>
-            <span class="version">v2.1</span>
+            <span class="version">v2.2</span>
         </div>
     </nav>
 
@@ -172,6 +228,13 @@
                     <button type="button" id="autoTotalBtn">Calculer depuis les postes</button>
                 </div>
                 <div id="totalBreakdown" class="total-breakdown"></div>
+            </div>
+
+            <!-- EXPORT VENTILATION -->
+            <div class="card">
+                <h3 class="card-title">6. Export Ventilation Comptable</h3>
+                <p style="font-size:0.75rem;color:var(--slate-500);margin-bottom:0.75rem">Génère un fichier CSV avec les lignes ventilées par jour (personnel, véhicules, engins, matériel) pour import dans l'outil interne.</p>
+                <button type="button" id="exportVentilBtn" class="btn" style="background:var(--slate-700);color:white;width:100%;padding:0.75rem">Exporter Ventilation (.csv)</button>
             </div>
 
             <!-- SUBMIT -->
