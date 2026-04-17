@@ -445,7 +445,7 @@ select {
 /* ---- CHECKBOX GRID (personnel, véhicules, matériel) ---- */
 .cb-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 4px;
 }
 .cb-item {
@@ -483,6 +483,19 @@ select {
   flex-shrink: 0;
 }
 .cb-qty.hidden { display: none; }
+.cb-duree {
+  padding: 2px 4px;
+  font-size: 9px;
+  font-weight: 600;
+  border: 1px solid var(--blue);
+  border-radius: var(--radius-sm);
+  background: white;
+  color: var(--slate-700);
+  flex-shrink: 0;
+  cursor: pointer;
+  max-width: 5.5rem;
+}
+.cb-duree.hidden { display: none; }
 .add-cb-custom {
   font-size: 9px;
   font-weight: 700;

@@ -894,7 +894,7 @@ const PosteManager = {
 
   init() {
     this._container = document.getElementById('prestationsContainer');
-    this.addPoste('simple');
+    this.addPoste('detail');
   },
 
   _createOptionsHTML(type) {
@@ -942,6 +942,16 @@ const PosteManager = {
           <input type="number" name="qty" placeholder="Qté" value="1" style="width:2.5rem;text-align:center">
           <span style="font-size:8px;font-weight:700;color:var(--slate-400);margin-left:2px">x</span>
         </div>
+        <select name="enginDuree" class="cb-duree" style="margin-left:0.5rem">
+          <option value="">Durée mission</option>
+          <option value="1/2 AM">½ AM</option>
+          <option value="1/2 PM">½ PM</option>
+          <option value="1j">1 jour</option>
+          <option value="2j">2 jours</option>
+          <option value="3j">3 jours</option>
+          <option value="4j">4 jours</option>
+          <option value="5j">5 jours</option>
+        </select>
       ` : `<input type="number" name="qty" value="1" style="width:3rem;text-align:center">`}
       <button type="button" class="row-remove" title="Supprimer">&times;</button>
     `;
@@ -995,32 +1005,55 @@ const PosteManager = {
     const defaults = CONFIG.LISTS[type] || [];
     const customs = (CustomItems.load()[type] || []).filter(c => !defaults.includes(c));
     const allItems = [...defaults, ...customs];
-    allItems.forEach(item => this._addCheckboxItem(grid, item));
+    allItems.forEach(item => this._addCheckboxItem(grid, item, false, 1, type));
   },
 
   /** Ajoute une checkbox item dans la grille */
-  _addCheckboxItem(grid, itemName, checked = false, qty = 1) {
+  _addCheckboxItem(grid, itemName, checked = false, qty = 1, type = '', duree = '') {
+    const hasDuree = (type === 'personnel' || type === 'vehicules');
     const label = document.createElement('label');
     label.className = 'cb-item' + (checked ? ' active' : '');
+    let dureeHTML = '';
+    if (hasDuree) {
+      dureeHTML = `<select class="cb-duree ${checked ? '' : 'hidden'}">
+        <option value="">Durée mission</option>
+        <option value="1/2 AM" ${duree === '1/2 AM' ? 'selected' : ''}>½ AM</option>
+        <option value="1/2 PM" ${duree === '1/2 PM' ? 'selected' : ''}>½ PM</option>
+        <option value="1j" ${duree === '1j' ? 'selected' : ''}>1 jour</option>
+        <option value="2j" ${duree === '2j' ? 'selected' : ''}>2 jours</option>
+        <option value="3j" ${duree === '3j' ? 'selected' : ''}>3 jours</option>
+        <option value="4j" ${duree === '4j' ? 'selected' : ''}>4 jours</option>
+        <option value="5j" ${duree === '5j' ? 'selected' : ''}>5 jours</option>
+      </select>`;
+    }
     label.innerHTML = `
       <input type="checkbox" value="${itemName}" ${checked ? 'checked' : ''}>
       <span class="cb-name">${itemName}</span>
       <input type="number" name="cbQty" value="${qty}" min="1" class="cb-qty ${checked ? '' : 'hidden'}">
+      ${dureeHTML}
     `;
     const cb = label.querySelector('input[type="checkbox"]');
     const qtyInput = label.querySelector('.cb-qty');
+    const dureeSelect = label.querySelector('.cb-duree');
     cb.addEventListener('change', () => {
       if (cb.checked) {
         label.classList.add('active');
         qtyInput.classList.remove('hidden');
+        if (dureeSelect) dureeSelect.classList.remove('hidden');
         qtyInput.focus();
         qtyInput.select();
       } else {
         label.classList.remove('active');
         qtyInput.classList.add('hidden');
         qtyInput.value = '1';
+        if (dureeSelect) { dureeSelect.classList.add('hidden'); dureeSelect.value = ''; }
       }
     });
+    // Prevent label click from toggling checkbox when interacting with select
+    if (dureeSelect) {
+      dureeSelect.addEventListener('click', (e) => e.stopPropagation());
+      dureeSelect.addEventListener('mousedown', (e) => e.stopPropagation());
+    }
     grid.appendChild(label);
     return label;
   },
@@ -1033,7 +1066,7 @@ const PosteManager = {
     const val = name.trim();
     CustomItems.add(type, val);
     const grid = card.querySelector(`.cb-grid[data-type="${type}"]`);
-    this._addCheckboxItem(grid, val, true, 1);
+    this._addCheckboxItem(grid, val, true, 1, type);
   },
 
   _createRDVRow() {
@@ -1048,10 +1081,10 @@ const PosteManager = {
     return div;
   },
 
-  addPoste(mode = 'simple') {
+  addPoste(mode = 'detail') {
     const div = document.createElement('div');
-    div.className = `poste-card poste-${mode}`;
-    div.dataset.mode = mode;
+    div.className = 'poste-card poste-detail';
+    div.dataset.mode = 'detail';
 
     div.innerHTML = `
       <span class="poste-number"></span>
@@ -1062,49 +1095,45 @@ const PosteManager = {
           <input type="number" name="postePrix" placeholder="Prix HT" style="width:7rem;text-align:right" class="font-bold">
         </div>
       </div>
-      ${mode === 'simple' ? `
-        <textarea name="simpleText" rows="3" placeholder="Description libre..." class="text-sm"></textarea>
-      ` : `
-        <div class="space-y-4">
-          <div class="rdv-section">
-            <label>RDV & Durée :</label>
-            <div class="rdv-container"></div>
-            <button type="button" class="add-row-btn rdv mt-1">+ Ajouter jour</button>
-            <div class="jours-row">
-              <label>Nombre de jours :</label>
-              <input type="number" name="nbJours" step="0.5" value="1" min="0.5">
-              <button type="button" class="half-btn" data-half>0.5 J</button>
-              <button type="button" class="half-btn" data-one>1 J</button>
-              <button type="button" class="half-btn" data-two>2 J</button>
-            </div>
-          </div>
-          <div class="detail-section engins">
-            <label>Véhicules Spéciaux :</label>
-            <div class="rows"></div>
-            <button type="button" class="add-row-btn engins">+ Ajouter</button>
-          </div>
-          <div class="detail-section personnel">
-            <label>Personnel :</label>
-            <div class="cb-grid" data-type="personnel"></div>
-            <button type="button" class="add-cb-custom" data-type="personnel">+ Autre personnel</button>
-          </div>
-          <div class="detail-section vehicules">
-            <label>Véhicules :</label>
-            <div class="cb-grid" data-type="vehicules"></div>
-            <button type="button" class="add-cb-custom" data-type="vehicules">+ Autre véhicule</button>
-          </div>
-          <div class="detail-section materiel">
-            <label>Matériel :</label>
-            <div class="cb-grid" data-type="materiel"></div>
-            <button type="button" class="add-cb-custom" data-type="materiel">+ Autre matériel</button>
-          </div>
-          <textarea name="tache" rows="2" placeholder="Instructions..." class="text-sm"></textarea>
-          <div class="prix-auto-info hidden">
-            <div class="prix-auto-detail"></div>
-            <button type="button" class="prix-auto-apply">Appliquer le prix calculé</button>
+      <div class="space-y-4">
+        <div class="rdv-section">
+          <label>RDV & Durée :</label>
+          <div class="rdv-container"></div>
+          <button type="button" class="add-row-btn rdv mt-1">+ Ajouter jour</button>
+          <div class="jours-row">
+            <label>Nombre de jours :</label>
+            <input type="number" name="nbJours" step="0.5" value="1" min="0.5">
+            <button type="button" class="half-btn" data-half>0.5 J</button>
+            <button type="button" class="half-btn" data-one>1 J</button>
+            <button type="button" class="half-btn" data-two>2 J</button>
           </div>
         </div>
-      `}
+        <div class="detail-section engins">
+          <label>Véhicules Spéciaux :</label>
+          <div class="rows"></div>
+          <button type="button" class="add-row-btn engins">+ Ajouter</button>
+        </div>
+        <div class="detail-section personnel">
+          <label>Personnel :</label>
+          <div class="cb-grid" data-type="personnel"></div>
+          <button type="button" class="add-cb-custom" data-type="personnel">+ Autre personnel</button>
+        </div>
+        <div class="detail-section vehicules">
+          <label>Véhicules :</label>
+          <div class="cb-grid" data-type="vehicules"></div>
+          <button type="button" class="add-cb-custom" data-type="vehicules">+ Autre véhicule</button>
+        </div>
+        <div class="detail-section materiel">
+          <label>Matériel :</label>
+          <div class="cb-grid" data-type="materiel"></div>
+          <button type="button" class="add-cb-custom" data-type="materiel">+ Autre matériel</button>
+        </div>
+        <textarea name="tache" rows="2" placeholder="Instructions..." class="text-sm"></textarea>
+        <div class="prix-auto-info hidden">
+          <div class="prix-auto-detail"></div>
+          <button type="button" class="prix-auto-apply">Appliquer le prix calculé</button>
+        </div>
+      </div>
     `;
 
     // Remove button
@@ -1124,47 +1153,45 @@ const PosteManager = {
       });
     }
 
-    // Detail mode event bindings
-    if (mode === 'detail') {
-      const rdvContainer = div.querySelector('.rdv-container');
+    // Event bindings
+    const rdvContainer = div.querySelector('.rdv-container');
+    rdvContainer.appendChild(this._createRDVRow());
+
+    div.querySelector('.add-row-btn.rdv').addEventListener('click', () => {
       rdvContainer.appendChild(this._createRDVRow());
+    });
 
-      div.querySelector('.add-row-btn.rdv').addEventListener('click', () => {
-        rdvContainer.appendChild(this._createRDVRow());
+    const nbJoursInput = div.querySelector('[name="nbJours"]');
+    const recalc = () => this._recalculerPoste(div);
+    div.querySelector('[data-half]').addEventListener('click', () => { nbJoursInput.value = '0.5'; recalc(); });
+    div.querySelector('[data-one]').addEventListener('click', () => { nbJoursInput.value = '1'; recalc(); });
+    div.querySelector('[data-two]').addEventListener('click', () => { nbJoursInput.value = '2'; recalc(); });
+    nbJoursInput.addEventListener('input', recalc);
+
+    // Bouton "Appliquer prix calculé"
+    div.querySelector('.prix-auto-apply')?.addEventListener('click', () => {
+      const calc = TarifManager.calculerPrixPoste(div);
+      const pi = div.querySelector('[name="postePrix"]');
+      if (pi) { pi.value = calc.prix.toFixed(2); pi.dataset.manual = ''; PriceCalc.updateBreakdown(); }
+      this._updatePrixIndicator(div);
+    });
+
+    // Engins : dropdown (tonnage spécifique)
+    const enginsSection = div.querySelector('.detail-section.engins');
+    enginsSection.querySelector('.add-row-btn').addEventListener('click', () => {
+      const row = this._createRow('engins');
+      enginsSection.querySelector('.rows').appendChild(row);
+      row.querySelector('select')?.addEventListener('change', recalc);
+      row.querySelector('input[name="qty"]')?.addEventListener('input', recalc);
+    });
+
+    // Personnel, Véhicules, Matériel : grilles de checkboxes
+    ['personnel', 'vehicules', 'materiel'].forEach(type => {
+      this._buildCheckboxGrid(div, type);
+      div.querySelector(`.add-cb-custom[data-type="${type}"]`).addEventListener('click', () => {
+        this._addCustomCbItem(div, type);
       });
-
-      const nbJoursInput = div.querySelector('[name="nbJours"]');
-      const recalc = () => this._recalculerPoste(div);
-      div.querySelector('[data-half]').addEventListener('click', () => { nbJoursInput.value = '0.5'; recalc(); });
-      div.querySelector('[data-one]').addEventListener('click', () => { nbJoursInput.value = '1'; recalc(); });
-      div.querySelector('[data-two]').addEventListener('click', () => { nbJoursInput.value = '2'; recalc(); });
-      nbJoursInput.addEventListener('input', recalc);
-
-      // Bouton "Appliquer prix calculé"
-      div.querySelector('.prix-auto-apply')?.addEventListener('click', () => {
-        const calc = TarifManager.calculerPrixPoste(div);
-        const pi = div.querySelector('[name="postePrix"]');
-        if (pi) { pi.value = calc.prix.toFixed(2); pi.dataset.manual = ''; PriceCalc.updateBreakdown(); }
-        this._updatePrixIndicator(div);
-      });
-
-      // Engins : dropdown (tonnage spécifique)
-      const enginsSection = div.querySelector('.detail-section.engins');
-      enginsSection.querySelector('.add-row-btn').addEventListener('click', () => {
-        const row = this._createRow('engins');
-        enginsSection.querySelector('.rows').appendChild(row);
-        row.querySelector('select')?.addEventListener('change', recalc);
-        row.querySelector('input[name="qty"]')?.addEventListener('input', recalc);
-      });
-
-      // Personnel, Véhicules, Matériel : grilles de checkboxes
-      ['personnel', 'vehicules', 'materiel'].forEach(type => {
-        this._buildCheckboxGrid(div, type);
-        div.querySelector(`.add-cb-custom[data-type="${type}"]`).addEventListener('click', () => {
-          this._addCustomCbItem(div, type);
-        });
-      });
-    }
+    });
 
     this._container.appendChild(div);
     this.renumber();
@@ -1233,27 +1260,26 @@ const PosteManager = {
         prix: card.querySelector('[name="postePrix"]')?.value || ''
       };
 
-      if (mode === 'detail') {
-        base.jours = card.querySelector('[name="nbJours"]')?.value || '1';
-        base.tache = card.querySelector('[name="tache"]')?.value || '';
-        base.rdvs = Array.from(card.querySelectorAll('.rdv-row')).map(r => ({
-          date: r.querySelector('[name="posteDate"]')?.value || '',
-          heure: r.querySelector('[name="heureRDV"]')?.value || '8H00'
-        }));
+      base.jours = card.querySelector('[name="nbJours"]')?.value || '1';
+      base.tache = card.querySelector('[name="tache"]')?.value || '';
+      base.rdvs = Array.from(card.querySelectorAll('.rdv-row')).map(r => ({
+        date: r.querySelector('[name="posteDate"]')?.value || '',
+        heure: r.querySelector('[name="heureRDV"]')?.value || '8H00'
+      }));
 
-        // Engins : dropdown
-        const enginsRows = card.querySelector('.detail-section.engins .rows');
-        base.engins = this._collectRows(enginsRows, true);
-        // Personnel, Véhicules, Matériel : checkboxes
-        ['personnel', 'vehicules', 'materiel'].forEach(type => {
-          base[type] = Array.from(card.querySelectorAll(`.cb-grid[data-type="${type}"] input[type="checkbox"]:checked`)).map(cb => {
-            const qty = cb.closest('.cb-item').querySelector('.cb-qty')?.value || '1';
-            return `${qty}x ${cb.value}`;
-          }).filter(s => s);
-        });
-      } else {
-        base.text = card.querySelector('[name="simpleText"]')?.value || '';
-      }
+      // Engins : dropdown
+      const enginsRows = card.querySelector('.detail-section.engins .rows');
+      base.engins = this._collectRows(enginsRows, true);
+      // Personnel, Véhicules, Matériel : checkboxes
+      ['personnel', 'vehicules', 'materiel'].forEach(type => {
+        base[type] = Array.from(card.querySelectorAll(`.cb-grid[data-type="${type}"] input[type="checkbox"]:checked`)).map(cb => {
+          const cbItem = cb.closest('.cb-item');
+          const qty = cbItem.querySelector('.cb-qty')?.value || '1';
+          const duree = cbItem.querySelector('.cb-duree')?.value || '';
+          const entry = `${qty}x ${cb.value}`;
+          return duree ? `${entry} [${duree}]` : entry;
+        }).filter(s => s);
+      });
       return base;
     });
   },
@@ -1269,7 +1295,9 @@ const PosteManager = {
       const qty = r.querySelector('input[name="qty"]')?.value || '1';
       if (hasEnginFields) {
         const ton = r.querySelector('input[name="ton"]')?.value || '';
-        return `${qty}x ${label} (${ton}T)`;
+        const duree = r.querySelector('[name="enginDuree"]')?.value || '';
+        const base = `${qty}x ${label} (${ton}T)`;
+        return duree ? `${base} [${duree}]` : base;
       }
       return `${qty}x ${label}`;
     }).filter(s => s);
@@ -1278,85 +1306,81 @@ const PosteManager = {
   loadPostes(postes) {
     this._container.innerHTML = '';
     (postes || []).forEach(p => {
-      const mode = p.mode || 'simple';
-      this.addPoste(mode);
+      this.addPoste('detail');
       const card = this._container.lastElementChild;
       card.querySelector('[name="posteTitre"]').value = p.titre || '';
       card.querySelector('[name="postePrix"]').value = p.prix || '';
 
-      if (mode === 'simple') {
-        const ta = card.querySelector('[name="simpleText"]');
-        if (ta) ta.value = p.text || '';
+      // Nombre de jours
+      const nbJoursInput = card.querySelector('[name="nbJours"]');
+      if (nbJoursInput) nbJoursInput.value = p.jours || '1';
 
-      } else {
-        // ---- Nombre de jours ----
-        const nbJoursInput = card.querySelector('[name="nbJours"]');
-        if (nbJoursInput) nbJoursInput.value = p.jours || '1';
+      // Instructions / tâche
+      const tacheInput = card.querySelector('[name="tache"]');
+      if (tacheInput) tacheInput.value = p.tache || p.text || '';
 
-        // ---- Instructions / tâche ----
-        const tacheInput = card.querySelector('[name="tache"]');
-        if (tacheInput) tacheInput.value = p.tache || '';
-
-        // ---- RDV (dates et heures) ----
-        const rdvContainer = card.querySelector('.rdv-container');
-        const rdvs = (p.rdvs || []).filter(r => r.date);
-        if (rdvs.length > 0 && rdvContainer) {
-          // Supprimer le RDV par défaut créé par addPoste
-          rdvContainer.innerHTML = '';
-          rdvs.forEach(r => {
-            const rdvRow = this._createRDVRow();
-            const dateInput = rdvRow.querySelector('[name="posteDate"]');
-            const heureInput = rdvRow.querySelector('[name="heureRDV"]');
-            if (dateInput) dateInput.value = r.date || '';
-            if (heureInput) heureInput.value = r.heure || '8H00';
-            rdvContainer.appendChild(rdvRow);
-          });
-        }
-
-        // ---- Engins (dropdown avec tonnage) ----
-        const enginsRows = card.querySelector('.detail-section.engins .rows');
-        const enginsItems = p.engins || [];
-        enginsItems.forEach(itemStr => {
-          const match = String(itemStr).match(/^(\d+)x\s+(.+?)(?:\s+\((\d+)T\))?$/);
-          if (!match) return;
-          const qty = match[1], label = match[2].trim(), ton = match[3] || '';
-          const row = this._createRow('engins');
-          const select = row.querySelector('select');
-          const qtyInput = row.querySelector('input[name="qty"]');
-          if (select) {
-            const option = Array.from(select.options).find(o => o.value === label);
-            if (option) { select.value = label; }
-            else { CustomItems.add('engins', label); select.innerHTML = this._createOptionsHTML('engins'); select.value = label; }
-          }
-          if (qtyInput) qtyInput.value = qty;
-          if (ton) { const tonInput = row.querySelector('input[name="ton"]'); if (tonInput) tonInput.value = ton; }
-          enginsRows.appendChild(row);
-        });
-
-        // ---- Personnel, Véhicules, Matériel (checkboxes) ----
-        ['personnel', 'vehicules', 'materiel'].forEach(type => {
-          const items = p[type] || [];
-          if (items.length === 0) return;
-          const grid = card.querySelector(`.cb-grid[data-type="${type}"]`);
-          if (!grid) return;
-          items.forEach(itemStr => {
-            const match = String(itemStr).match(/^(\d+)x\s+(.+)$/);
-            if (!match) return;
-            const qty = match[1], label = match[2].trim();
-            const existing = grid.querySelector(`input[type="checkbox"][value="${CSS.escape(label)}"]`);
-            if (existing) {
-              existing.checked = true;
-              const cbItem = existing.closest('.cb-item');
-              cbItem.classList.add('active');
-              const qtyInput = cbItem.querySelector('.cb-qty');
-              if (qtyInput) { qtyInput.value = qty; qtyInput.classList.remove('hidden'); }
-            } else {
-              CustomItems.add(type, label);
-              this._addCheckboxItem(grid, label, true, parseInt(qty) || 1);
-            }
-          });
+      // RDV (dates et heures)
+      const rdvContainer = card.querySelector('.rdv-container');
+      const rdvs = (p.rdvs || []).filter(r => r.date);
+      if (rdvs.length > 0 && rdvContainer) {
+        rdvContainer.innerHTML = '';
+        rdvs.forEach(r => {
+          const rdvRow = this._createRDVRow();
+          const dateInput = rdvRow.querySelector('[name="posteDate"]');
+          const heureInput = rdvRow.querySelector('[name="heureRDV"]');
+          if (dateInput) dateInput.value = r.date || '';
+          if (heureInput) heureInput.value = r.heure || '8H00';
+          rdvContainer.appendChild(rdvRow);
         });
       }
+
+      // Engins (dropdown avec tonnage)
+      const enginsRows = card.querySelector('.detail-section.engins .rows');
+      const enginsItems = p.engins || [];
+      enginsItems.forEach(itemStr => {
+        const match = String(itemStr).match(/^(\d+)x\s+(.+?)(?:\s+\((\d+)T\))?(?:\s+\[(.+?)\])?$/);
+        if (!match) return;
+        const qty = match[1], label = match[2].trim(), ton = match[3] || '', duree = match[4] || '';
+        const row = this._createRow('engins');
+        const select = row.querySelector('select');
+        const qtyInput = row.querySelector('input[name="qty"]');
+        if (select) {
+          const option = Array.from(select.options).find(o => o.value === label);
+          if (option) { select.value = label; }
+          else { CustomItems.add('engins', label); select.innerHTML = this._createOptionsHTML('engins'); select.value = label; }
+        }
+        if (qtyInput) qtyInput.value = qty;
+        if (ton) { const tonInput = row.querySelector('input[name="ton"]'); if (tonInput) tonInput.value = ton; }
+        if (duree) { const dureeSelect = row.querySelector('[name="enginDuree"]'); if (dureeSelect) dureeSelect.value = duree; }
+        enginsRows.appendChild(row);
+      });
+
+      // Personnel, Véhicules, Matériel (checkboxes)
+      ['personnel', 'vehicules', 'materiel'].forEach(type => {
+        const items = p[type] || [];
+        if (items.length === 0) return;
+        const grid = card.querySelector(`.cb-grid[data-type="${type}"]`);
+        if (!grid) return;
+        items.forEach(itemStr => {
+          // Parser "2x Label [1/2 AM]" ou "2x Label"
+          const match = String(itemStr).match(/^(\d+)x\s+(.+?)(?:\s+\[(.+?)\])?$/);
+          if (!match) return;
+          const qty = match[1], label = match[2].trim(), duree = match[3] || '';
+          const existing = grid.querySelector(`input[type="checkbox"][value="${CSS.escape(label)}"]`);
+          if (existing) {
+            existing.checked = true;
+            const cbItem = existing.closest('.cb-item');
+            cbItem.classList.add('active');
+            const qtyInput = cbItem.querySelector('.cb-qty');
+            if (qtyInput) { qtyInput.value = qty; qtyInput.classList.remove('hidden'); }
+            const dureeSelect = cbItem.querySelector('.cb-duree');
+            if (dureeSelect) { dureeSelect.classList.remove('hidden'); if (duree) dureeSelect.value = duree; }
+          } else {
+            CustomItems.add(type, label);
+            this._addCheckboxItem(grid, label, true, parseInt(qty) || 1, type, duree);
+          }
+        });
+      });
     });
     PriceCalc.updateBreakdown();
   }
