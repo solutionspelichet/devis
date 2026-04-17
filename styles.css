@@ -442,6 +442,59 @@ select {
 .add-row-btn.personnel, .add-row-btn.vehicules, .add-row-btn.materiel { color: var(--blue); }
 .add-row-btn.rdv { color: var(--blue-dark); }
 
+/* ---- MATERIEL CHECKBOX GRID ---- */
+.mat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px;
+}
+.mat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--slate-200);
+  background: white;
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.mat-item:hover { border-color: var(--blue); background: var(--blue-light); }
+.mat-item.active { border-color: var(--blue); background: var(--blue-light); font-weight: 700; }
+.mat-item input[type="checkbox"] {
+  accent-color: var(--blue);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mat-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mat-qty {
+  width: 2.5rem;
+  text-align: center;
+  padding: 2px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid var(--blue);
+  border-radius: var(--radius-sm);
+  background: white;
+  flex-shrink: 0;
+}
+.mat-qty.hidden { display: none; }
+.add-mat-custom {
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0.25rem 0;
+  font-family: inherit;
+  color: var(--blue);
+}
+.add-mat-custom:hover { text-decoration: underline; }
+
 /* ---- TOTAL SECTION ---- */
 .total-input-wrap { position: relative; }
 .total-input-wrap .currency {

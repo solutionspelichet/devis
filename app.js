@@ -13,7 +13,7 @@ const CONFIG = {
     personnel: ['Manutentionnaire', 'Manutentionnaire du lourd', 'Chauffeur', "Chef d'équipe", 'CHAUF-LIVREUR'],
     vehicules: ['VL', '1F', 'PL', 'Semi', 'Box IT'],
     engins: ['Chariot élévateur', 'Grue mobile', 'Monte-meuble'],
-    materiel: ['Chariots', 'Rouleaux bulle', 'Adhésif', 'Transpalette']
+    materiel: ['Chariots', 'Couvertures de laine', 'Rouleaux bulle', 'Adhésif', 'Transpalette', 'Transpalette electrique', 'Gerbeur electrique', 'Caisses à outils', 'Sangles', 'Diable']
   }
 };
 
@@ -987,6 +987,56 @@ const PosteManager = {
     return div;
   },
 
+  /** Construit la grille de checkboxes matériel dans un poste */
+  _buildMaterielGrid(card) {
+    const grid = card.querySelector('.mat-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    const defaults = CONFIG.LISTS.materiel || [];
+    const customs = (CustomItems.load().materiel || []).filter(c => !defaults.includes(c));
+    const allItems = [...defaults, ...customs];
+    allItems.forEach(item => this._addMaterielCheckbox(grid, item));
+  },
+
+  /** Ajoute une checkbox matériel dans la grille */
+  _addMaterielCheckbox(grid, itemName, checked = false, qty = 1) {
+    const label = document.createElement('label');
+    label.className = 'mat-item' + (checked ? ' active' : '');
+    label.innerHTML = `
+      <input type="checkbox" value="${itemName}" ${checked ? 'checked' : ''}>
+      <span class="mat-name">${itemName}</span>
+      <input type="number" name="matQty" value="${qty}" min="1" class="mat-qty ${checked ? '' : 'hidden'}">
+    `;
+    const cb = label.querySelector('input[type="checkbox"]');
+    const qtyInput = label.querySelector('.mat-qty');
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        label.classList.add('active');
+        qtyInput.classList.remove('hidden');
+        qtyInput.focus();
+        qtyInput.select();
+      } else {
+        label.classList.remove('active');
+        qtyInput.classList.add('hidden');
+        qtyInput.value = '1';
+      }
+    });
+    grid.appendChild(label);
+    return label;
+  },
+
+  /** Ajouter un matériel personnalisé via prompt */
+  _addCustomMateriel(card) {
+    const name = prompt('Nom du matériel :');
+    if (!name || !name.trim()) return;
+    const val = name.trim();
+    // Enregistrer dans CustomItems
+    CustomItems.add('materiel', val);
+    // Ajouter la checkbox cochée avec qty=1
+    const grid = card.querySelector('.mat-grid');
+    this._addMaterielCheckbox(grid, val, true, 1);
+  },
+
   _createRDVRow() {
     const div = document.createElement('div');
     div.className = 'rdv-row';
@@ -1046,8 +1096,8 @@ const PosteManager = {
           </div>
           <div class="detail-section materiel">
             <label>Matériel :</label>
-            <div class="rows"></div>
-            <button type="button" class="add-row-btn materiel">+ Ajouter</button>
+            <div class="mat-grid"></div>
+            <button type="button" class="add-mat-custom">+ Autre matériel</button>
           </div>
           <textarea name="tache" rows="2" placeholder="Instructions..." class="text-sm"></textarea>
           <div class="prix-auto-info hidden">
@@ -1099,15 +1149,20 @@ const PosteManager = {
         this._updatePrixIndicator(div);
       });
 
-      ['engins', 'personnel', 'vehicules', 'materiel'].forEach(type => {
+      ['engins', 'personnel', 'vehicules'].forEach(type => {
         const section = div.querySelector(`.detail-section.${type}`);
         section.querySelector('.add-row-btn').addEventListener('click', () => {
           const row = this._createRow(type);
           section.querySelector('.rows').appendChild(row);
-          // Recalculer quand on change select ou qty dans la nouvelle ligne
           row.querySelector('select')?.addEventListener('change', recalc);
           row.querySelector('input[name="qty"]')?.addEventListener('input', recalc);
         });
+      });
+
+      // Matériel : grille de checkboxes
+      this._buildMaterielGrid(div);
+      div.querySelector('.add-mat-custom').addEventListener('click', () => {
+        this._addCustomMateriel(div);
       });
     }
 
@@ -1190,7 +1245,11 @@ const PosteManager = {
         base.engins = this._collectRows(sections[0], true);
         base.personnel = this._collectRows(sections[1]);
         base.vehicules = this._collectRows(sections[2]);
-        base.materiel = this._collectRows(sections[3]);
+        // Matériel : collecte depuis les checkboxes
+        base.materiel = Array.from(card.querySelectorAll('.mat-item input[type="checkbox"]:checked')).map(cb => {
+          const qty = cb.closest('.mat-item').querySelector('.mat-qty')?.value || '1';
+          return `${qty}x ${cb.value}`;
+        }).filter(s => s);
       } else {
         base.text = card.querySelector('[name="simpleText"]')?.value || '';
       }
@@ -1253,9 +1312,9 @@ const PosteManager = {
           });
         }
 
-        // ---- Ressources (personnel, véhicules, engins, matériel) ----
+        // ---- Ressources (personnel, véhicules, engins) ----
         const sections = card.querySelectorAll('.detail-section .rows');
-        const resourceTypes = ['engins', 'personnel', 'vehicules', 'materiel'];
+        const resourceTypes = ['engins', 'personnel', 'vehicules'];
 
         resourceTypes.forEach((type, idx) => {
           const items = p[type] || [];
@@ -1263,7 +1322,6 @@ const PosteManager = {
           if (!rowsContainer || items.length === 0) return;
 
           items.forEach(itemStr => {
-            // Parser le format "2x Manutentionnaire" ou "1x Grue mobile (50T)"
             const match = String(itemStr).match(/^(\d+)x\s+(.+?)(?:\s+\((\d+)T\))?$/);
             if (!match) return;
 
@@ -1275,15 +1333,12 @@ const PosteManager = {
             const select = row.querySelector('select');
             const qtyInput = row.querySelector('input[name="qty"]');
 
-            // Essayer de sélectionner dans la liste (défaut + custom)
             if (select) {
               const option = Array.from(select.options).find(o => o.value === label);
               if (option) {
                 select.value = label;
               } else {
-                // Valeur inconnue : l'enregistrer en custom puis sélectionner
-                CustomItems.add(type, label); // async mais pas besoin d'attendre
-                // Recréer les options avec la nouvelle valeur
+                CustomItems.add(type, label);
                 select.innerHTML = this._createOptionsHTML(type);
                 select.value = label;
               }
@@ -1300,6 +1355,32 @@ const PosteManager = {
             rowsContainer.appendChild(row);
           });
         });
+
+        // ---- Matériel (checkboxes) ----
+        const matItems = p.materiel || [];
+        if (matItems.length > 0) {
+          const grid = card.querySelector('.mat-grid');
+          // Parser chaque item "Qx Label" et cocher la checkbox correspondante
+          matItems.forEach(itemStr => {
+            const match = String(itemStr).match(/^(\d+)x\s+(.+)$/);
+            if (!match) return;
+            const qty = match[1];
+            const label = match[2].trim();
+            // Chercher la checkbox existante
+            const existing = grid?.querySelector(`input[type="checkbox"][value="${CSS.escape(label)}"]`);
+            if (existing) {
+              existing.checked = true;
+              const matItem = existing.closest('.mat-item');
+              matItem.classList.add('active');
+              const qtyInput = matItem.querySelector('.mat-qty');
+              if (qtyInput) { qtyInput.value = qty; qtyInput.classList.remove('hidden'); }
+            } else if (grid) {
+              // Item inconnu : l'ajouter comme custom
+              CustomItems.add('materiel', label);
+              this._addMaterielCheckbox(grid, label, true, parseInt(qty) || 1);
+            }
+          });
+        }
       }
     });
     PriceCalc.updateBreakdown();
