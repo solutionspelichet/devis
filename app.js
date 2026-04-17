@@ -1011,51 +1011,105 @@ const PosteManager = {
   /** Ajoute une checkbox item dans la grille */
   _addCheckboxItem(grid, itemName, checked = false, qty = 1, type = '', duree = '') {
     const hasDuree = (type === 'personnel' || type === 'vehicules');
-    const label = document.createElement('label');
-    label.className = 'cb-item' + (checked ? ' active' : '');
-    let dureeHTML = '';
-    if (hasDuree) {
-      dureeHTML = `<select class="cb-duree ${checked ? '' : 'hidden'}">
-        <option value="">Durée mission</option>
-        <option value="1/2 AM" ${duree === '1/2 AM' ? 'selected' : ''}>½ AM</option>
-        <option value="1/2 PM" ${duree === '1/2 PM' ? 'selected' : ''}>½ PM</option>
-        <option value="1j" ${duree === '1j' ? 'selected' : ''}>1 jour</option>
-        <option value="2j" ${duree === '2j' ? 'selected' : ''}>2 jours</option>
-        <option value="3j" ${duree === '3j' ? 'selected' : ''}>3 jours</option>
-        <option value="4j" ${duree === '4j' ? 'selected' : ''}>4 jours</option>
-        <option value="5j" ${duree === '5j' ? 'selected' : ''}>5 jours</option>
-      </select>`;
-    }
-    label.innerHTML = `
+    const div = document.createElement('div');
+    div.className = 'cb-item' + (checked ? ' active' : '') + (hasDuree ? ' has-duree' : '');
+
+    // Header : checkbox + nom
+    const header = document.createElement('div');
+    header.className = 'cb-header';
+    header.innerHTML = `
       <input type="checkbox" value="${itemName}" ${checked ? 'checked' : ''}>
       <span class="cb-name">${itemName}</span>
-      <input type="number" name="cbQty" value="${qty}" min="1" class="cb-qty ${checked ? '' : 'hidden'}">
-      ${dureeHTML}
     `;
-    const cb = label.querySelector('input[type="checkbox"]');
-    const qtyInput = label.querySelector('.cb-qty');
-    const dureeSelect = label.querySelector('.cb-duree');
+    div.appendChild(header);
+
+    if (hasDuree) {
+      // Conteneur de lignes durée (chaque ligne = qté + durée + boutons)
+      const rowsContainer = document.createElement('div');
+      rowsContainer.className = 'cb-rows' + (checked ? '' : ' hidden');
+      div.appendChild(rowsContainer);
+      this._addDureeRow(rowsContainer, qty, duree, true);
+    } else {
+      // Matériel : juste un champ quantité simple
+      const qtyInput = document.createElement('input');
+      qtyInput.type = 'number';
+      qtyInput.name = 'cbQty';
+      qtyInput.value = qty;
+      qtyInput.min = '1';
+      qtyInput.className = 'cb-qty' + (checked ? '' : ' hidden');
+      qtyInput.addEventListener('click', (e) => e.stopPropagation());
+      div.appendChild(qtyInput);
+    }
+
+    const cb = div.querySelector('input[type="checkbox"]');
+
+    // Clic sur le header = toggle checkbox
+    header.addEventListener('click', (e) => {
+      if (e.target === cb) return;
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change'));
+    });
+
     cb.addEventListener('change', () => {
       if (cb.checked) {
-        label.classList.add('active');
-        qtyInput.classList.remove('hidden');
-        if (dureeSelect) dureeSelect.classList.remove('hidden');
-        qtyInput.focus();
-        qtyInput.select();
+        div.classList.add('active');
+        if (hasDuree) {
+          div.querySelector('.cb-rows')?.classList.remove('hidden');
+        } else {
+          const qi = div.querySelector('.cb-qty');
+          if (qi) { qi.classList.remove('hidden'); qi.focus(); qi.select(); }
+        }
       } else {
-        label.classList.remove('active');
-        qtyInput.classList.add('hidden');
-        qtyInput.value = '1';
-        if (dureeSelect) { dureeSelect.classList.add('hidden'); dureeSelect.value = ''; }
+        div.classList.remove('active');
+        if (hasDuree) {
+          const rows = div.querySelector('.cb-rows');
+          if (rows) { rows.classList.add('hidden'); rows.innerHTML = ''; PosteManager._addDureeRow(rows, 1, '', true); }
+        } else {
+          const qi = div.querySelector('.cb-qty');
+          if (qi) { qi.classList.add('hidden'); qi.value = '1'; }
+        }
       }
     });
-    // Prevent label click from toggling checkbox when interacting with select
-    if (dureeSelect) {
-      dureeSelect.addEventListener('click', (e) => e.stopPropagation());
-      dureeSelect.addEventListener('mousedown', (e) => e.stopPropagation());
+
+    grid.appendChild(div);
+    return div;
+  },
+
+  /** Génère le HTML d'un <select> durée */
+  _dureeOptionsHTML(duree = '') {
+    const opts = [
+      ['', 'Durée mission'],
+      ['1/2 AM', '½ AM'], ['1/2 PM', '½ PM'],
+      ['1j', '1j'], ['2j', '2j'], ['3j', '3j'], ['4j', '4j'], ['5j', '5j']
+    ];
+    return opts.map(([v, t]) => `<option value="${v}" ${duree === v ? 'selected' : ''}>${t}</option>`).join('');
+  },
+
+  /** Ajoute une ligne qté+durée dans un conteneur .cb-rows */
+  _addDureeRow(container, qty = 1, duree = '', isFirst = true) {
+    const row = document.createElement('div');
+    row.className = 'cb-row';
+    row.innerHTML = `
+      <input type="number" class="cb-qty" value="${qty}" min="1">
+      <select class="cb-duree">${this._dureeOptionsHTML(duree)}</select>
+      <button type="button" class="cb-row-btn add" title="Ajouter une ligne">+</button>
+      ${isFirst ? '' : '<button type="button" class="cb-row-btn remove" title="Supprimer">−</button>'}
+    `;
+    row.querySelector('.cb-row-btn.add').addEventListener('click', (e) => {
+      e.stopPropagation();
+      PosteManager._addDureeRow(container, 1, '', false);
+    });
+    const removeBtn = row.querySelector('.cb-row-btn.remove');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', (e) => { e.stopPropagation(); row.remove(); });
     }
-    grid.appendChild(label);
-    return label;
+    // Stop propagation sur tous les éléments interactifs pour éviter le toggle checkbox
+    row.querySelectorAll('input, select, button').forEach(el => {
+      el.addEventListener('click', (e) => e.stopPropagation());
+      el.addEventListener('mousedown', (e) => e.stopPropagation());
+    });
+    container.appendChild(row);
+    return row;
   },
 
   /** Ajouter un item personnalisé via prompt */
@@ -1270,15 +1324,27 @@ const PosteManager = {
       // Engins : dropdown
       const enginsRows = card.querySelector('.detail-section.engins .rows');
       base.engins = this._collectRows(enginsRows, true);
-      // Personnel, Véhicules, Matériel : checkboxes
+      // Personnel, Véhicules, Matériel : checkboxes (avec multi-lignes durée)
       ['personnel', 'vehicules', 'materiel'].forEach(type => {
-        base[type] = Array.from(card.querySelectorAll(`.cb-grid[data-type="${type}"] input[type="checkbox"]:checked`)).map(cb => {
+        const entries = [];
+        card.querySelectorAll(`.cb-grid[data-type="${type}"] input[type="checkbox"]:checked`).forEach(cb => {
           const cbItem = cb.closest('.cb-item');
-          const qty = cbItem.querySelector('.cb-qty')?.value || '1';
-          const duree = cbItem.querySelector('.cb-duree')?.value || '';
-          const entry = `${qty}x ${cb.value}`;
-          return duree ? `${entry} [${duree}]` : entry;
-        }).filter(s => s);
+          const rows = cbItem.querySelectorAll('.cb-row');
+          if (rows.length > 0) {
+            // Personnel / Véhicules : plusieurs lignes qté+durée possibles
+            rows.forEach(row => {
+              const qty = row.querySelector('.cb-qty')?.value || '1';
+              const duree = row.querySelector('.cb-duree')?.value || '';
+              const entry = `${qty}x ${cb.value}`;
+              entries.push(duree ? `${entry} [${duree}]` : entry);
+            });
+          } else {
+            // Matériel : juste qté
+            const qty = cbItem.querySelector('.cb-qty')?.value || '1';
+            entries.push(`${qty}x ${cb.value}`);
+          }
+        });
+        base[type] = entries;
       });
       return base;
     });
@@ -1355,29 +1421,51 @@ const PosteManager = {
         enginsRows.appendChild(row);
       });
 
-      // Personnel, Véhicules, Matériel (checkboxes)
+      // Personnel, Véhicules, Matériel (checkboxes avec multi-lignes)
       ['personnel', 'vehicules', 'materiel'].forEach(type => {
         const items = p[type] || [];
         if (items.length === 0) return;
         const grid = card.querySelector(`.cb-grid[data-type="${type}"]`);
         if (!grid) return;
+
+        // Grouper par label pour permettre plusieurs durées sur la même ressource
+        const grouped = {};
         items.forEach(itemStr => {
-          // Parser "2x Label [1/2 AM]" ou "2x Label"
           const match = String(itemStr).match(/^(\d+)x\s+(.+?)(?:\s+\[(.+?)\])?$/);
           if (!match) return;
           const qty = match[1], label = match[2].trim(), duree = match[3] || '';
+          if (!grouped[label]) grouped[label] = [];
+          grouped[label].push({ qty: parseInt(qty) || 1, duree });
+        });
+
+        Object.entries(grouped).forEach(([label, entries]) => {
           const existing = grid.querySelector(`input[type="checkbox"][value="${CSS.escape(label)}"]`);
           if (existing) {
             existing.checked = true;
             const cbItem = existing.closest('.cb-item');
             cbItem.classList.add('active');
-            const qtyInput = cbItem.querySelector('.cb-qty');
-            if (qtyInput) { qtyInput.value = qty; qtyInput.classList.remove('hidden'); }
-            const dureeSelect = cbItem.querySelector('.cb-duree');
-            if (dureeSelect) { dureeSelect.classList.remove('hidden'); if (duree) dureeSelect.value = duree; }
+            const rowsContainer = cbItem.querySelector('.cb-rows');
+            if (rowsContainer) {
+              // Personnel/Véhicules : restaurer les lignes durée
+              rowsContainer.classList.remove('hidden');
+              rowsContainer.innerHTML = '';
+              entries.forEach((e, i) => PosteManager._addDureeRow(rowsContainer, e.qty, e.duree, i === 0));
+            } else {
+              // Matériel : juste la qté
+              const qtyInput = cbItem.querySelector('.cb-qty');
+              if (qtyInput) { qtyInput.value = entries[0].qty; qtyInput.classList.remove('hidden'); }
+            }
           } else {
+            // Item personnalisé pas dans les défauts
             CustomItems.add(type, label);
-            this._addCheckboxItem(grid, label, true, parseInt(qty) || 1, type, duree);
+            const el = this._addCheckboxItem(grid, label, true, entries[0].qty, type, entries[0].duree);
+            // Ajouter les lignes supplémentaires
+            if (entries.length > 1) {
+              const rowsContainer = el.querySelector('.cb-rows');
+              if (rowsContainer) {
+                entries.slice(1).forEach(e => PosteManager._addDureeRow(rowsContainer, e.qty, e.duree, false));
+              }
+            }
           }
         });
       });

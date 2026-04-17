@@ -445,7 +445,7 @@ select {
 /* ---- CHECKBOX GRID (personnel, véhicules, matériel) ---- */
 .cb-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 4px;
 }
 .cb-item {
@@ -461,8 +461,20 @@ select {
   transition: all 0.15s ease;
   user-select: none;
 }
+/* Items avec durée : layout vertical */
+.cb-item.has-duree {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.cb-item.has-duree .cb-header { cursor: pointer; }
 .cb-item:hover { border-color: var(--blue); background: var(--blue-light); }
 .cb-item.active { border-color: var(--blue); background: var(--blue-light); font-weight: 700; }
+.cb-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .cb-item input[type="checkbox"] {
   accent-color: var(--blue);
   width: 14px;
@@ -483,6 +495,15 @@ select {
   flex-shrink: 0;
 }
 .cb-qty.hidden { display: none; }
+/* Lignes durée (personnel / véhicules) */
+.cb-rows { display: flex; flex-direction: column; gap: 2px; }
+.cb-rows.hidden { display: none; }
+.cb-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 20px;
+}
 .cb-duree {
   padding: 2px 4px;
   font-size: 9px;
@@ -493,9 +514,28 @@ select {
   color: var(--slate-700);
   flex-shrink: 0;
   cursor: pointer;
-  max-width: 5.5rem;
+  flex: 1;
+  min-width: 0;
 }
-.cb-duree.hidden { display: none; }
+.cb-row-btn {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+}
+.cb-row-btn.add { background: var(--blue-light); color: var(--blue); }
+.cb-row-btn.add:hover { background: var(--blue); color: white; }
+.cb-row-btn.remove { background: #fee2e2; color: #dc2626; }
+.cb-row-btn.remove:hover { background: #dc2626; color: white; }
 .add-cb-custom {
   font-size: 9px;
   font-weight: 700;
