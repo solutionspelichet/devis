@@ -316,6 +316,103 @@ const UserManager = {
 };
 
 // ============================================
+// COMPANY SEARCH (autocomplétion Zefix)
+// ============================================
+const CompanySearch = {
+  _timer: null,
+  _dropdown: null,
+  _input: null,
+
+  init() {
+    this._input = document.querySelector('input[name="client"]');
+    if (!this._input) return;
+
+    // Créer le wrapper pour positionner le dropdown
+    const wrapper = document.createElement('div');
+    wrapper.className = 'company-search-wrap';
+    this._input.parentNode.insertBefore(wrapper, this._input);
+    wrapper.appendChild(this._input);
+    // Déplacer l'error-msg dans le wrapper aussi
+    const errMsg = wrapper.nextElementSibling;
+    if (errMsg && errMsg.classList.contains('error-msg')) wrapper.appendChild(errMsg);
+
+    // Créer le dropdown
+    this._dropdown = document.createElement('div');
+    this._dropdown.className = 'company-dropdown hidden';
+    wrapper.appendChild(this._dropdown);
+
+    // Événements
+    this._input.addEventListener('input', () => this._onInput());
+    this._input.addEventListener('focus', () => { if (this._dropdown.children.length > 0) this._dropdown.classList.remove('hidden'); });
+    document.addEventListener('click', (e) => {
+      if (!wrapper.contains(e.target)) this._dropdown.classList.add('hidden');
+    });
+  },
+
+  _onInput() {
+    clearTimeout(this._timer);
+    const q = this._input.value.trim();
+    if (q.length < 3) { this._dropdown.classList.add('hidden'); return; }
+    this._timer = setTimeout(() => this._search(q), 350);
+  },
+
+  async _search(query) {
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=company_search&q=${encodeURIComponent(query)}`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+      if (data.status === 'success' && data.results?.length > 0) {
+        this._showResults(data.results);
+      } else {
+        this._dropdown.classList.add('hidden');
+      }
+    } catch (e) {
+      console.log('Company search error:', e);
+    }
+  },
+
+  _showResults(results) {
+    this._dropdown.innerHTML = '';
+    results.forEach(r => {
+      const street = [r.street, r.houseNumber].filter(Boolean).join(' ');
+      const cityLine = [r.zip, r.city].filter(Boolean).join(' ');
+      const addr = [street, cityLine].filter(Boolean).join(', ');
+
+      const item = document.createElement('div');
+      item.className = 'company-result';
+      item.innerHTML = `
+        <div class="company-result-name">${this._esc(r.name)}</div>
+        <div class="company-result-addr">${this._esc(addr)}</div>
+      `;
+      item.addEventListener('click', () => this._select(r));
+      this._dropdown.appendChild(item);
+    });
+    this._dropdown.classList.remove('hidden');
+  },
+
+  _select(company) {
+    // Remplir le nom
+    this._input.value = company.name;
+
+    // Remplir l'adresse de facturation
+    const street = [company.street, company.houseNumber].filter(Boolean).join(' ');
+    const cityLine = [company.zip, company.city].filter(Boolean).join(' ');
+    const addr = [street, cityLine].filter(Boolean).join('\n');
+    const addrField = document.querySelector('[name="adresseClient"]');
+    if (addrField) addrField.value = addr;
+
+    this._dropdown.classList.add('hidden');
+    Toast.info('Adresse renseignée depuis le registre du commerce');
+  },
+
+  _esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+};
+
+// ============================================
 // CUSTOM ITEMS (persistance localStorage)
 // ============================================
 const CustomItems = {
@@ -1969,6 +2066,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   DossierList.init();
   SettingsPanel.init();
   ProfilePanel.init();
+  CompanySearch.init();
 
   // Logout
   document.getElementById('logoutBtn')?.addEventListener('click', () => {
