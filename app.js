@@ -433,6 +433,17 @@ const TarifManager = {
     return found ? (parseFloat(found.cout) || 0) : 0;
   },
 
+  /** Retourne le coût demi-journée d'un item (si défini, sinon cout/2) */
+  getCoutDemiJour(type, itemName) {
+    if (!this._data || !this._data.items || !this._data.items[type]) return 0;
+    const found = this._data.items[type].find(t => t.item === itemName);
+    if (!found) return 0;
+    // Si un prix demi-journée est défini, l'utiliser ; sinon moitié du prix journée
+    return (found.coutDemiJour !== undefined && found.coutDemiJour !== null && found.coutDemiJour !== '')
+      ? (parseFloat(found.coutDemiJour) || 0)
+      : (parseFloat(found.cout) || 0) / 2;
+  },
+
   /** Retourne l'unité d'un item ('jour', 'piece', 'forfait') */
   getUnite(type, itemName) {
     if (!this._data || !this._data.items || !this._data.items[type]) return 'jour';
@@ -446,41 +457,90 @@ const TarifManager = {
     return parseFloat(this._data.marges[type]) || 0;
   },
 
+  /** Vérifie si une durée est une demi-journée */
+  _isDemiJour(dureeVal) {
+    return dureeVal === '1/2 AM' || dureeVal === '1/2 PM';
+  },
+
+  /** Convertit une valeur de durée en nombre de jours */
+  _dureeEnJours(dureeVal, nbJoursMission) {
+    if (!dureeVal) return nbJoursMission; // durée mission par défaut
+    if (this._isDemiJour(dureeVal)) return 0.5;
+    const match = dureeVal.match(/^(\d+)j$/);
+    return match ? parseInt(match[1]) : nbJoursMission;
+  },
+
+  /** Calcule le coût d'un item en fonction de sa durée */
+  _coutItem(type, label, qty, dureeVal, nbJoursMission) {
+    const unite = this.getUnite(type, label);
+    if (unite !== 'jour') return qty * this.getCout(type, label); // pièce/forfait
+
+    if (this._isDemiJour(dureeVal)) {
+      // Utiliser le prix demi-journée spécifique (pas coût_jour × 0.5)
+      return qty * this.getCoutDemiJour(type, label);
+    }
+    const jours = this._dureeEnJours(dureeVal, nbJoursMission);
+    return qty * this.getCout(type, label) * jours;
+  },
+
   /** Calcule le prix d'un poste détail à partir de ses ressources */
   calculerPrixPoste(card) {
     const nbJours = parseFloat(card.querySelector('[name="nbJours"]')?.value) || 1;
-    const types = ['engins', 'personnel', 'vehicules', 'materiel'];
-    const sections = card.querySelectorAll('.detail-section .rows');
     let totalCout = 0;
     let totalPrix = 0;
     const details = [];
 
-    types.forEach((type, idx) => {
-      const rows = sections[idx]?.querySelectorAll('.row-item') || [];
-      let coutCategorie = 0;
-
-      rows.forEach(row => {
+    // --- 1. Engins (dropdown rows) ---
+    const enginsRows = card.querySelector('.detail-section.engins .rows');
+    let coutEngins = 0;
+    if (enginsRows) {
+      enginsRows.querySelectorAll('.row-item').forEach(row => {
         const selectVal = row.querySelector('select')?.value || '';
         const customVal = row.querySelector('input[name="customValue"]')?.value || '';
         const label = (selectVal === '__autre__') ? customVal : selectVal;
         if (!label) return;
-
         const qty = parseFloat(row.querySelector('input[name="qty"]')?.value) || 1;
-        const coutUnit = this.getCout(type, label);
-        const unite = this.getUnite(type, label);
+        const dureeVal = row.querySelector('[name="enginDuree"]')?.value || '';
+        coutEngins += this._coutItem('engins', label, qty, dureeVal, nbJours);
+      });
+    }
+    if (coutEngins > 0) {
+      const marge = this.getMarge('engins');
+      const prix = coutEngins * (1 + marge / 100);
+      totalCout += coutEngins; totalPrix += prix;
+      details.push({ type: 'engins', cout: coutEngins, marge, prix });
+    }
 
-        // Jour = multiplié par nbJours, pièce/forfait = quantité seule
-        const coutItem = unite === 'jour' ? (qty * coutUnit * nbJours) : (qty * coutUnit);
-        coutCategorie += coutItem;
+    // --- 2. Personnel, Véhicules, Matériel (checkbox grids avec multi-lignes durée) ---
+    ['personnel', 'vehicules', 'materiel'].forEach(type => {
+      let coutCat = 0;
+      const grid = card.querySelector(`.cb-grid[data-type="${type}"]`);
+      if (!grid) return;
+
+      grid.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+        const cbItem = cb.closest('.cb-item');
+        const label = cb.value;
+
+        const cbRows = cbItem.querySelectorAll('.cb-row');
+        if (cbRows.length > 0) {
+          // Personnel / Véhicules : plusieurs lignes qté+durée
+          cbRows.forEach(row => {
+            const qty = parseFloat(row.querySelector('.cb-qty')?.value) || 1;
+            const dureeVal = row.querySelector('.cb-duree')?.value || '';
+            coutCat += this._coutItem(type, label, qty, dureeVal, nbJours);
+          });
+        } else {
+          // Matériel : juste qté (pièce/forfait)
+          const qty = parseFloat(cbItem.querySelector('.cb-qty')?.value) || 1;
+          coutCat += this._coutItem(type, label, qty, '', nbJours);
+        }
       });
 
-      const marge = this.getMarge(type);
-      const prixCategorie = coutCategorie * (1 + marge / 100);
-      totalCout += coutCategorie;
-      totalPrix += prixCategorie;
-
-      if (coutCategorie > 0) {
-        details.push({ type, cout: coutCategorie, marge, prix: prixCategorie });
+      if (coutCat > 0) {
+        const marge = this.getMarge(type);
+        const prix = coutCat * (1 + marge / 100);
+        totalCout += coutCat; totalPrix += prix;
+        details.push({ type, cout: coutCat, marge, prix });
       }
     });
 
@@ -555,6 +615,7 @@ const SettingsPanel = {
             <td><select class="tarif-type">${allTypes.map(tt => `<option value="${tt}" ${tt === type ? 'selected' : ''}>${tt}</option>`).join('')}</select></td>
             <td><input type="text" class="tarif-item" value="${t.item || ''}"></td>
             <td><input type="number" class="tarif-cout" value="${t.cout || 0}" min="0" step="0.5"></td>
+            <td><input type="number" class="tarif-demi" value="${t.coutDemiJour ?? ''}" min="0" step="0.5" placeholder="auto"></td>
             <td><select class="tarif-unite"><option value="jour" ${t.unite === 'jour' ? 'selected' : ''}>jour</option><option value="piece" ${t.unite === 'piece' ? 'selected' : ''}>piece</option><option value="forfait" ${t.unite === 'forfait' ? 'selected' : ''}>forfait</option></select></td>
             <td><button type="button" class="tarif-remove" onclick="this.closest('tr').remove()">&times;</button></td>
           </tr>`;
@@ -571,6 +632,7 @@ const SettingsPanel = {
         <td><select class="tarif-type">${allTypes.map(tt => `<option value="${tt}">${tt}</option>`).join('')}</select></td>
         <td><input type="text" class="tarif-item" value="" placeholder="Nom item"></td>
         <td><input type="number" class="tarif-cout" value="0" min="0" step="0.5"></td>
+        <td><input type="number" class="tarif-demi" value="" min="0" step="0.5" placeholder="auto"></td>
         <td><select class="tarif-unite"><option value="jour">jour</option><option value="piece">piece</option><option value="forfait">forfait</option></select></td>
         <td><button type="button" class="tarif-remove" onclick="this.closest('tr').remove()">&times;</button></td>
       </tr>`);
@@ -589,10 +651,14 @@ const SettingsPanel = {
       const type = tr.querySelector('.tarif-type')?.value;
       const item = tr.querySelector('.tarif-item')?.value?.trim();
       const cout = parseFloat(tr.querySelector('.tarif-cout')?.value) || 0;
+      const demiVal = tr.querySelector('.tarif-demi')?.value;
+      const coutDemiJour = (demiVal !== undefined && demiVal !== '') ? parseFloat(demiVal) : null;
       const unite = tr.querySelector('.tarif-unite')?.value || 'jour';
       if (!type || !item) return;
       if (!data.items[type]) data.items[type] = [];
-      data.items[type].push({ item, cout, unite });
+      const entry = { item, cout, unite };
+      if (coutDemiJour !== null && !isNaN(coutDemiJour)) entry.coutDemiJour = coutDemiJour;
+      data.items[type].push(entry);
     });
 
     TarifManager.setData(data);
@@ -1245,6 +1311,12 @@ const PosteManager = {
       div.querySelector(`.add-cb-custom[data-type="${type}"]`).addEventListener('click', () => {
         this._addCustomCbItem(div, type);
       });
+      // Recalculer le prix à chaque changement dans les grilles (checkbox, qté, durée)
+      const grid = div.querySelector(`.cb-grid[data-type="${type}"]`);
+      if (grid) {
+        grid.addEventListener('change', recalc);
+        grid.addEventListener('input', recalc);
+      }
     });
 
     this._container.appendChild(div);
