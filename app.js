@@ -374,15 +374,16 @@ const CompanySearch = {
   _showResults(results) {
     this._dropdown.innerHTML = '';
     results.forEach(r => {
-      const street = [r.street, r.houseNumber].filter(Boolean).join(' ');
       const cityLine = [r.zip, r.city].filter(Boolean).join(' ');
-      const addr = [street, cityLine].filter(Boolean).join(', ');
+      const addrParts = [r.street, cityLine].filter(Boolean);
+      const displayName = r.name || r.street || cityLine;
+      const displayAddr = r.name ? addrParts.join(', ') : (addrParts.length > 1 ? addrParts.join(', ') : '');
 
       const item = document.createElement('div');
       item.className = 'company-result';
       item.innerHTML = `
-        <div class="company-result-name">${this._esc(r.name)}</div>
-        <div class="company-result-addr">${this._esc(addr)}</div>
+        <div class="company-result-name">${this._esc(displayName)}</div>
+        ${displayAddr ? `<div class="company-result-addr">${this._esc(displayAddr)}</div>` : ''}
       `;
       item.addEventListener('click', () => this._select(r));
       this._dropdown.appendChild(item);
@@ -391,18 +392,17 @@ const CompanySearch = {
   },
 
   _select(company) {
-    // Remplir le nom
-    this._input.value = company.name;
+    // Remplir le nom (nom d'entreprise si dispo, sinon laisser tel quel)
+    if (company.name) this._input.value = company.name;
 
     // Remplir l'adresse de facturation
-    const street = [company.street, company.houseNumber].filter(Boolean).join(' ');
     const cityLine = [company.zip, company.city].filter(Boolean).join(' ');
-    const addr = [street, cityLine].filter(Boolean).join('\n');
+    const addr = [company.street, cityLine].filter(Boolean).join('\n');
     const addrField = document.querySelector('[name="adresseClient"]');
-    if (addrField) addrField.value = addr;
+    if (addrField && addr) addrField.value = addr;
 
     this._dropdown.classList.add('hidden');
-    Toast.info('Adresse renseignée depuis le registre du commerce');
+    Toast.info('Adresse renseignée');
   },
 
   _esc(str) {
