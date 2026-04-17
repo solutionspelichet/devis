@@ -987,28 +987,28 @@ const PosteManager = {
     return div;
   },
 
-  /** Construit la grille de checkboxes matériel dans un poste */
-  _buildMaterielGrid(card) {
-    const grid = card.querySelector('.mat-grid');
+  /** Construit la grille de checkboxes pour un type (personnel, vehicules, materiel) */
+  _buildCheckboxGrid(card, type) {
+    const grid = card.querySelector(`.cb-grid[data-type="${type}"]`);
     if (!grid) return;
     grid.innerHTML = '';
-    const defaults = CONFIG.LISTS.materiel || [];
-    const customs = (CustomItems.load().materiel || []).filter(c => !defaults.includes(c));
+    const defaults = CONFIG.LISTS[type] || [];
+    const customs = (CustomItems.load()[type] || []).filter(c => !defaults.includes(c));
     const allItems = [...defaults, ...customs];
-    allItems.forEach(item => this._addMaterielCheckbox(grid, item));
+    allItems.forEach(item => this._addCheckboxItem(grid, item));
   },
 
-  /** Ajoute une checkbox matériel dans la grille */
-  _addMaterielCheckbox(grid, itemName, checked = false, qty = 1) {
+  /** Ajoute une checkbox item dans la grille */
+  _addCheckboxItem(grid, itemName, checked = false, qty = 1) {
     const label = document.createElement('label');
-    label.className = 'mat-item' + (checked ? ' active' : '');
+    label.className = 'cb-item' + (checked ? ' active' : '');
     label.innerHTML = `
       <input type="checkbox" value="${itemName}" ${checked ? 'checked' : ''}>
-      <span class="mat-name">${itemName}</span>
-      <input type="number" name="matQty" value="${qty}" min="1" class="mat-qty ${checked ? '' : 'hidden'}">
+      <span class="cb-name">${itemName}</span>
+      <input type="number" name="cbQty" value="${qty}" min="1" class="cb-qty ${checked ? '' : 'hidden'}">
     `;
     const cb = label.querySelector('input[type="checkbox"]');
-    const qtyInput = label.querySelector('.mat-qty');
+    const qtyInput = label.querySelector('.cb-qty');
     cb.addEventListener('change', () => {
       if (cb.checked) {
         label.classList.add('active');
@@ -1025,16 +1025,15 @@ const PosteManager = {
     return label;
   },
 
-  /** Ajouter un matériel personnalisé via prompt */
-  _addCustomMateriel(card) {
-    const name = prompt('Nom du matériel :');
+  /** Ajouter un item personnalisé via prompt */
+  _addCustomCbItem(card, type) {
+    const labels = { personnel: 'personnel', vehicules: 'véhicule', materiel: 'matériel' };
+    const name = prompt('Nom du ' + (labels[type] || type) + ' :');
     if (!name || !name.trim()) return;
     const val = name.trim();
-    // Enregistrer dans CustomItems
-    CustomItems.add('materiel', val);
-    // Ajouter la checkbox cochée avec qty=1
-    const grid = card.querySelector('.mat-grid');
-    this._addMaterielCheckbox(grid, val, true, 1);
+    CustomItems.add(type, val);
+    const grid = card.querySelector(`.cb-grid[data-type="${type}"]`);
+    this._addCheckboxItem(grid, val, true, 1);
   },
 
   _createRDVRow() {
@@ -1086,18 +1085,18 @@ const PosteManager = {
           </div>
           <div class="detail-section personnel">
             <label>Personnel :</label>
-            <div class="rows"></div>
-            <button type="button" class="add-row-btn personnel">+ Ajouter</button>
+            <div class="cb-grid" data-type="personnel"></div>
+            <button type="button" class="add-cb-custom" data-type="personnel">+ Autre personnel</button>
           </div>
           <div class="detail-section vehicules">
             <label>Véhicules :</label>
-            <div class="rows"></div>
-            <button type="button" class="add-row-btn vehicules">+ Ajouter</button>
+            <div class="cb-grid" data-type="vehicules"></div>
+            <button type="button" class="add-cb-custom" data-type="vehicules">+ Autre véhicule</button>
           </div>
           <div class="detail-section materiel">
             <label>Matériel :</label>
-            <div class="mat-grid"></div>
-            <button type="button" class="add-mat-custom">+ Autre matériel</button>
+            <div class="cb-grid" data-type="materiel"></div>
+            <button type="button" class="add-cb-custom" data-type="materiel">+ Autre matériel</button>
           </div>
           <textarea name="tache" rows="2" placeholder="Instructions..." class="text-sm"></textarea>
           <div class="prix-auto-info hidden">
@@ -1149,20 +1148,21 @@ const PosteManager = {
         this._updatePrixIndicator(div);
       });
 
-      ['engins', 'personnel', 'vehicules'].forEach(type => {
-        const section = div.querySelector(`.detail-section.${type}`);
-        section.querySelector('.add-row-btn').addEventListener('click', () => {
-          const row = this._createRow(type);
-          section.querySelector('.rows').appendChild(row);
-          row.querySelector('select')?.addEventListener('change', recalc);
-          row.querySelector('input[name="qty"]')?.addEventListener('input', recalc);
-        });
+      // Engins : dropdown (tonnage spécifique)
+      const enginsSection = div.querySelector('.detail-section.engins');
+      enginsSection.querySelector('.add-row-btn').addEventListener('click', () => {
+        const row = this._createRow('engins');
+        enginsSection.querySelector('.rows').appendChild(row);
+        row.querySelector('select')?.addEventListener('change', recalc);
+        row.querySelector('input[name="qty"]')?.addEventListener('input', recalc);
       });
 
-      // Matériel : grille de checkboxes
-      this._buildMaterielGrid(div);
-      div.querySelector('.add-mat-custom').addEventListener('click', () => {
-        this._addCustomMateriel(div);
+      // Personnel, Véhicules, Matériel : grilles de checkboxes
+      ['personnel', 'vehicules', 'materiel'].forEach(type => {
+        this._buildCheckboxGrid(div, type);
+        div.querySelector(`.add-cb-custom[data-type="${type}"]`).addEventListener('click', () => {
+          this._addCustomCbItem(div, type);
+        });
       });
     }
 
@@ -1241,15 +1241,16 @@ const PosteManager = {
           heure: r.querySelector('[name="heureRDV"]')?.value || '8H00'
         }));
 
-        const sections = card.querySelectorAll('.detail-section .rows');
-        base.engins = this._collectRows(sections[0], true);
-        base.personnel = this._collectRows(sections[1]);
-        base.vehicules = this._collectRows(sections[2]);
-        // Matériel : collecte depuis les checkboxes
-        base.materiel = Array.from(card.querySelectorAll('.mat-item input[type="checkbox"]:checked')).map(cb => {
-          const qty = cb.closest('.mat-item').querySelector('.mat-qty')?.value || '1';
-          return `${qty}x ${cb.value}`;
-        }).filter(s => s);
+        // Engins : dropdown
+        const enginsRows = card.querySelector('.detail-section.engins .rows');
+        base.engins = this._collectRows(enginsRows, true);
+        // Personnel, Véhicules, Matériel : checkboxes
+        ['personnel', 'vehicules', 'materiel'].forEach(type => {
+          base[type] = Array.from(card.querySelectorAll(`.cb-grid[data-type="${type}"] input[type="checkbox"]:checked`)).map(cb => {
+            const qty = cb.closest('.cb-item').querySelector('.cb-qty')?.value || '1';
+            return `${qty}x ${cb.value}`;
+          }).filter(s => s);
+        });
       } else {
         base.text = card.querySelector('[name="simpleText"]')?.value || '';
       }
@@ -1312,75 +1313,49 @@ const PosteManager = {
           });
         }
 
-        // ---- Ressources (personnel, véhicules, engins) ----
-        const sections = card.querySelectorAll('.detail-section .rows');
-        const resourceTypes = ['engins', 'personnel', 'vehicules'];
-
-        resourceTypes.forEach((type, idx) => {
-          const items = p[type] || [];
-          const rowsContainer = sections[idx];
-          if (!rowsContainer || items.length === 0) return;
-
-          items.forEach(itemStr => {
-            const match = String(itemStr).match(/^(\d+)x\s+(.+?)(?:\s+\((\d+)T\))?$/);
-            if (!match) return;
-
-            const qty = match[1];
-            const label = match[2].trim();
-            const ton = match[3] || '';
-
-            const row = this._createRow(type);
-            const select = row.querySelector('select');
-            const qtyInput = row.querySelector('input[name="qty"]');
-
-            if (select) {
-              const option = Array.from(select.options).find(o => o.value === label);
-              if (option) {
-                select.value = label;
-              } else {
-                CustomItems.add(type, label);
-                select.innerHTML = this._createOptionsHTML(type);
-                select.value = label;
-              }
-            }
-
-            if (qtyInput) qtyInput.value = qty;
-
-            // Tonnage pour les engins
-            if (ton && type === 'engins') {
-              const tonInput = row.querySelector('input[name="ton"]');
-              if (tonInput) tonInput.value = ton;
-            }
-
-            rowsContainer.appendChild(row);
-          });
+        // ---- Engins (dropdown avec tonnage) ----
+        const enginsRows = card.querySelector('.detail-section.engins .rows');
+        const enginsItems = p.engins || [];
+        enginsItems.forEach(itemStr => {
+          const match = String(itemStr).match(/^(\d+)x\s+(.+?)(?:\s+\((\d+)T\))?$/);
+          if (!match) return;
+          const qty = match[1], label = match[2].trim(), ton = match[3] || '';
+          const row = this._createRow('engins');
+          const select = row.querySelector('select');
+          const qtyInput = row.querySelector('input[name="qty"]');
+          if (select) {
+            const option = Array.from(select.options).find(o => o.value === label);
+            if (option) { select.value = label; }
+            else { CustomItems.add('engins', label); select.innerHTML = this._createOptionsHTML('engins'); select.value = label; }
+          }
+          if (qtyInput) qtyInput.value = qty;
+          if (ton) { const tonInput = row.querySelector('input[name="ton"]'); if (tonInput) tonInput.value = ton; }
+          enginsRows.appendChild(row);
         });
 
-        // ---- Matériel (checkboxes) ----
-        const matItems = p.materiel || [];
-        if (matItems.length > 0) {
-          const grid = card.querySelector('.mat-grid');
-          // Parser chaque item "Qx Label" et cocher la checkbox correspondante
-          matItems.forEach(itemStr => {
+        // ---- Personnel, Véhicules, Matériel (checkboxes) ----
+        ['personnel', 'vehicules', 'materiel'].forEach(type => {
+          const items = p[type] || [];
+          if (items.length === 0) return;
+          const grid = card.querySelector(`.cb-grid[data-type="${type}"]`);
+          if (!grid) return;
+          items.forEach(itemStr => {
             const match = String(itemStr).match(/^(\d+)x\s+(.+)$/);
             if (!match) return;
-            const qty = match[1];
-            const label = match[2].trim();
-            // Chercher la checkbox existante
-            const existing = grid?.querySelector(`input[type="checkbox"][value="${CSS.escape(label)}"]`);
+            const qty = match[1], label = match[2].trim();
+            const existing = grid.querySelector(`input[type="checkbox"][value="${CSS.escape(label)}"]`);
             if (existing) {
               existing.checked = true;
-              const matItem = existing.closest('.mat-item');
-              matItem.classList.add('active');
-              const qtyInput = matItem.querySelector('.mat-qty');
+              const cbItem = existing.closest('.cb-item');
+              cbItem.classList.add('active');
+              const qtyInput = cbItem.querySelector('.cb-qty');
               if (qtyInput) { qtyInput.value = qty; qtyInput.classList.remove('hidden'); }
-            } else if (grid) {
-              // Item inconnu : l'ajouter comme custom
-              CustomItems.add('materiel', label);
-              this._addMaterielCheckbox(grid, label, true, parseInt(qty) || 1);
+            } else {
+              CustomItems.add(type, label);
+              this._addCheckboxItem(grid, label, true, parseInt(qty) || 1);
             }
           });
-        }
+        });
       }
     });
     PriceCalc.updateBreakdown();
