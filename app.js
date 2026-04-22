@@ -418,19 +418,50 @@ const KmCalculator = {
     document.getElementById('kmAddPosteBtn')?.addEventListener('click', () => this.ajouterPosteKm());
   },
 
-  /** Calcule le coût total km en fonction des véhicules sélectionnés dans tous les postes */
-  _calcTotalKmCost(excessKm) {
-    let total = 0;
+  /** Convertit une valeur de durée en nombre de jours */
+  _dureeEnJours(dureeVal, nbJoursMission) {
+    if (!dureeVal) return nbJoursMission || 1;
+    if (dureeVal === '1/2 AM' || dureeVal === '1/2 PM') return 0.5;
+    const m = dureeVal.match(/^(\d+)j$/);
+    return m ? parseInt(m[1]) : (nbJoursMission || 1);
+  },
+
+  /** Collecte tous les véhicules avec qty × jours (aggrégé par type de véhicule) */
+  _collectVehiculesJours() {
+    const result = {}; // { 'PL': { qtyJours: 4, details: [...] } }
     const postes = PosteManager.collectAll();
-    postes.forEach(p => {
+
+    postes.forEach((p, posteIdx) => {
+      const nbJoursPoste = parseFloat(p.jours) || 1;
+      const titrePoste = (p.titre || `Poste ${posteIdx + 1}`).toUpperCase();
+
       (p.vehicules || []).forEach(v => {
-        const m = String(v).match(/^(\d+)x\s+(.+?)(?:\s+\[.+?\])?$/);
+        const m = String(v).match(/^(\d+)x\s+(.+?)(?:\s+\[(.+?)\])?$/);
         if (!m) return;
         const qty = parseInt(m[1]) || 1;
         const veh = m[2].trim();
-        const rate = this.KM_RATES[veh];
-        if (rate) total += qty * excessKm * rate;
+        const duree = m[3] || '';
+        const jours = this._dureeEnJours(duree, nbJoursPoste);
+        const qtyJours = qty * jours;
+
+        if (!result[veh]) result[veh] = { qtyJours: 0, lines: [] };
+        result[veh].qtyJours += qtyJours;
+        result[veh].lines.push({
+          qty, jours, duree: duree || `${nbJoursPoste}j (mission)`, poste: titrePoste
+        });
       });
+    });
+
+    return result;
+  },
+
+  /** Calcule le coût total km : excessKm × rate × (qty × jours) pour chaque véhicule */
+  _calcTotalKmCost(excessKm) {
+    let total = 0;
+    const vehMap = this._collectVehiculesJours();
+    Object.entries(vehMap).forEach(([veh, info]) => {
+      const rate = this.KM_RATES[veh];
+      if (rate) total += info.qtyJours * excessKm * rate;
     });
     return total;
   },
@@ -450,25 +481,20 @@ const KmCalculator = {
       return;
     }
 
-    // Construire le détail des véhicules et leur coût
+    // Construire le détail par véhicule × jours
     const details = [];
-    const postes = PosteManager.collectAll();
-    const vehCounts = {};
-    postes.forEach(p => {
-      (p.vehicules || []).forEach(v => {
-        const m = String(v).match(/^(\d+)x\s+(.+?)(?:\s+\[.+?\])?$/);
-        if (!m) return;
-        const qty = parseInt(m[1]) || 1;
-        const veh = m[2].trim();
-        vehCounts[veh] = (vehCounts[veh] || 0) + qty;
-      });
-    });
-    Object.entries(vehCounts).forEach(([veh, qty]) => {
+    const vehMap = this._collectVehiculesJours();
+    Object.entries(vehMap).forEach(([veh, info]) => {
       const rate = this.KM_RATES[veh];
-      if (rate) {
-        const lineCost = qty * excessKm * rate;
-        details.push(`${qty}x ${veh} : ${excessKm} km × ${rate} CHF/km = ${lineCost.toFixed(2)} CHF`);
-      }
+      if (!rate) return;
+      const lineCost = info.qtyJours * excessKm * rate;
+      // qtyJours peut être fractionnaire (ex: 1.5 pour 1x sur 1.5j)
+      const qtyJoursFmt = info.qtyJours % 1 === 0 ? info.qtyJours.toString() : info.qtyJours.toFixed(1);
+      details.push(`${veh} : ${qtyJoursFmt} véh-jour × ${excessKm} km × ${rate} CHF/km = ${lineCost.toFixed(2)} CHF`);
+      // Détail des lignes individuelles
+      info.lines.forEach(l => {
+        details.push(`   └ ${l.qty}x ${veh} sur ${l.duree} (${l.poste})`);
+      });
     });
 
     // Créer un nouveau poste
