@@ -316,6 +316,195 @@ const UserManager = {
 };
 
 // ============================================
+// KM CALCULATOR (calcul kilométrique)
+// ============================================
+const KmCalculator = {
+  // Coûts CHF/km supplémentaire par type de véhicule (source: grille tarifaire Pelichet)
+  // Fourgon/Voiture = 0.8, Camion 18T = 1.5, Tracteur Remorque = 1.7
+  KM_RATES: {
+    'VL': 0.8, '1F': 0.8, 'Box IT': 0.8, 'PL avec hayon': 1.5,
+    'PL': 1.5, 'Semi': 1.7
+  },
+  // Catégories pour l'affichage groupé
+  KM_CATEGORIES: [
+    { label: 'Fourgon / Voiture (VL, 1F, Box IT)', rate: 0.8 },
+    { label: 'Camion 18T (PL, PL avec hayon)', rate: 1.5 },
+    { label: 'Tracteur Remorque (Semi)', rate: 1.7 }
+  ],
+  FORFAIT_KM: 50,
+  _lastResult: null,
+
+  init() {
+    document.getElementById('kmCalcBtn')?.addEventListener('click', () => this.calculate());
+  },
+
+  async calculate() {
+    const depart = document.querySelector('[name="adresseDepart"]')?.value?.trim();
+    const arrivee = document.querySelector('[name="adresseArrivee"]')?.value?.trim();
+
+    if (!depart || !arrivee) {
+      Toast.warning('Remplissez les adresses de départ et d\'arrivée.');
+      return;
+    }
+
+    const btn = document.getElementById('kmCalcBtn');
+    btn.classList.add('loading');
+    btn.textContent = '⏳ Calcul en cours...';
+
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=km_calc&depart=${encodeURIComponent(depart)}&arrivee=${encodeURIComponent(arrivee)}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+
+      if (result.status !== 'success' || !result.data) {
+        Toast.error('Erreur : ' + (result.message || 'Calcul impossible'));
+        return;
+      }
+
+      this._lastResult = result.data;
+      this._showResult(result.data);
+    } catch (err) {
+      Toast.error('Erreur : ' + err.message);
+    } finally {
+      btn.classList.remove('loading');
+      btn.textContent = '🛣️ Calculer Kilométrage';
+    }
+  },
+
+  _showResult(data) {
+    const div = document.getElementById('kmResult');
+    const excessClass = data.excessKm > 0 ? 'has-excess' : 'zero';
+    const excessText = data.excessKm > 0
+      ? `${data.excessKm} km supplémentaires (au-delà du forfait de ${data.forfaitKm} km)`
+      : `Aucun supplément (${data.totalKm} km ≤ ${data.forfaitKm} km forfait)`;
+
+    // Calculer les coûts par catégorie de véhicule
+    let costsHTML = '';
+    let addBtnHTML = '';
+    if (data.excessKm > 0) {
+      costsHTML = '<div class="km-costs"><div style="font-weight:600;margin-bottom:4px">Coût supplément / véhicule :</div>';
+      this.KM_CATEGORIES.forEach(cat => {
+        const cost = (data.excessKm * cat.rate).toFixed(2);
+        costsHTML += `<div class="km-cost-row"><span>${cat.label}</span><span class="cost-val">${cost} CHF</span></div>`;
+      });
+      costsHTML += '</div>';
+
+      // Calculer le coût total en fonction des véhicules déjà sélectionnés dans les postes
+      const totalKmCost = this._calcTotalKmCost(data.excessKm);
+      addBtnHTML = `
+        <button type="button" class="btn km-add-poste-btn" id="kmAddPosteBtn" style="margin-top:0.75rem;width:100%;background:var(--blue);color:white;font-size:0.75rem;padding:0.5rem">
+          ➕ Ajouter frais km au devis (${totalKmCost.toFixed(2)} CHF)
+        </button>
+      `;
+    }
+
+    // Détails des segments
+    let legsHTML = '<div class="km-legs">';
+    (data.legs || []).forEach(leg => {
+      legsHTML += `<div class="km-leg"><span>${leg.from.split(',')[0]} → ${leg.to.split(',')[0]}</span><span>${leg.km} km (${leg.duration})</span></div>`;
+    });
+    legsHTML += '</div>';
+
+    div.innerHTML = `
+      <div class="km-total">📍 ${data.totalKm} km total (aller-retour)</div>
+      <div class="km-excess ${excessClass}">${excessText}</div>
+      ${legsHTML}
+      ${costsHTML}
+      ${addBtnHTML}
+    `;
+    div.classList.remove('hidden');
+
+    // Bind click sur le bouton "Ajouter au devis"
+    document.getElementById('kmAddPosteBtn')?.addEventListener('click', () => this.ajouterPosteKm());
+  },
+
+  /** Calcule le coût total km en fonction des véhicules sélectionnés dans tous les postes */
+  _calcTotalKmCost(excessKm) {
+    let total = 0;
+    const postes = PosteManager.collectAll();
+    postes.forEach(p => {
+      (p.vehicules || []).forEach(v => {
+        const m = String(v).match(/^(\d+)x\s+(.+?)(?:\s+\[.+?\])?$/);
+        if (!m) return;
+        const qty = parseInt(m[1]) || 1;
+        const veh = m[2].trim();
+        const rate = this.KM_RATES[veh];
+        if (rate) total += qty * excessKm * rate;
+      });
+    });
+    return total;
+  },
+
+  /** Ajoute un poste "Frais kilométriques" au devis */
+  ajouterPosteKm() {
+    if (!this._lastResult || this._lastResult.excessKm <= 0) {
+      Toast.warning('Pas de frais kilométriques à ajouter.');
+      return;
+    }
+
+    const excessKm = this._lastResult.excessKm;
+    const totalKmCost = this._calcTotalKmCost(excessKm);
+
+    if (totalKmCost === 0) {
+      Toast.warning('Sélectionnez d\'abord les véhicules dans les postes pour calculer les frais km.');
+      return;
+    }
+
+    // Construire le détail des véhicules et leur coût
+    const details = [];
+    const postes = PosteManager.collectAll();
+    const vehCounts = {};
+    postes.forEach(p => {
+      (p.vehicules || []).forEach(v => {
+        const m = String(v).match(/^(\d+)x\s+(.+?)(?:\s+\[.+?\])?$/);
+        if (!m) return;
+        const qty = parseInt(m[1]) || 1;
+        const veh = m[2].trim();
+        vehCounts[veh] = (vehCounts[veh] || 0) + qty;
+      });
+    });
+    Object.entries(vehCounts).forEach(([veh, qty]) => {
+      const rate = this.KM_RATES[veh];
+      if (rate) {
+        const lineCost = qty * excessKm * rate;
+        details.push(`${qty}x ${veh} : ${excessKm} km × ${rate} CHF/km = ${lineCost.toFixed(2)} CHF`);
+      }
+    });
+
+    // Créer un nouveau poste
+    PosteManager.addPoste('detail');
+    const newCard = document.querySelector('#prestationsContainer .poste-card:last-child');
+    if (newCard) {
+      newCard.querySelector('[name="posteTitre"]').value = 'FRAIS KILOMÉTRIQUES SUPPLÉMENTAIRES';
+      newCard.querySelector('[name="postePrix"]').value = totalKmCost.toFixed(2);
+      newCard.querySelector('[name="postePrix"]').dataset.manual = 'true';
+
+      const tacheField = newCard.querySelector('[name="tache"]');
+      if (tacheField) {
+        tacheField.value =
+          `Trajet total : ${this._lastResult.totalKm} km (aller-retour Pelichet Vernier)\n` +
+          `Forfait inclus : ${this._lastResult.forfaitKm} km\n` +
+          `Supplément : ${excessKm} km\n\n` +
+          details.join('\n');
+      }
+
+      PriceCalc.updateBreakdown();
+      newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      Toast.success(`Poste "Frais km" ajouté (${totalKmCost.toFixed(2)} CHF)`);
+    }
+  },
+
+  /** Retourne les km supplémentaires (pour la ventilation) */
+  getExcessKm() {
+    return this._lastResult ? this._lastResult.excessKm : 0;
+  },
+
+  getTotalKm() {
+    return this._lastResult ? this._lastResult.totalKm : 0;
+  }
+};
+
+// ============================================
 // COMPANY SEARCH (autocomplétion Zefix)
 // ============================================
 const CompanySearch = {
@@ -353,7 +542,7 @@ const CompanySearch = {
     clearTimeout(this._timer);
     const q = this._input.value.trim();
     if (q.length < 3) { this._dropdown.classList.add('hidden'); return; }
-    this._timer = setTimeout(() => this._search(q), 350);
+    this._timer = setTimeout(() => this._search(q), 600);
   },
 
   async _search(query) {
@@ -1957,7 +2146,43 @@ const VentilationExport = {
         return;
       }
 
-      this._downloadExcel(result.data, data.ref || 'DEVIS');
+      // Ajouter les lignes de supplément km si calculé
+      let lignes = result.data;
+      const excessKm = KmCalculator.getExcessKm();
+      if (excessKm > 0) {
+        // Trouver les véhicules utilisés dans les postes pour calculer le coût km
+        const vehiculesUtilises = new Set();
+        data.postes.forEach(p => {
+          (p.vehicules || []).forEach(v => {
+            const m = String(v).match(/^\d+x\s+(.+?)(?:\s+\[.+?\])?$/);
+            if (m) vehiculesUtilises.add(m[1].trim());
+          });
+        });
+
+        // Insérer les lignes km AVANT le total (dernière ligne)
+        const totalLine = lignes.pop();
+        let n = totalLine.n;
+        vehiculesUtilises.forEach(veh => {
+          const rate = KmCalculator.KM_RATES[veh];
+          if (!rate) return;
+          const cost = excessKm * rate;
+          lignes.push({
+            n: n++,
+            ventil: 'LOC5',
+            poste: 'FR-4300-01',
+            libelle: `Suppl. km ${veh} : ${excessKm} km x ${rate} CHF/km`,
+            montant: cost,
+            dev: 'CHF'
+          });
+        });
+
+        // Recalculer le total
+        totalLine.n = n++;
+        totalLine.montant = lignes.reduce((s, l) => s + (l.montant || 0), 0);
+        lignes.push(totalLine);
+      }
+
+      this._downloadExcel(lignes, data.ref || 'DEVIS');
       Toast.success('Fichier Excel ventilation téléchargé !');
     } catch (err) {
       Toast.error('Erreur : ' + err.message);
@@ -2067,6 +2292,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   SettingsPanel.init();
   ProfilePanel.init();
   CompanySearch.init();
+  KmCalculator.init();
 
   // Logout
   document.getElementById('logoutBtn')?.addEventListener('click', () => {

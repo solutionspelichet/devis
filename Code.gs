@@ -12,7 +12,7 @@ const CONFIG = {
   TEMPLATE_PELICHET_ID: '17LFpCQWcyiYgvgAM9Og_wkzsu1GwK2hmYZFICSHfSxg',
   TEMPLATE_AUTRE_ID: '1QWDp-ACk1dL7bXF2fq5VQRbPW4jxwXtUmq8hA1z4cD0',
   TEMPLATE_RESA_ID: '15QenLctlfoeBb--sC8WRM-Mi5NJjUn8kr01CMsnrwQg',
-  FOLDER_ID: '1DKVN4T2gKhPf26qOpT0sGiXrWHzSUBDk',
+  FOLDER_ID: '1MP1I55oDhisTnm4zFJmki1Wap3fUff6U',
   SIGNATURES_FOLDER_NAME: 'Signatures',
   SPREADSHEET_ID: '1AUfeykbUZ07SG-WkqVuxWJY6plH43EZp0tJgrp_gwYM',
   COLOR_PELICHET: '#D32F2F',
@@ -60,6 +60,11 @@ const CONFIG = {
       poste: 'FR-4300-01',
       ventil: 'LOC5',
       libelle: 'Gasoile et/ou peage'
+    },
+    km_supplement: {
+      poste: 'FR-4300-01',
+      ventil: 'LOC5',
+      libelle: 'Supplement kilometrique'
     },
     soustraitance: {
       poste: 'FR-1100-04',
@@ -120,6 +125,112 @@ function fmt(v) {
   const num = parseFloat(v);
   if (isNaN(num)) return '0.00 CHF';
   return num.toLocaleString('fr-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' CHF';
+}
+
+/**
+ * Calcule le kilométrage du trajet complet :
+ * Pelichet Vernier → Départ → Arrivée → Pelichet Vernier
+ * Retourne { totalKm, forfaitKm, excessKm, legs[] }
+ */
+function calculerKilometrage(adresseDepart, adresseArrivee) {
+  var PELICHET = 'Chemin Francois-Lehmann 12, 1218 Le Grand-Saconnex, Suisse';
+  var FORFAIT_KM = 50; // 25 aller + 25 retour, canton de Genève
+
+  var directions = Maps.newDirectionFinder()
+    .setOrigin(PELICHET)
+    .setDestination(PELICHET)
+    .addWaypoint(adresseDepart)
+    .addWaypoint(adresseArrivee)
+    .setMode(Maps.DirectionFinder.Mode.DRIVING)
+    .setLanguage('fr')
+    .getDirections();
+
+  if (directions.status !== 'OK') {
+    Logger.log('Maps Directions error: ' + directions.status);
+    return { error: 'Impossible de calculer l\'itineraire (' + directions.status + ')' };
+  }
+
+  var totalMeters = 0;
+  var legs = [];
+  var route = directions.routes[0];
+
+  for (var i = 0; i < route.legs.length; i++) {
+    var leg = route.legs[i];
+    totalMeters += leg.distance.value;
+    legs.push({
+      from: leg.start_address,
+      to: leg.end_address,
+      km: Math.round(leg.distance.value / 1000),
+      duration: leg.duration.text
+    });
+  }
+
+  var totalKm = Math.round(totalMeters / 1000);
+  var excessKm = Math.max(0, totalKm - FORFAIT_KM);
+
+  return {
+    totalKm: totalKm,
+    forfaitKm: FORFAIT_KM,
+    excessKm: excessKm,
+    legs: legs
+  };
+}
+
+/**
+ * Recherche d'entreprises / adresses suisses via Nominatim (OpenStreetMap)
+ * API gratuite, sans clé, contient les entreprises suisses
+ * @param {string} query - Terme de recherche (nom d'entreprise)
+ * @returns {Array} Liste de résultats {name, street, zip, city}
+ */
+function searchSwissCompany(query) {
+  var url = 'https://nominatim.openstreetmap.org/search'
+    + '?q=' + encodeURIComponent(query)
+    + '&countrycodes=ch'
+    + '&format=json'
+    + '&addressdetails=1'
+    + '&limit=8';
+
+  var options = {
+    muteHttpExceptions: true,
+    headers: { 'User-Agent': 'PelichetLogistique/1.0' }
+  };
+
+  var response = UrlFetchApp.fetch(url, options);
+  var code = response.getResponseCode();
+  if (code !== 200) {
+    Logger.log('Nominatim API error: ' + code);
+    return [];
+  }
+
+  var data = JSON.parse(response.getContentText());
+  if (!Array.isArray(data)) return [];
+
+  // Dédupliquer par nom
+  var seen = {};
+  var results = [];
+
+  data.forEach(function(item) {
+    var addr = item.address || {};
+    var name = item.name || '';
+    var street = addr.road || '';
+    if (addr.house_number) street += ' ' + addr.house_number;
+    var zip = addr.postcode || '';
+    var city = addr.city || addr.town || addr.village || addr.municipality || '';
+
+    // Clé de déduplication
+    var key = (name + '|' + zip).toLowerCase();
+    if (seen[key]) return;
+    seen[key] = true;
+
+    results.push({
+      name: name,
+      street: street,
+      zip: zip,
+      city: city
+    });
+  });
+
+  return results;
 }
 
 /**
@@ -217,10 +328,9 @@ function isJourOuvre(date) {
  * Retourne le prochain jour ouvre apres une date donnee
  */
 function getNextWorkingDay(date) {
-  var next = new Date(date.getTime());
-  next.setDate(next.getDate() + 1);
+  var next = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1, 12, 0, 0);
   while (!isJourOuvre(next)) {
-    next.setDate(next.getDate() + 1);
+    next = new Date(next.getFullYear(), next.getMonth(), next.getDate() + 1, 12, 0, 0);
   }
   return next;
 }
@@ -231,7 +341,8 @@ function getNextWorkingDay(date) {
  */
 function getJoursOuvres(dateDebut, nbJours) {
   var result = [];
-  var current = new Date(dateDebut.getTime());
+  // Normaliser a midi pour eviter les decalages de timezone
+  var current = new Date(dateDebut.getFullYear(), dateDebut.getMonth(), dateDebut.getDate(), 12, 0, 0);
 
   // Si la date de debut est ouvree, la compter
   if (isJourOuvre(current)) {
@@ -626,6 +737,40 @@ function creerOngletUsers(ss) {
  * Genere les lignes de ventilation a partir des postes d'un devis
  * Retourne un tableau de lignes : [{ n, ventil, poste, libelle, montant, dev }]
  */
+/**
+ * Parse une entrée ressource "2x Label [1/2 AM]" ou "2x Label"
+ * Retourne { qty, nom, duree } ou null
+ */
+function parseRessourceEntry(item) {
+  var match = String(item).match(/^(\d+)x\s+(.+?)(?:\s+\[(.+?)\])?$/);
+  if (!match) return null;
+  return { qty: parseInt(match[1]) || 1, nom: match[2].trim(), duree: match[3] || '' };
+}
+
+/**
+ * Retourne le cout d'une ressource selon sa duree specifique
+ * duree: '', '1/2 AM', '1/2 PM', '1j', '2j', etc.
+ */
+function getCoutAvecDuree(tarifs, type, nom, duree) {
+  var items = (tarifs.items && tarifs.items[type]) || [];
+  var found = null;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].item === nom) { found = items[i]; break; }
+  }
+  if (!found) return { cout: 0, jours: 1 };
+
+  var coutJour = parseFloat(found.cout) || 0;
+  var coutDemi = (found.coutDemiJour !== undefined && found.coutDemiJour !== null && found.coutDemiJour !== '')
+    ? parseFloat(found.coutDemiJour) : coutJour / 2;
+
+  var isDemi = (duree === '1/2 AM' || duree === '1/2 PM');
+  if (isDemi) return { cout: coutDemi, jours: 0.5, isDemi: true };
+
+  var matchJ = duree.match(/^(\d+)j$/);
+  var jours = matchJ ? parseInt(matchJ[1]) : 0; // 0 = duree mission
+  return { cout: coutJour, jours: jours, isDemi: false };
+}
+
 function genererVentilation(data) {
   var lignes = [];
   var tarifs = getTarifs();
@@ -639,121 +784,183 @@ function genererVentilation(data) {
     var rdvs = safeArray(p.rdvs).filter(function(r) { return r.date; });
     var dateDebut = rdvs.length > 0 ? new Date(rdvs[0].date) : new Date();
     var joursOuvres = getJoursOuvres(dateDebut, nbJoursVal);
-    var hasDemiJour = (nbJoursVal % 1 !== 0);
     var titre = safe(p.titre, 'PRESTATION').toUpperCase();
 
-    // --- PERSONNEL : 1 ligne par jour ---
+    // --- PERSONNEL : selon duree specifique ou mission ---
     var personnelItems = safeArray(p.personnel);
     personnelItems.forEach(function(item) {
-      var match = String(item).match(/^(\d+)x\s+(.+)$/);
-      if (!match) return;
-      var qty = parseInt(match[1]) || 1;
-      var nom = match[2].trim();
+      var parsed = parseRessourceEntry(item);
+      if (!parsed) return;
+      var qty = parsed.qty, nom = parsed.nom, duree = parsed.duree;
+      var info = getCoutAvecDuree(tarifs, 'personnel', nom, duree);
 
-      // Chercher le cout unitaire dans les tarifs
-      var coutUnit = 0;
-      if (tarifs.items.personnel) {
-        var found = tarifs.items.personnel.find(function(t) { return t.item === nom; });
-        if (found) coutUnit = parseFloat(found.cout) || 0;
-      }
+      var abrNom = nom.replace(/Manutentionnaire du lourd/gi, 'HL')
+                      .replace(/Manutentionnaire/gi, 'H')
+                      .replace(/Chauffeur-Livreur/gi, 'CHAUF-LIV')
+                      .replace(/Chauffeur/gi, 'CHAUF')
+                      .replace(/Chef d'equipe/gi, 'CE');
 
-      joursOuvres.forEach(function(jourDate, idx) {
-        var dateFmt = Utilities.formatDate(jourDate, CONFIG.TIMEZONE, 'dd.MM.yyyy');
-        var isLast = (idx === joursOuvres.length - 1);
-        var duree = (isLast && hasDemiJour) ? '1/2J' : '1J';
-        var multiplicateur = (isLast && hasDemiJour) ? 0.5 : 1;
-        var montant = coutUnit * qty * multiplicateur;
-        var abrNom = nom.replace(/Manutentionnaire du lourd/gi, 'HL')
-                        .replace(/Manutentionnaire/gi, 'H')
-                        .replace(/Chauffeur/gi, 'CHAUF')
-                        .replace(/Chef d'equipe/gi, 'CE');
-
-        var posteCode = (isLast && hasDemiJour) ? V.personnel_demi : V.personnel;
-
+      if (info.isDemi) {
+        // Demi-journée spécifique : 1 seule ligne
+        var dateFmt = joursOuvres.length > 0 ? Utilities.formatDate(joursOuvres[0], CONFIG.TIMEZONE, 'dd.MM.yyyy') : '';
         lignes.push({
           n: n++,
-          ventil: posteCode.ventil,
-          poste: posteCode.poste,
+          ventil: V.personnel_demi.ventil,
+          poste: V.personnel_demi.poste,
           libelle: dateFmt + ' - ' + qty + ' ' + abrNom + ' - ' + duree + ' - ' + titre,
-          montant: montant,
+          montant: info.cout * qty,
           dev: 'CHF'
         });
-      });
+      } else if (info.jours > 0) {
+        // Durée spécifique (ex: 2j) : lignes par jour ouvré sur cette durée
+        var joursSpec = getJoursOuvres(dateDebut, info.jours);
+        joursSpec.forEach(function(jourDate) {
+          var df = Utilities.formatDate(jourDate, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+          lignes.push({
+            n: n++,
+            ventil: V.personnel.ventil,
+            poste: V.personnel.poste,
+            libelle: df + ' - ' + qty + ' ' + abrNom + ' - 1J - ' + titre,
+            montant: info.cout * qty,
+            dev: 'CHF'
+          });
+        });
+      } else {
+        // Durée mission (défaut) : 1 ligne par jour ouvré de la mission
+        var hasDemiMission = (nbJoursVal % 1 !== 0);
+        joursOuvres.forEach(function(jourDate, idx) {
+          var df = Utilities.formatDate(jourDate, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+          var isLast = (idx === joursOuvres.length - 1);
+          var isDemiLast = (isLast && hasDemiMission);
+          var posteCode = isDemiLast ? V.personnel_demi : V.personnel;
+          var coutLigne = isDemiLast ? (getCoutAvecDuree(tarifs, 'personnel', nom, '1/2 AM').cout * qty) : (info.cout * qty);
+          var dureeLabel = isDemiLast ? '1/2J' : '1J';
+
+          lignes.push({
+            n: n++,
+            ventil: posteCode.ventil,
+            poste: posteCode.poste,
+            libelle: df + ' - ' + qty + ' ' + abrNom + ' - ' + dureeLabel + ' - ' + titre,
+            montant: coutLigne,
+            dev: 'CHF'
+          });
+        });
+      }
     });
 
-    // --- VEHICULES : 1 ligne par jour ---
+    // --- VEHICULES : selon duree specifique ou mission ---
     var vehiculesItems = safeArray(p.vehicules);
     vehiculesItems.forEach(function(item) {
-      var match = String(item).match(/^(\d+)x\s+(.+)$/);
-      if (!match) return;
-      var qty = parseInt(match[1]) || 1;
-      var nom = match[2].trim();
+      var parsed = parseRessourceEntry(item);
+      if (!parsed) return;
+      var qty = parsed.qty, nom = parsed.nom, duree = parsed.duree;
+      var info = getCoutAvecDuree(tarifs, 'vehicules', nom, duree);
 
-      var coutUnit = 0;
-      if (tarifs.items.vehicules) {
-        var found = tarifs.items.vehicules.find(function(t) { return t.item === nom; });
-        if (found) coutUnit = parseFloat(found.cout) || 0;
-      }
-
-      joursOuvres.forEach(function(jourDate, idx) {
-        var dateFmt = Utilities.formatDate(jourDate, CONFIG.TIMEZONE, 'dd.MM.yyyy');
-        var isLast = (idx === joursOuvres.length - 1);
-        var duree = (isLast && hasDemiJour) ? '1/2J' : '1J';
-        var multiplicateur = (isLast && hasDemiJour) ? 0.5 : 1;
-        var montant = coutUnit * qty * multiplicateur;
-
+      if (info.isDemi) {
+        var dateFmt = joursOuvres.length > 0 ? Utilities.formatDate(joursOuvres[0], CONFIG.TIMEZONE, 'dd.MM.yyyy') : '';
         lignes.push({
           n: n++,
           ventil: V.vehicules.ventil,
           poste: V.vehicules.poste,
           libelle: dateFmt + ' - ' + qty + ' ' + nom + ' - ' + duree + ' - ' + titre,
-          montant: montant,
+          montant: info.cout * qty,
           dev: 'CHF'
         });
-      });
+      } else if (info.jours > 0) {
+        var joursSpec = getJoursOuvres(dateDebut, info.jours);
+        joursSpec.forEach(function(jourDate) {
+          var df = Utilities.formatDate(jourDate, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+          lignes.push({
+            n: n++,
+            ventil: V.vehicules.ventil,
+            poste: V.vehicules.poste,
+            libelle: df + ' - ' + qty + ' ' + nom + ' - 1J - ' + titre,
+            montant: info.cout * qty,
+            dev: 'CHF'
+          });
+        });
+      } else {
+        var hasDemiMission = (nbJoursVal % 1 !== 0);
+        joursOuvres.forEach(function(jourDate, idx) {
+          var df = Utilities.formatDate(jourDate, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+          var isLast = (idx === joursOuvres.length - 1);
+          var isDemiLast = (isLast && hasDemiMission);
+          var coutLigne = isDemiLast ? (getCoutAvecDuree(tarifs, 'vehicules', nom, '1/2 AM').cout * qty) : (info.cout * qty);
+          var dureeLabel = isDemiLast ? '1/2J' : '1J';
+
+          lignes.push({
+            n: n++,
+            ventil: V.vehicules.ventil,
+            poste: V.vehicules.poste,
+            libelle: df + ' - ' + qty + ' ' + nom + ' - ' + dureeLabel + ' - ' + titre,
+            montant: coutLigne,
+            dev: 'CHF'
+          });
+        });
+      }
     });
 
-    // --- ENGINS : 1 ligne par jour ---
+    // --- ENGINS : selon duree specifique ou mission ---
     var enginsItems = safeArray(p.engins);
     enginsItems.forEach(function(item) {
-      var match = String(item).match(/^(\d+)x\s+(.+?)(?:\s+\(\d+T\))?$/);
+      var match = String(item).match(/^(\d+)x\s+(.+?)(?:\s+\(\d+T\))?(?:\s+\[(.+?)\])?$/);
       if (!match) return;
       var qty = parseInt(match[1]) || 1;
       var nom = match[2].trim();
-
-      var coutUnit = 0;
-      if (tarifs.items.engins) {
-        var found = tarifs.items.engins.find(function(t) { return t.item === nom; });
-        if (found) coutUnit = parseFloat(found.cout) || 0;
-      }
-
+      var duree = match[3] || '';
+      var info = getCoutAvecDuree(tarifs, 'engins', nom, duree);
       var enginConf = V.engins[nom] || V.engins._default;
 
-      joursOuvres.forEach(function(jourDate, idx) {
-        var dateFmt = Utilities.formatDate(jourDate, CONFIG.TIMEZONE, 'dd.MM.yyyy');
-        var isLast = (idx === joursOuvres.length - 1);
-        var duree = (isLast && hasDemiJour) ? '1/2J' : '1J';
-        var multiplicateur = (isLast && hasDemiJour) ? 0.5 : 1;
-        var montant = coutUnit * qty * multiplicateur;
-
+      if (info.isDemi) {
+        var dateFmt = joursOuvres.length > 0 ? Utilities.formatDate(joursOuvres[0], CONFIG.TIMEZONE, 'dd.MM.yyyy') : '';
         lignes.push({
           n: n++,
           ventil: enginConf.ventil,
           poste: enginConf.poste,
           libelle: dateFmt + ' - ' + qty + ' ' + nom + ' - ' + duree + ' - ' + titre,
-          montant: montant,
+          montant: info.cout * qty,
           dev: 'CHF'
         });
-      });
+      } else if (info.jours > 0) {
+        var joursSpec = getJoursOuvres(dateDebut, info.jours);
+        joursSpec.forEach(function(jourDate) {
+          var df = Utilities.formatDate(jourDate, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+          lignes.push({
+            n: n++,
+            ventil: enginConf.ventil,
+            poste: enginConf.poste,
+            libelle: df + ' - ' + qty + ' ' + nom + ' - 1J - ' + titre,
+            montant: info.cout * qty,
+            dev: 'CHF'
+          });
+        });
+      } else {
+        var hasDemiMission = (nbJoursVal % 1 !== 0);
+        joursOuvres.forEach(function(jourDate, idx) {
+          var df = Utilities.formatDate(jourDate, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+          var isLast = (idx === joursOuvres.length - 1);
+          var isDemiLast = (isLast && hasDemiMission);
+          var coutLigne = isDemiLast ? (getCoutAvecDuree(tarifs, 'engins', nom, '1/2 AM').cout * qty) : (info.cout * qty);
+          var dureeLabel = isDemiLast ? '1/2J' : '1J';
+
+          lignes.push({
+            n: n++,
+            ventil: enginConf.ventil,
+            poste: enginConf.poste,
+            libelle: df + ' - ' + qty + ' ' + nom + ' - ' + dureeLabel + ' - ' + titre,
+            montant: coutLigne,
+            dev: 'CHF'
+          });
+        });
+      }
     });
 
-    // --- MATERIEL : 1 seule ligne (pas par jour, c'est des pieces) ---
+    // --- MATERIEL : 1 seule ligne (pieces) ---
     var materielItems = safeArray(p.materiel);
     materielItems.forEach(function(item) {
-      var match = String(item).match(/^(\d+)x\s+(.+)$/);
-      if (!match) return;
-      var qty = parseInt(match[1]) || 1;
-      var nom = match[2].trim();
+      var parsed = parseRessourceEntry(item);
+      if (!parsed) return;
+      var qty = parsed.qty, nom = parsed.nom;
 
       var coutUnit = 0;
       var unite = 'piece';
@@ -762,7 +969,6 @@ function genererVentilation(data) {
         if (found) { coutUnit = parseFloat(found.cout) || 0; unite = found.unite || 'piece'; }
       }
 
-      // Si unite = jour, multiplier par nbJours
       var montant = (unite === 'jour') ? coutUnit * qty * nbJoursVal : coutUnit * qty;
 
       lignes.push({
@@ -814,13 +1020,14 @@ function getTarifs() {
   var items = {};
   var marges = {};
 
-  // En-tetes : Type | Item | Cout unitaire | Unite | Marge %
+  // En-tetes : Type | Item | Cout unitaire | Unite | Marge % | Cout demi-jour
   for (var i = 1; i < values.length; i++) {
     var type = String(values[i][0] || '').trim();
     var item = String(values[i][1] || '').trim();
     var cout = parseFloat(values[i][2]) || 0;
     var unite = String(values[i][3] || 'jour').trim();
     var marge = parseFloat(values[i][4]);
+    var coutDemiJour = (values[i].length > 5 && values[i][5] !== '' && values[i][5] !== null) ? parseFloat(values[i][5]) : null;
 
     if (!type) continue;
 
@@ -830,7 +1037,9 @@ function getTarifs() {
     } else {
       // Ligne de tarif
       if (!items[type]) items[type] = [];
-      items[type].push({ item: item, cout: cout, unite: unite });
+      var entry = { item: item, cout: cout, unite: unite };
+      if (coutDemiJour !== null && !isNaN(coutDemiJour)) entry.coutDemiJour = coutDemiJour;
+      items[type].push(entry);
       // Si une marge est definie sur la ligne, l'utiliser comme defaut categorie
       if (!isNaN(marge) && !marges[type]) marges[type] = marge;
     }
@@ -853,8 +1062,8 @@ function saveTarifs(data) {
   sheet.clearContents();
 
   // En-tetes
-  sheet.appendRow(['Type', 'Item', 'Cout unitaire', 'Unite', 'Marge %']);
-  sheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
+  sheet.appendRow(['Type', 'Item', 'Cout unitaire', 'Unite', 'Marge %', 'Cout 1/2 jour']);
+  sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
 
   // Marges par categorie
   var marges = data.marges || {};
@@ -867,7 +1076,8 @@ function saveTarifs(data) {
   for (var type in items) {
     var list = items[type] || [];
     for (var i = 0; i < list.length; i++) {
-      sheet.appendRow([type, list[i].item, list[i].cout, list[i].unite || 'jour', marges[type] || '']);
+      var demiJour = (list[i].coutDemiJour !== undefined && list[i].coutDemiJour !== null) ? list[i].coutDemiJour : '';
+      sheet.appendRow([type, list[i].item, list[i].cout, list[i].unite || 'jour', marges[type] || '', demiJour]);
     }
   }
 
@@ -877,6 +1087,7 @@ function saveTarifs(data) {
   sheet.setColumnWidth(3, 120);
   sheet.setColumnWidth(4, 80);
   sheet.setColumnWidth(5, 80);
+  sheet.setColumnWidth(6, 120);
 
   return true;
 }
@@ -886,34 +1097,37 @@ function saveTarifs(data) {
  */
 function creerOngletTarifs(ss) {
   var sheet = ss.insertSheet(TARIFS_SHEET_NAME);
-  sheet.appendRow(['Type', 'Item', 'Cout unitaire', 'Unite', 'Marge %']);
-  sheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
+  sheet.appendRow(['Type', 'Item', 'Cout unitaire', 'Unite', 'Marge %', 'Cout 1/2 jour']);
+  sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
 
   // Marges par defaut
-  sheet.appendRow(['_marge', 'personnel', 35, '%', '']);
-  sheet.appendRow(['_marge', 'vehicules', 25, '%', '']);
-  sheet.appendRow(['_marge', 'engins', 40, '%', '']);
-  sheet.appendRow(['_marge', 'materiel', 10, '%', '']);
+  sheet.appendRow(['_marge', 'personnel', 35, '%', '', '']);
+  sheet.appendRow(['_marge', 'vehicules', 25, '%', '', '']);
+  sheet.appendRow(['_marge', 'engins', 40, '%', '', '']);
+  sheet.appendRow(['_marge', 'materiel', 10, '%', '', '']);
 
-  // Tarifs par defaut
+  // Tarifs par defaut — cout journée et cout demi-journée (source: grille tarifaire Pelichet)
+  // Format: [type, item, cout/jour, unite, '', cout/demi-jour]
   var defauts = [
-    ['personnel', 'Manutentionnaire', 350, 'jour'],
-    ['personnel', 'Manutentionnaire du lourd', 400, 'jour'],
-    ['personnel', 'Chauffeur', 380, 'jour'],
-    ['personnel', "Chef d'equipe", 450, 'jour'],
-    ['personnel', 'CHAUF-LIVREUR', 400, 'jour'],
-    ['vehicules', 'VL', 200, 'jour'],
-    ['vehicules', '1F', 350, 'jour'],
-    ['vehicules', 'PL', 500, 'jour'],
-    ['vehicules', 'Semi', 700, 'jour'],
-    ['vehicules', 'Box IT', 150, 'jour'],
-    ['engins', 'Chariot elevateur', 600, 'jour'],
-    ['engins', 'Grue mobile', 1200, 'jour'],
-    ['engins', 'Monte-meuble', 400, 'jour'],
-    ['materiel', 'Chariots', 5, 'piece'],
-    ['materiel', 'Rouleaux bulle', 15, 'piece'],
-    ['materiel', 'Adhesif', 3, 'piece'],
-    ['materiel', 'Transpalette', 30, 'jour']
+    ['personnel', 'Manutentionnaire', 380, 'jour', '', 210],
+    ['personnel', 'Manutentionnaire du lourd', 400, 'jour', '', 220],
+    ['personnel', 'Chauffeur', 380, 'jour', '', 210],
+    ['personnel', "Chef d'equipe", 450, 'jour', '', 250],
+    ['personnel', 'CHAUF-LIVREUR', 400, 'jour', '', 220],
+    ['personnel', 'emballeur', 380, 'jour', '', 210],
+    ['vehicules', 'VL', 150, 'jour', '', 75],
+    ['vehicules', '1F', 150, 'jour', '', 75],
+    ['vehicules', 'PL', 350, 'jour', '', 250],
+    ['vehicules', 'Semi', 500, 'jour', '', 500],
+    ['vehicules', 'Box IT', 150, 'jour', '', 75],
+    ['vehicules', 'PL avec hayon', 350, 'jour', '', 250],
+    ['engins', 'Chariot elevateur', 600, 'jour', '', 400],
+    ['engins', 'Grue mobile', 1200, 'jour', '', 800],
+    ['engins', 'Monte-meuble', 400, 'jour', '', 300],
+    ['materiel', 'Chariots', 5, 'piece', '', ''],
+    ['materiel', 'Rouleaux bulle', 15, 'piece', '', ''],
+    ['materiel', 'Adhesif', 3, 'piece', '', ''],
+    ['materiel', 'Transpalette', 30, 'jour', '', 20]
   ];
   defauts.forEach(function(row) { sheet.appendRow(row); });
 
@@ -922,6 +1136,7 @@ function creerOngletTarifs(ss) {
   sheet.setColumnWidth(3, 120);
   sheet.setColumnWidth(4, 80);
   sheet.setColumnWidth(5, 80);
+  sheet.setColumnWidth(6, 120);
 
   return sheet;
 }
@@ -1035,6 +1250,30 @@ function doGet(e) {
         return jsonResponse({ status: saved ? 'success' : 'error' });
       } catch (err) {
         return jsonResponse({ status: 'error', message: 'JSON invalide: ' + err });
+      }
+    }
+
+    if (action === 'km_calc') {
+      try {
+        var depart = e.parameter.depart || '';
+        var arrivee = e.parameter.arrivee || '';
+        if (!depart || !arrivee) return jsonResponse({ status: 'error', message: 'Adresses depart et arrivee requises' });
+        var result = calculerKilometrage(depart, arrivee);
+        if (result.error) return jsonResponse({ status: 'error', message: result.error });
+        return jsonResponse({ status: 'success', data: result });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Calcul KM: ' + err });
+      }
+    }
+
+    if (action === 'company_search') {
+      var query = e.parameter.q || '';
+      if (query.length < 2) return jsonResponse({ status: 'success', results: [] });
+      try {
+        var results = searchSwissCompany(query);
+        return jsonResponse({ status: 'success', results: results });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: err.toString(), results: [] });
       }
     }
 
@@ -1159,11 +1398,17 @@ function listerDossiers(userId) {
 
   const colMap = buildColumnIndex(values[0]);
   const refIdx = colMap.ref !== undefined ? colMap.ref : 1;
+
+  // Dédupliquer par référence : on parcourt du plus récent au plus ancien,
+  // seule la première occurrence (= la plus récente) est gardée
+  const seen = {};
   const dossiers = [];
 
   for (let i = values.length - 1; i >= 1 && dossiers.length < 200; i--) {
     const ref = String(values[i][refIdx] || '').trim();
     if (!ref) continue;
+    if (seen[ref]) continue; // Déjà vu → doublon, on saute
+    seen[ref] = true;
 
     const dateVal = colMap.date !== undefined ? values[i][colMap.date] : '';
     let dateFmt = '';
@@ -1244,19 +1489,16 @@ function rechercherDossier(ref, userId) {
 // ============================================
 
 /**
- * Jours fériés suisses (Genève) pour les années courantes.
- * Retourne un Set de strings au format 'YYYY-MM-DD'
+ * Jours fériés suisses (Genève) — version Set de strings 'YYYY-MM-DD'
+ * Utilisée par le planning consolidé (ne pas confondre avec getJoursFeries qui retourne des Date)
  */
-function getJoursFeries(year) {
+function getPlanningFeriesSet(year) {
   var feries = [];
   // Fériés fixes
   feries.push(year + '-01-01'); // Nouvel An
   feries.push(year + '-01-02'); // 2 janvier
-  feries.push(year + '-03-01'); // Instauration de la République (GE)
   feries.push(year + '-05-01'); // Fête du Travail
-  feries.push(year + '-06-01'); // Lundi de Pentecôte (approximatif)
   feries.push(year + '-08-01'); // Fête nationale
-  feries.push(year + '-09-11'); // Jeûne genevois (GE, variable)
   feries.push(year + '-12-25'); // Noël
   feries.push(year + '-12-31'); // Restauration de la République (GE)
 
@@ -1288,6 +1530,12 @@ function getJoursFeries(year) {
   feries.push(fmt(addDays(easter, 1)));   // Lundi de Pâques
   feries.push(fmt(addDays(easter, 39)));  // Ascension
   feries.push(fmt(addDays(easter, 50)));  // Lundi de Pentecôte
+
+  // Jeûne genevois
+  var sept1 = new Date(year, 8, 1);
+  while (sept1.getDay() !== 0) sept1.setDate(sept1.getDate() + 1);
+  sept1.setDate(sept1.getDate() + 4);
+  feries.push(fmt(sept1));
 
   var set = {};
   feries.forEach(function(f) { set[f] = true; });
@@ -1422,7 +1670,7 @@ function genererPlanning(userId) {
   });
   var feriesSet = {};
   Object.keys(allYears).forEach(function(y) {
-    var yf = getJoursFeries(parseInt(y));
+    var yf = getPlanningFeriesSet(parseInt(y));
     for (var k in yf) feriesSet[k] = true;
   });
 
@@ -1988,7 +2236,8 @@ function genererFicheResa(data, folder, ref, client) {
     'adresse_depart': safe(data.adresseDepart),
     'adresse_arrivee': safe(data.adresseArrivee),
     'volume': volumeEstime + ' M3',
-    'tel_client': safe(data.contact) + ' - ' + safe(data.contactTel)
+    'contact': safe(data.contact),
+    'tel_client': [safe(data.contact), safe(data.contactTel)].filter(function(s) { return s; }).join(' – ')
   };
 
   for (var key in replacements) {
@@ -2012,7 +2261,42 @@ function genererFicheResa(data, folder, ref, client) {
     }
   }
 
+  // ---- SUPPRIMER "PRESTATION X" du template si present ----
+  var prestaRange = body.findText('PRESTATION\\s*\\d*');
+  while (prestaRange) {
+    var prestaEl = prestaRange.getElement();
+    var prestaPara = prestaEl.getParent();
+    try {
+      // Supprimer seulement si le paragraphe ne contient que "PRESTATION X"
+      var paraText = prestaPara.asParagraph().getText().trim();
+      if (/^PRESTATION\s*\d*$/i.test(paraText)) {
+        prestaPara.removeFromParent();
+      }
+    } catch(e) { /* ignore */ }
+    prestaRange = body.findText('PRESTATION\\s*\\d*');
+  }
+
   // ---- INSTRUCTIONS DETAILLEES ----
+  // Police et tailles standard pour toutes les lignes inserees
+  var RESA_FONT = 'Trebuchet MS';
+  var FONT_SIZE_RDV = 14;
+  var FONT_SIZE_TITRE = 12;
+  var FONT_SIZE_TEXTE = 12;
+  var FONT_SIZE_RESSOURCE = 10;
+  var COLOR_RDV = '#C00000'; // Rouge foncé pour les lignes RDV
+
+  // Helper : reset complet du style d'un paragraphe pour eviter l'heritage
+  function resetStyle(p, opts) {
+    var t = p.editAsText();
+    t.setFontFamily(RESA_FONT);
+    t.setFontSize(opts.size || FONT_SIZE_TEXTE);
+    t.setBold(opts.bold || false);
+    t.setItalic(opts.italic || false);
+    t.setUnderline(opts.underline || false);
+    t.setForegroundColor(opts.color || '#000000');
+    return t;
+  }
+
   var instRange = body.findText('\\{\\{instructions\\}\\}');
   if (instRange) {
     var element = instRange.getElement();
@@ -2024,22 +2308,24 @@ function genererFicheResa(data, folder, ref, client) {
 
     // Traiter TOUS les postes (simples et détaillés)
     allPostes.forEach(function(p, posteIdx) {
-      var titre = safe(p.titre, 'PRESTATION ' + (posteIdx + 1)).toUpperCase();
+      var titre = safe(p.titre, '').toUpperCase();
+      if (!titre) return; // Pas de titre = pas d'insertion
       var nbJoursVal = parseFloat(p.jours) || 1;
       var joursFmt = nbJoursVal === 0.5 ? '1/2 jour' : (nbJoursVal + (nbJoursVal > 1 ? ' jours' : ' jour'));
 
       if (p.mode === 'simple') {
         // ---- POSTE SIMPLE : titre + description ----
         var pTitleS = container.insertParagraph(insertionIndex++, titre);
-        pTitleS.editAsText().setBold(true).setForegroundColor('#000000').setUnderline(true);
+        resetStyle(pTitleS, { bold: true, underline: true, size: FONT_SIZE_TITRE });
 
         if (safe(p.text)) {
           var pTextS = container.insertParagraph(insertionIndex++, safe(p.text));
-          pTextS.editAsText().setBold(false).setUnderline(false);
+          resetStyle(pTextS, { size: FONT_SIZE_TEXTE });
         }
 
         // Ligne vide de séparation
-        container.insertParagraph(insertionIndex++, '');
+        var pEmpty = container.insertParagraph(insertionIndex++, '');
+        resetStyle(pEmpty, { size: FONT_SIZE_TEXTE });
 
       } else {
         // ---- POSTE DETAIL : RDV + ressources ----
@@ -2060,77 +2346,96 @@ function genererFicheResa(data, folder, ref, client) {
           rdvLines.push(dateFmt + ' a ' + safe(r.heure, '8H00'));
         });
 
-        // Ligne RDV
+        // Ligne RDV — rouge vif, Trebuchet MS 12pt
         var rdvText = 'RDV : ' + rdvLines.join(' / ') + ' (' + joursFmt + ')';
         var pRDV = container.insertParagraph(insertionIndex++, rdvText);
-        pRDV.editAsText().setBold(true).setForegroundColor(CONFIG.COLOR_PELICHET).setUnderline(true);
+        resetStyle(pRDV, { bold: true, underline: true, size: FONT_SIZE_RDV, color: COLOR_RDV });
 
-        // Titre du poste
+        // Titre du poste — noir, gras souligné (directement après RDV, sans ligne vide)
         var pTitle = container.insertParagraph(insertionIndex++, titre);
-        pTitle.editAsText().setBold(true).setForegroundColor('#000000').setUnderline(true);
+        resetStyle(pTitle, { bold: true, underline: true, size: FONT_SIZE_TITRE });
 
-        // Tache / instructions
+        // Tache / instructions — normal, pas d'italic ni underline
         if (safe(p.tache)) {
           var pTask = container.insertParagraph(insertionIndex++, safe(p.tache));
-          pTask.editAsText().setBold(false).setUnderline(false);
+          resetStyle(pTask, { size: FONT_SIZE_TEXTE });
         }
 
-        // Personnel
-        var personnelList = transformerPersonnel(safeArray(p.personnel));
-        if (personnelList.length > 0) {
-          var pPers = container.insertParagraph(insertionIndex++, 'Personnel : ' + personnelList.join(', '));
-          pPers.editAsText().setItalic(true).setFontSize(9);
-        }
-
-        // Vehicules
-        var vehiculesList = safeArray(p.vehicules);
-        if (vehiculesList.length > 0) {
-          var pVeh = container.insertParagraph(insertionIndex++, 'Vehicules : ' + vehiculesList.join(', '));
-          pVeh.editAsText().setItalic(true).setFontSize(9);
-        }
-
-        // Engins / vehicules speciaux
-        var enginsList = safeArray(p.engins);
-        if (enginsList.length > 0) {
-          var pEng = container.insertParagraph(insertionIndex++, 'Vehicules speciaux : ' + enginsList.join(', '));
-          pEng.editAsText().setItalic(true).setFontSize(9);
-        }
-
-        // Materiel
+        // Uniquement le matériel dans la section texte
+        // (personnel, véhicules et engins sont deja dans le tableau ressources)
         var materielList = safeArray(p.materiel);
+        Logger.log('RESA materiel raw: ' + JSON.stringify(p.materiel) + ' => list: ' + JSON.stringify(materielList));
         if (materielList.length > 0) {
-          var pMat = container.insertParagraph(insertionIndex++, 'Materiel : ' + materielList.join(', '));
-          pMat.editAsText().setItalic(true).setFontSize(9);
+          // Ligne vide entre tache et matériel
+          var pEmptyMat = container.insertParagraph(insertionIndex++, '');
+          resetStyle(pEmptyMat, { size: FONT_SIZE_TEXTE });
+
+          var pMat = container.insertParagraph(insertionIndex++, 'Matériel : ' + materielList.join(', '));
+          resetStyle(pMat, { italic: true, size: FONT_SIZE_RESSOURCE });
         }
 
-        // Ligne vide de séparation
-        container.insertParagraph(insertionIndex++, '');
+        // Ligne vide de séparation — reset complet pour couper l'heritage
+        var pEmptyD = container.insertParagraph(insertionIndex++, '');
+        resetStyle(pEmptyD, { size: FONT_SIZE_TEXTE });
 
-        // ---- Tableau ressources : 1 ligne par jour ouvre ----
+        // ---- Tableau ressources : 1 ligne par poste (plage de dates) ----
         if (logTable) {
-          // Date de debut = premier RDV saisi
-          var dateDebut = (rdvs[0].date instanceof Date) ? rdvs[0].date : new Date(rdvs[0].date);
+          // Date de debut = premier RDV saisi (normaliser a midi pour eviter timezone)
+          var rawDate = (rdvs[0].date instanceof Date) ? rdvs[0].date : new Date(rdvs[0].date);
+          var dateDebut = new Date(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate(), 12, 0, 0);
           var heureRDV = safe(rdvs[0].heure, '8H00');
 
-          // Generer la liste des jours ouvres (excl. weekends + feries suisses)
+          // Personnel et vehicules pour le tableau
+          var personnelList = transformerPersonnel(safeArray(p.personnel));
+          var vehiculesList = safeArray(p.vehicules);
+          var enginsList = safeArray(p.engins);
+
+          // Generer les jours ouvres pour trouver la date de fin
           var joursOuvres = getJoursOuvres(dateDebut, nbJoursVal);
+          var dateFin = joursOuvres[joursOuvres.length - 1];
 
-          // Gerer le demi-jour : la derniere ligne est "1/2 jour" si nbJours a une partie decimale
-          var hasDemiJour = (nbJoursVal % 1 !== 0);
+          // Format de la colonne Date
+          var dateDebutFmt = Utilities.formatDate(dateDebut, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+          var dateCell;
+          if (nbJoursVal <= 1) {
+            // 1 jour ou demi-jour : juste la date
+            dateCell = dateDebutFmt;
+          } else {
+            // Plusieurs jours : plage "debut au fin"
+            var dateFinFmt = Utilities.formatDate(dateFin, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+            dateCell = dateDebutFmt + ' au ' + dateFinFmt;
+          }
 
-          joursOuvres.forEach(function(jourDate, jourIdx) {
-            var dateFmtJour = Utilities.formatDate(jourDate, CONFIG.TIMEZONE, 'dd.MM.yyyy');
-            var isLastDay = (jourIdx === joursOuvres.length - 1);
-            var dureeJour = (isLastDay && hasDemiJour) ? '1/2 jour' : '1 jour';
+          // Format de la durée
+          var dureeCell = nbJoursVal === 0.5 ? '1/2 jour' : (nbJoursVal + (nbJoursVal > 1 ? ' jours' : ' jour'));
 
-            var row = logTable.appendTableRow();
-            row.appendTableCell(dateFmtJour);
-            row.appendTableCell(heureRDV);
-            row.appendTableCell(personnelList.join('\n'));
-            row.appendTableCell(dureeJour);
-            row.appendTableCell(vehiculesList.join('\n'));
-            row.appendTableCell(enginsList.join('\n'));
-          });
+          var row = logTable.appendTableRow();
+
+          // appendTableRow() cree parfois une cellule par defaut — la supprimer
+          while (row.getNumCells() > 0) {
+            row.removeCell(0);
+          }
+
+          var cellValues = [dateCell, heureRDV, personnelList.join('\n'), dureeCell, vehiculesList.join('\n'), enginsList.join('\n')];
+          for (var ci = 0; ci < cellValues.length; ci++) {
+            var cell = row.appendTableCell(cellValues[ci]);
+            // Forcer fond blanc et style propre
+            cell.setBackgroundColor('#FFFFFF');
+            // Styler le texte de chaque paragraphe dans la cellule
+            for (var pi = 0; pi < cell.getNumChildren(); pi++) {
+              var child = cell.getChild(pi);
+              if (child.getType() === DocumentApp.ElementType.PARAGRAPH) {
+                var txt = child.editAsText();
+                txt.setFontFamily(RESA_FONT);
+                txt.setFontSize(9);
+                txt.setBold(false);
+                txt.setItalic(false);
+                txt.setUnderline(false);
+                txt.setForegroundColor('#000000');
+                txt.setBackgroundColor(null);
+              }
+            }
+          }
         }
       }
     });
