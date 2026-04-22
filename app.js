@@ -466,7 +466,7 @@ const KmCalculator = {
     return total;
   },
 
-  /** Ajoute un poste "Frais kilométriques" au devis */
+  /** Distribue les frais km sur les postes existants (ajoute aux prix, pas de poste séparé) */
   ajouterPosteKm() {
     if (!this._lastResult || this._lastResult.excessKm <= 0) {
       Toast.warning('Pas de frais kilométriques à ajouter.');
@@ -474,50 +474,68 @@ const KmCalculator = {
     }
 
     const excessKm = this._lastResult.excessKm;
-    const totalKmCost = this._calcTotalKmCost(excessKm);
+    const cards = document.querySelectorAll('#prestationsContainer .poste-card');
 
-    if (totalKmCost === 0) {
-      Toast.warning('Sélectionnez d\'abord les véhicules dans les postes pour calculer les frais km.');
+    if (cards.length === 0) {
+      Toast.warning('Ajoutez d\'abord un poste avant de calculer les frais km.');
       return;
     }
 
-    // Construire le détail par véhicule × jours
-    const details = [];
-    const vehMap = this._collectVehiculesJours();
-    Object.entries(vehMap).forEach(([veh, info]) => {
-      const rate = this.KM_RATES[veh];
-      if (!rate) return;
-      const lineCost = info.qtyJours * excessKm * rate;
-      // qtyJours peut être fractionnaire (ex: 1.5 pour 1x sur 1.5j)
-      const qtyJoursFmt = info.qtyJours % 1 === 0 ? info.qtyJours.toString() : info.qtyJours.toFixed(1);
-      details.push(`${veh} : ${qtyJoursFmt} véh-jour × ${excessKm} km × ${rate} CHF/km = ${lineCost.toFixed(2)} CHF`);
-      // Détail des lignes individuelles
-      info.lines.forEach(l => {
-        details.push(`   └ ${l.qty}x ${veh} sur ${l.duree} (${l.poste})`);
+    let totalAjoute = 0;
+
+    cards.forEach(card => {
+      const nbJoursPoste = parseFloat(card.querySelector('[name="nbJours"]')?.value) || 1;
+
+      // Calculer le coût km pour ce poste (somme des véh-jours × excessKm × rate)
+      let kmCostPoste = 0;
+      const vGrid = card.querySelector('.cb-grid[data-type="vehicules"]');
+      if (!vGrid) return;
+
+      vGrid.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+        const veh = cb.value;
+        const rate = this.KM_RATES[veh];
+        if (!rate) return;
+
+        const cbItem = cb.closest('.cb-item');
+        const rows = cbItem.querySelectorAll('.cb-row');
+        if (rows.length > 0) {
+          rows.forEach(row => {
+            const qty = parseFloat(row.querySelector('.cb-qty')?.value) || 1;
+            const duree = row.querySelector('.cb-duree')?.value || '';
+            const jours = this._dureeEnJours(duree, nbJoursPoste);
+            kmCostPoste += qty * jours * excessKm * rate;
+          });
+        }
       });
-    });
 
-    // Créer un nouveau poste
-    PosteManager.addPoste('detail');
-    const newCard = document.querySelector('#prestationsContainer .poste-card:last-child');
-    if (newCard) {
-      newCard.querySelector('[name="posteTitre"]').value = 'FRAIS KILOMÉTRIQUES SUPPLÉMENTAIRES';
-      newCard.querySelector('[name="postePrix"]').value = totalKmCost.toFixed(2);
-      newCard.querySelector('[name="postePrix"]').dataset.manual = 'true';
+      if (kmCostPoste <= 0) return;
 
-      const tacheField = newCard.querySelector('[name="tache"]');
-      if (tacheField) {
-        tacheField.value =
-          `Trajet total : ${this._lastResult.totalKm} km (aller-retour Pelichet Vernier)\n` +
-          `Forfait inclus : ${this._lastResult.forfaitKm} km\n` +
-          `Supplément : ${excessKm} km\n\n` +
-          details.join('\n');
+      // Récupérer le prix de base (stocké dans dataset, ou prix actuel si première application)
+      const prixInput = card.querySelector('[name="postePrix"]');
+      if (!prixInput) return;
+
+      let prixBase = parseFloat(prixInput.dataset.prixBase);
+      if (isNaN(prixBase)) {
+        prixBase = parseFloat(prixInput.value) || 0;
+        prixInput.dataset.prixBase = prixBase.toString();
       }
 
-      PriceCalc.updateBreakdown();
-      newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      Toast.success(`Poste "Frais km" ajouté (${totalKmCost.toFixed(2)} CHF)`);
+      // Nouveau prix = prix base + frais km
+      const nouveauPrix = prixBase + kmCostPoste;
+      prixInput.value = nouveauPrix.toFixed(2);
+      prixInput.dataset.manual = 'true';
+      prixInput.dataset.kmCost = kmCostPoste.toFixed(2);
+
+      totalAjoute += kmCostPoste;
+    });
+
+    if (totalAjoute === 0) {
+      Toast.warning('Aucun véhicule facturable km dans les postes.');
+      return;
     }
+
+    PriceCalc.updateBreakdown();
+    Toast.success(`Frais km ajoutés aux postes : +${totalAjoute.toFixed(2)} CHF répartis`);
   },
 
   /** Retourne les km supplémentaires (pour la ventilation) */
