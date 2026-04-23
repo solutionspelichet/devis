@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pelichet NLC SA - Devis & Logistique</title>
+    <title>Pelichet NLC — Devis & Logistique</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,24 +13,21 @@
     <!-- LOGIN OVERLAY -->
     <div id="loginOverlay" class="login-overlay hidden">
         <div class="login-modal">
-            <div class="login-logo">PELICHET NLC SA</div>
-
-            <!-- VUE 1 : Selection utilisateur -->
+            <div class="login-logo">PELICHET NLC</div>
             <div id="loginView" class="login-view">
                 <h2 class="login-title">Connexion</h2>
-                <p class="login-subtitle">Selectionnez votre profil</p>
+                <p class="login-subtitle">Sélectionnez votre profil</p>
                 <div id="loginUsersGrid" class="login-users-grid"></div>
-                <button type="button" id="showRegisterBtn" class="login-create-btn">+ Creer un compte</button>
+                <button type="button" id="showRegisterBtn" class="login-create-btn">+ Créer un compte</button>
             </div>
 
-            <!-- VUE 2 : Formulaire de creation -->
             <div id="registerView" class="login-view hidden">
                 <h2 class="login-title">Nouveau compte</h2>
                 <p class="login-subtitle">Renseignez vos informations</p>
                 <form id="registerForm" class="register-form" novalidate>
                     <div class="register-row">
                         <div class="register-field">
-                            <label>Prenom *</label>
+                            <label>Prénom *</label>
                             <input type="text" id="regPrenom" required placeholder="Ex: Arnaud">
                         </div>
                         <div class="register-field">
@@ -37,7 +36,7 @@
                         </div>
                     </div>
                     <div class="register-field">
-                        <label>Telephone *</label>
+                        <label>Téléphone *</label>
                         <input type="tel" id="regTelephone" required placeholder="+41 79 000 00 00">
                     </div>
                     <div class="register-field">
@@ -45,7 +44,7 @@
                         <input type="email" id="regEmail" placeholder="prenom.nom@pelichet.ch">
                     </div>
                     <div class="register-field">
-                        <label>Role</label>
+                        <label>Rôle</label>
                         <select id="regRole">
                             <option value="vendeur">Vendeur / Conseiller</option>
                             <option value="coordinateur">Coordinateur</option>
@@ -64,11 +63,11 @@
                                 <span class="signature-placeholder">Cliquez ou glissez votre signature ici</span>
                             </div>
                         </div>
-                        <p class="signature-hint">Format: PNG ou JPG, fond transparent recommande</p>
+                        <p class="signature-hint">Format : PNG ou JPG, fond transparent recommandé</p>
                     </div>
                     <div class="register-actions">
-                        <button type="button" id="backToLoginBtn" class="btn" style="background:var(--slate-200);color:var(--slate-700);flex:1">Retour</button>
-                        <button type="submit" id="registerSubmitBtn" class="btn btn-primary" style="flex:2">Creer mon compte</button>
+                        <button type="button" id="backToLoginBtn" class="btn btn-ghost">Retour</button>
+                        <button type="submit" id="registerSubmitBtn" class="btn btn-primary">Créer mon compte</button>
                     </div>
                     <div id="registerError" class="register-error hidden"></div>
                 </form>
@@ -76,9 +75,9 @@
         </div>
     </div>
 
-    <!-- PANNEAU MON PROFIL -->
+    <!-- PROFILE PANEL -->
     <div id="profilePanel" class="settings-overlay hidden">
-        <div class="settings-modal" style="max-width:28rem">
+        <div class="settings-modal" style="max-width:480px">
             <div class="settings-header">
                 <h3>Mon Profil</h3>
                 <button type="button" id="profileClose" class="settings-close-btn">&times;</button>
@@ -87,7 +86,7 @@
                 <form id="profileForm" class="register-form" novalidate>
                     <div class="register-row">
                         <div class="register-field">
-                            <label>Prenom</label>
+                            <label>Prénom</label>
                             <input type="text" id="profPrenom" class="bg-slate-50" readonly>
                         </div>
                         <div class="register-field">
@@ -96,7 +95,7 @@
                         </div>
                     </div>
                     <div class="register-field">
-                        <label>Telephone</label>
+                        <label>Téléphone</label>
                         <input type="tel" id="profTelephone" class="bg-slate-50" readonly>
                     </div>
                     <div class="register-field">
@@ -107,7 +106,7 @@
                         <label>Signature</label>
                         <div id="profSignatureCurrent" class="signature-current hidden">
                             <img id="profSignatureImg" src="" alt="Signature actuelle">
-                            <span class="signature-ok-badge">Signature enregistree</span>
+                            <span class="signature-ok-badge">✓ Enregistrée</span>
                         </div>
                         <div class="signature-upload-zone" id="profSignatureZone">
                             <input type="file" id="profSignatureFile" accept="image/*" class="signature-file-input">
@@ -115,7 +114,7 @@
                                 <span class="signature-placeholder">Cliquez ou glissez une nouvelle signature</span>
                             </div>
                         </div>
-                        <p class="signature-hint">Format: PNG ou JPG, fond transparent recommande</p>
+                        <p class="signature-hint">Format : PNG ou JPG, fond transparent recommandé</p>
                     </div>
                 </form>
             </div>
@@ -125,27 +124,15 @@
         </div>
     </div>
 
-    <!-- NAV -->
-    <nav class="nav">
-        <h1>Pelichet Logistique</h1>
-        <div style="display:flex;align-items:center;gap:0.75rem">
-            <span id="navUserName" class="nav-user-name"></span>
-            <button type="button" id="profileBtn" class="nav-profile-btn hidden" title="Mon Profil">&#9998;</button>
-            <button type="button" id="logoutBtn" class="nav-logout-btn hidden" title="Deconnexion">&#x2716;</button>
-            <button type="button" id="settingsBtn" class="nav-settings-btn" title="Tarifs & Marges">&#9881;</button>
-            <span class="version">v2.2</span>
-        </div>
-    </nav>
-
-    <!-- PANNEAU SETTINGS -->
+    <!-- SETTINGS / TARIFS PANEL -->
     <div id="settingsPanel" class="settings-overlay hidden">
         <div class="settings-modal">
             <div class="settings-header">
-                <h3>Tarifs & Marges</h3>
+                <h3>Tarifs &amp; Marges</h3>
                 <button type="button" id="settingsClose" class="settings-close-btn">&times;</button>
             </div>
             <div class="settings-body">
-                <h4 class="settings-section-title">Marges par categorie</h4>
+                <h4 class="settings-section-title">Marges par catégorie</h4>
                 <div id="settingsMarges" class="settings-marges-grid"></div>
 
                 <h4 class="settings-section-title mt-6">Tarifs unitaires</h4>
@@ -157,7 +144,7 @@
                         <tbody id="settingsTarifsBody"></tbody>
                     </table>
                 </div>
-                <button type="button" id="settingsAddRow" class="btn" style="margin-top:0.5rem;background:var(--slate-200);color:var(--slate-700);font-size:11px">+ Ajouter un tarif</button>
+                <button type="button" id="settingsAddRow" class="btn btn-ghost btn-xs mt-2">+ Ajouter un tarif</button>
             </div>
             <div class="settings-footer">
                 <button type="button" id="settingsSave" class="btn btn-primary">Sauvegarder</button>
@@ -165,160 +152,328 @@
         </div>
     </div>
 
-    <!-- BARRE DE RECHERCHE -->
-    <div class="container mt-4">
-        <div class="search-bar">
-            <input type="text" id="searchRef" placeholder="Charger un dossier (Réf...)" class="font-mono uppercase" style="flex:1">
-            <button type="button" id="loadBtn" class="btn btn-blue">Ouvrir</button>
-            <button type="button" id="listBtn" class="btn" style="background:var(--slate-600);color:white;white-space:nowrap">Tous les dossiers</button>
-        </div>
-        <!-- Liste dossiers (masquée par défaut) -->
-        <div id="dossierListPanel" class="hidden" style="margin-top:0.5rem">
-            <div class="card" style="padding:0;overflow:hidden;max-height:24rem;display:flex;flex-direction:column">
-                <div style="padding:0.75rem 1rem;background:var(--slate-800);display:flex;gap:0.5rem;align-items:center">
-                    <input type="text" id="dossierFilter" placeholder="Filtrer par réf ou client..." style="flex:1;padding:0.4rem 0.75rem;border-radius:0.5rem;font-size:0.75rem;border:none">
-                    <button type="button" id="closeDossierList" style="background:none;border:none;color:var(--slate-400);font-size:1.2rem;cursor:pointer;padding:0 0.25rem">&times;</button>
+    <!-- APP SHELL -->
+    <div class="app-shell">
+
+        <!-- TOPBAR -->
+        <div class="topbar">
+            <div class="brand">
+                <div class="brand-mark">P</div>
+                <div class="brand-info">
+                    <div class="brand-name">Pelichet NLC</div>
+                    <div class="brand-sub">Devis &amp; Logistique</div>
                 </div>
-                <div id="dossierListBody" style="overflow-y:auto;flex:1"></div>
+            </div>
+
+            <div class="topbar-search">
+                <span class="search-icon">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7">
+                        <circle cx="9" cy="9" r="6"/><path d="m14 14 4 4" stroke-linecap="round"/>
+                    </svg>
+                </span>
+                <input type="text" id="searchRef" placeholder="Ouvrir un dossier — Réf…" autocomplete="off">
+                <button type="button" id="loadBtn" class="topbar-search-btn">Ouvrir</button>
+            </div>
+
+            <div class="topbar-right">
+                <span id="navUserName" class="mono" style="font-size:11px;color:var(--ink-3);margin-right:4px"></span>
+                <button type="button" id="profileBtn" class="icon-btn hidden" title="Mon Profil">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10" cy="7" r="3"/><path d="M3 17c1-3 4-5 7-5s6 2 7 5" stroke-linecap="round"/></svg>
+                </button>
+                <button type="button" id="settingsBtn" class="icon-btn" title="Tarifs &amp; Marges">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10" cy="10" r="3"/><path d="M10 2v2m0 12v2m8-8h-2m-12 0H2m13.5-5.5-1.5 1.5m-8 8-1.5 1.5m0-11 1.5 1.5m8 8 1.5 1.5" stroke-linecap="round"/></svg>
+                </button>
+                <button type="button" id="logoutBtn" class="icon-btn hidden" title="Déconnexion">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 2H4v16h4M14 14l4-4-4-4M18 10H8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <span class="version">v3.0</span>
             </div>
         </div>
-    </div>
 
-    <div class="container mt-6">
-        <form id="devisForm" class="space-y-6" novalidate>
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="side-section-head">
+                <span class="eyebrow">Dossiers</span>
+                <button type="button" id="listBtn" class="btn btn-ghost btn-xs" title="Rafraîchir">↻</button>
+            </div>
+            <div class="side-filter">
+                <input type="text" id="dossierFilter" placeholder="Filtrer par réf. ou client…">
+            </div>
+            <div id="dossierListBody" class="dossier-sidebar-list">
+                <div class="side-loading">Cliquez sur ↻ pour charger la liste</div>
+            </div>
+            <div class="side-foot">
+                <button type="button" class="btn btn-ghost" onclick="location.reload()">
+                    <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 4v6M10 10V4M4 10h12" stroke-linecap="round"/></svg>
+                    Nouveau
+                </button>
+            </div>
+        </aside>
 
-            <!-- 1. EMETTEUR -->
-            <div class="card">
-                <h3 class="card-title">1. Emetteur & Suivi</h3>
+        <!-- Legacy hidden panel (kept for JS compat) -->
+        <div id="dossierListPanel" class="hidden">
+            <div id="closeDossierList"></div>
+        </div>
 
-                <div class="radio-group">
-                    <label><input type="radio" name="typeSociete" value="Pelichet" checked onchange="togglePelichet(true)"> Pelichet NLC</label>
-                    <label><input type="radio" name="typeSociete" value="Autre" onchange="togglePelichet(false)"> Autre</label>
+        <!-- MAIN -->
+        <main class="main">
+            <div class="page-head">
+                <div>
+                    <div class="page-title" id="pageTitle">Nouveau devis</div>
+                    <div class="page-sub">
+                        <span class="ref" id="pageRef">—</span>
+                        <span id="pagePostesCount">0 postes</span>
+                    </div>
                 </div>
-
-                <div class="grid-2">
-                    <div class="col-span-2">
-                        <label class="field-label">WhatsApp de Réception</label>
-                        <input type="tel" id="mobileSociete" name="mobileSociete" value="+41 79 688 27 35" class="font-bold bg-slate-50">
-                    </div>
-                    <div class="pelichet-only">
-                        <label class="field-label">Conseiller</label>
-                        <input type="text" id="vendeur" name="vendeur" value="ARNAUD GUEDOU" class="text-xs font-semibold">
-                        <input type="text" id="vendeurTel" name="vendeurTel" value="+41 79 688 27 35" class="mt-1 text-xs italic" style="color:var(--slate-500);padding:0.25rem 1rem;font-size:10px">
-                    </div>
-                    <div class="pelichet-only">
-                        <label class="field-label">Coordinateur</label>
-                        <input type="text" name="coordinateur" value="WOTQUENNE LILOU" class="text-xs font-semibold">
-                        <input type="text" name="coordinateurTel" value="022 827 36 97" class="mt-1 text-xs italic" style="color:var(--slate-500);padding:0.25rem 1rem;font-size:10px">
-                    </div>
+                <div class="page-actions">
+                    <button type="button" class="btn btn-ghost" id="autoTotalBtn">Auto-total</button>
+                    <button type="submit" form="devisForm" id="submitBtnTop" class="btn btn-red">Générer devis</button>
                 </div>
             </div>
 
-            <!-- 2. CLIENT -->
-            <div class="card">
-                <h3 class="card-title">2. Informations Client</h3>
-                <div class="grid-2">
-                    <div class="col-span-2">
-                        <label class="field-label">Référence Dossier</label>
-                        <input type="text" name="ref" class="font-mono uppercase bg-slate-50">
-                        <div class="error-msg">Référence dossier requise</div>
-                    </div>
-                    <div>
-                        <label class="field-label">Salutation</label>
-                        <select name="genre" class="font-bold">
-                            <option value="Monsieur">Monsieur</option>
-                            <option value="Madame">Madame</option>
-                            <option value="Messieurs">Messieurs</option>
-                            <option value="Madame, Monsieur">Madame, Monsieur</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="field-label">Société Cliente</label>
-                        <input type="text" name="client" class="font-bold">
-                        <div class="error-msg">Nom du client requis</div>
-                    </div>
-                    <div class="col-span-2">
-                        <label class="field-label">Adresse Facturation</label>
-                        <textarea id="adresseFacturation" name="adresseClient" rows="2" class="text-sm"></textarea>
-                        <div class="error-msg">Adresse de facturation requise</div>
-                    </div>
-                </div>
-            </div>
+            <form id="devisForm" class="space-y-6" novalidate>
 
-            <!-- 3. LOGISTIQUE -->
-            <div class="card">
-                <h3 class="card-title">3. Logistique</h3>
-                <div class="space-y-4">
-                    <div class="zone-depart">
-                        <label class="zone-label">Enlèvement (DEPART) :</label>
-                        <textarea id="adresseDepart" name="adresseDepart" rows="2" class="text-sm mb-3"></textarea>
-                        <div class="error-msg">Adresse de départ requise</div>
-                        <div class="grid-2 mt-2">
-                            <input type="text" name="contact" placeholder="Nom Contact" class="text-xs font-bold">
-                            <input type="tel" name="contactTel" placeholder="Tél Contact" class="text-xs font-bold">
+                <!-- 1. CLIENT -->
+                <div class="card">
+                    <div class="card-head">
+                        <div class="card-title"><span class="card-num">01</span> Client</div>
+                        <div class="card-desc">Société, adresse de facturation, salutation</div>
+                    </div>
+                    <div class="grid-2">
+                        <div class="col-span-2">
+                            <label class="field-label">Référence dossier</label>
+                            <input type="text" name="ref" class="font-mono uppercase">
+                            <div class="error-msg">Référence dossier requise</div>
+                        </div>
+                        <div>
+                            <label class="field-label">Salutation</label>
+                            <select name="genre" class="font-bold">
+                                <option value="Monsieur">Monsieur</option>
+                                <option value="Madame">Madame</option>
+                                <option value="Messieurs">Messieurs</option>
+                                <option value="Madame, Monsieur">Madame, Monsieur</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="field-label">Société cliente</label>
+                            <input type="text" name="client" class="font-bold" placeholder="Rechercher Zefix / registre…">
+                            <div class="error-msg">Nom du client requis</div>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="field-label">Adresse de facturation</label>
+                            <textarea id="adresseFacturation" name="adresseClient" rows="2" class="text-sm"></textarea>
+                            <div class="error-msg">Adresse de facturation requise</div>
                         </div>
                     </div>
-                    <div class="zone-arrivee">
-                        <label class="zone-label">Livraison (ARRIVEE) :</label>
-                        <textarea name="adresseArrivee" rows="2" class="text-sm"></textarea>
-                        <div class="error-msg">Adresse d'arrivée requise</div>
+                </div>
+
+                <!-- 2. ÉMETTEUR -->
+                <div class="card">
+                    <div class="card-head">
+                        <div class="card-title"><span class="card-num">02</span> Émetteur &amp; Suivi</div>
+                        <div class="card-desc">Société émettrice, conseiller, coordinateur</div>
+                    </div>
+                    <div class="radio-group">
+                        <label><input type="radio" name="typeSociete" value="Pelichet" checked onchange="togglePelichet(true)"> Pelichet NLC</label>
+                        <label><input type="radio" name="typeSociete" value="Autre" onchange="togglePelichet(false)"> Autre</label>
+                    </div>
+                    <div class="grid-3">
+                        <div class="col-span-2" style="grid-column:1/-1">
+                            <label class="field-label">WhatsApp de réception</label>
+                            <input type="tel" id="mobileSociete" name="mobileSociete" value="+41 79 688 27 35" class="font-bold font-mono">
+                        </div>
+                        <div class="pelichet-only">
+                            <label class="field-label">Conseiller</label>
+                            <input type="text" id="vendeur" name="vendeur" value="ARNAUD GUEDOU" class="font-semibold">
+                            <input type="text" id="vendeurTel" name="vendeurTel" value="+41 79 688 27 35" class="mt-1 font-mono" style="font-size:11px;color:var(--ink-3)">
+                        </div>
+                        <div class="pelichet-only">
+                            <label class="field-label">Coordinateur</label>
+                            <input type="text" name="coordinateur" value="WOTQUENNE LILOU" class="font-semibold">
+                            <input type="text" name="coordinateurTel" value="022 827 36 97" class="mt-1 font-mono" style="font-size:11px;color:var(--ink-3)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. LOGISTIQUE -->
+                <div class="card">
+                    <div class="card-head">
+                        <div class="card-title"><span class="card-num">03</span> Logistique</div>
+                        <div class="card-desc">Itinéraire, volume, kilométrage</div>
+                    </div>
+                    <div class="route">
+                        <div class="route-col depart zone-depart">
+                            <div class="route-badge zone-label"><span class="route-dot"></span> Enlèvement — Départ</div>
+                            <textarea id="adresseDepart" name="adresseDepart" rows="3" class="text-sm"></textarea>
+                            <div class="error-msg">Adresse de départ requise</div>
+                            <div class="grid-2 mt-3">
+                                <input type="text" name="contact" placeholder="Nom contact" class="font-semibold">
+                                <input type="tel" name="contactTel" placeholder="Téléphone" class="font-mono">
+                            </div>
+                        </div>
+                        <div class="route-arrow">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M4 12h16M14 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </div>
+                        <div class="route-col arrivee zone-arrivee">
+                            <div class="route-badge zone-label"><span class="route-dot"></span> Livraison — Arrivée</div>
+                            <textarea name="adresseArrivee" rows="3" class="text-sm"></textarea>
+                            <div class="error-msg">Adresse d'arrivée requise</div>
+                            <div class="mt-3">
+                                <label class="field-label">Volume estimé</label>
+                                <div style="display:flex;align-items:center;gap:8px">
+                                    <input type="number" name="volumeEstime" value="200" class="font-mono" style="width:120px">
+                                    <span style="font-size:12px;color:var(--ink-3)">m³</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="km-section">
-                        <button type="button" id="kmCalcBtn" class="btn km-btn">🛣️ Calculer Kilométrage</button>
+                        <button type="button" id="kmCalcBtn" class="btn km-btn">🛣️ Calculer kilométrage</button>
                         <div id="kmResult" class="km-result hidden"></div>
                     </div>
-                    <div>
-                        <label class="field-label">Volume Estimé (m3)</label>
-                        <input type="number" name="volumeEstime" placeholder="200" value="200" style="width:8rem" class="font-bold">
+                </div>
+
+                <!-- 4. PRESTATIONS -->
+                <div class="card">
+                    <div class="card-head">
+                        <div class="card-title"><span class="card-num">04</span> Prestations</div>
+                        <div class="card-desc">Personnel, véhicules, engins, matériel</div>
+                    </div>
+                    <div id="prestationsContainer" class="space-y-8"></div>
+                    <button type="button" class="add-poste-btn detail" onclick="PosteManager.addPoste('detail')">+ Ajouter un poste</button>
+                </div>
+
+                <!-- 5. MONTANT HT -->
+                <div class="card">
+                    <div class="card-head">
+                        <div class="card-title"><span class="card-num">05</span> Chiffre d'affaires HT</div>
+                        <div class="card-desc">Montant total hors taxe du devis</div>
+                    </div>
+                    <div class="total-input-wrap">
+                        <span class="currency">CHF</span>
+                        <input type="number" name="montantHT" step="0.01" placeholder="0.00">
+                    </div>
+                    <div class="error-msg">Montant HT requis (&gt; 0)</div>
+                    <div id="totalBreakdown" class="total-breakdown hidden"></div>
+                </div>
+
+                <!-- 6. EXPORT -->
+                <div class="card">
+                    <div class="card-head">
+                        <div class="card-title"><span class="card-num">06</span> Export &amp; Planning</div>
+                        <div class="card-desc">Fichiers pour l'outil comptable et le planning consolidé</div>
+                    </div>
+                    <div class="grid-2">
+                        <button type="button" id="exportVentilBtn" class="btn btn-ghost btn-lg" style="justify-content:flex-start;gap:12px">
+                            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7">
+                                <path d="M10 3v10m0 0 4-4m-4 4-4-4M4 17h12" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <div style="text-align:left;line-height:1.3">
+                                <div style="font-size:12px;font-weight:600">Ventilation comptable</div>
+                                <div style="font-size:10px;color:var(--ink-3);font-weight:400">Fichier CSV par jour</div>
+                            </div>
+                        </button>
+                        <button type="button" id="planningBtn" class="btn btn-ghost btn-lg" style="justify-content:flex-start;gap:12px">
+                            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7">
+                                <rect x="3" y="5" width="14" height="12" rx="1.5"/><path d="M3 8h14M7 3v4M13 3v4" stroke-linecap="round"/>
+                            </svg>
+                            <div style="text-align:left;line-height:1.3">
+                                <div style="font-size:12px;font-weight:600">Planning consolidé</div>
+                                <div style="font-size:10px;color:var(--ink-3);font-weight:400">Google Sheet multi-dossiers</div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- SUBMIT -->
+                <button type="submit" id="submitBtn" class="btn-submit">
+                    <span id="btnText">Générer devis + RESA</span>
+                    <div id="loader" class="spinner hidden"></div>
+                </button>
+            </form>
+        </main>
+
+        <!-- RIGHT RAIL -->
+        <aside class="rightrail" id="rightRail">
+            <div class="rail-section">
+                <div class="rail-title">Chiffre d'affaires</div>
+                <div class="total-big" id="railTotalHT"><span class="cur">CHF</span>0</div>
+                <div class="total-sub" id="railTotalSub">HT · 0 postes</div>
+                <div style="margin-top:16px">
+                    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);margin-bottom:4px">
+                        <span>Marge</span>
+                        <span class="mono" id="railMargePct" style="color:var(--ink);font-weight:600">—</span>
+                    </div>
+                    <div class="margin-bar">
+                        <div class="margin-bar-fill" id="railMargeBar" style="width:0%"></div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ink-4)">
+                        <span id="railCout">Coût 0.00</span>
+                        <span id="railGain">Gain 0.00</span>
                     </div>
                 </div>
             </div>
 
-            <!-- 4. PRESTATIONS -->
-            <div class="card">
-                <h3 class="card-title">4. Prestations</h3>
-                <div id="prestationsContainer" class="space-y-8"></div>
-                <div class="mt-8" style="text-align:center">
-                    <button type="button" class="add-poste-btn detail" onclick="PosteManager.addPoste('detail')">+ Ajouter un poste</button>
+            <div class="rail-section">
+                <div class="rail-title">Répartition</div>
+                <div id="railCatBreak"></div>
+                <div class="break-row tot">
+                    <span class="k">Total HT</span>
+                    <span class="v" id="railHT">0.00</span>
+                </div>
+                <div class="break-row">
+                    <span class="k">TVA 8.1%</span>
+                    <span class="v" id="railTVA">0.00</span>
+                </div>
+                <div class="break-row">
+                    <span class="k">RPLP 0.5%</span>
+                    <span class="v" id="railRPLP">0.00</span>
+                </div>
+                <div class="break-row tot">
+                    <span class="k">Total TTC</span>
+                    <span class="v" id="railTTC">0.00</span>
                 </div>
             </div>
 
-            <!-- 5. TOTAL -->
-            <div class="card">
-                <h3 class="card-title">5. Chiffre d'Affaires HT</h3>
-                <div class="total-input-wrap">
-                    <span class="currency">CHF</span>
-                    <input type="number" name="montantHT" step="0.01">
-                    <div class="error-msg">Montant HT requis (> 0)</div>
+            <div class="rail-section">
+                <button class="rail-action" type="submit" form="devisForm" id="railSubmitBtn">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="M3 10l14-7-5 16-2-7-7-2z" stroke-linejoin="round"/>
+                    </svg>
+                    Générer devis + RESA
+                </button>
+                <div class="mini-actions">
+                    <button type="button" class="btn btn-ghost" id="railExportVentil">Ventilation</button>
+                    <button type="button" class="btn btn-ghost" id="railPlanning">Planning</button>
                 </div>
-                <div class="auto-total mt-2">
-                    <button type="button" id="autoTotalBtn">Calculer depuis les postes</button>
+            </div>
+
+            <div class="rail-section">
+                <div class="rail-title">Informations</div>
+                <div class="break-row" style="border:none">
+                    <span class="k">Conseiller</span>
+                    <span class="v" id="railVendeur" style="font-family:var(--font-sans);font-weight:500">—</span>
                 </div>
-                <div id="totalBreakdown" class="total-breakdown"></div>
+                <div class="break-row" style="border:none">
+                    <span class="k">Volume</span>
+                    <span class="v" id="railVolume">— m³</span>
+                </div>
+                <div class="break-row" style="border:none">
+                    <span class="k">Km total</span>
+                    <span class="v" id="railKm">—</span>
+                </div>
+                <div class="break-row" style="border:none">
+                    <span class="k">Postes</span>
+                    <span class="v" id="railPostesCount">0</span>
+                </div>
             </div>
+        </aside>
 
-            <!-- EXPORT VENTILATION -->
-            <div class="card">
-                <h3 class="card-title">6. Export Ventilation Comptable</h3>
-                <p style="font-size:0.75rem;color:var(--slate-500);margin-bottom:0.75rem">Génère un fichier CSV avec les lignes ventilées par jour (personnel, véhicules, engins, matériel) pour import dans l'outil interne.</p>
-                <button type="button" id="exportVentilBtn" class="btn" style="background:var(--slate-700);color:white;width:100%;padding:0.75rem">Exporter Ventilation (.csv)</button>
-            </div>
-
-            <!-- PLANNING CONSOLIDÉ -->
-            <div class="card planning-card">
-                <h3 class="card-title">7. Planning Consolidé</h3>
-                <p style="font-size:0.75rem;color:var(--slate-500);margin-bottom:0.75rem">Génère un Google Sheet consolidant tous vos dossiers actifs sur un calendrier jour par jour, avec effectifs, véhicules, matériel et activités par client.</p>
-                <button type="button" id="planningBtn" class="btn planning-btn">📅 Générer Planning Consolidé</button>
-            </div>
-
-            <!-- SUBMIT -->
-            <button type="submit" id="submitBtn" class="btn-submit">
-                <span id="btnText" class="uppercase">Générer Devis + RESA</span>
-                <div id="loader" class="spinner hidden"></div>
-            </button>
-
-        </form>
     </div>
+
+    <div id="toastLayer" class="toast-layer"></div>
 
     <script src="app.js"></script>
 </body>

@@ -1266,19 +1266,138 @@ const PriceCalc = {
   },
 
   updateBreakdown() {
-    if (!this._breakdownEl || !this._htInput) return;
+    if (!this._htInput) return;
     const ht = parseFloat(this._htInput.value) || 0;
     const tva = ht * CONFIG.TVA_RATE;
     const rplp = ht * CONFIG.RPLP_RATE;
     const ttc = ht + tva + rplp;
-    const fmt = (v) => v.toLocaleString('fr-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' CHF';
+    const fmt = (v) => v.toLocaleString('fr-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    this._breakdownEl.innerHTML = `
-      <div class="line"><span>Total HT</span><span>${fmt(ht)}</span></div>
-      <div class="line"><span>TVA (8.1%)</span><span>${fmt(tva)}</span></div>
-      <div class="line"><span>RPLP (0.5%)</span><span>${fmt(rplp)}</span></div>
-      <div class="line total"><span>Total TTC</span><span>${fmt(ttc)}</span></div>
-    `;
+    if (this._breakdownEl) {
+      this._breakdownEl.innerHTML = `
+        <div class="break-row"><span class="k">Total HT</span><span class="v">${fmt(ht)}</span></div>
+        <div class="break-row"><span class="k">TVA (8.1%)</span><span class="v">${fmt(tva)}</span></div>
+        <div class="break-row"><span class="k">RPLP (0.5%)</span><span class="v">${fmt(rplp)}</span></div>
+        <div class="break-row tot"><span class="k">Total TTC</span><span class="v">${fmt(ttc)}</span></div>
+      `;
+      this._breakdownEl.classList.toggle('hidden', ht <= 0);
+    }
+
+    // Alimenter le right rail
+    if (typeof RightRail !== 'undefined') RightRail.update();
+  }
+};
+
+// ============================================
+// RIGHT RAIL (totaux + répartition + infos dossier)
+// ============================================
+const RightRail = {
+  update() {
+    const fmt = (v) => v.toLocaleString('fr-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt0 = (v) => Math.round(v).toLocaleString('fr-CH');
+
+    const htInput = document.querySelector('[name="montantHT"]');
+    const ht = parseFloat(htInput?.value) || this._sumPostes();
+    const tva = ht * (CONFIG.TVA_RATE || 0.081);
+    const rplp = ht * (CONFIG.RPLP_RATE || 0.005);
+    const ttc = ht + tva + rplp;
+
+    // Calcul coûts par catégorie et marge (si TarifManager disponible)
+    let coutTotal = 0;
+    const catTotals = { personnel: 0, vehicules: 0, engins: 0, materiel: 0 };
+    document.querySelectorAll('.poste-card').forEach(card => {
+      try {
+        const calc = TarifManager?.calculerPrixPoste?.(card);
+        if (calc) {
+          coutTotal += calc.cout || 0;
+          (calc.details || []).forEach(d => {
+            if (catTotals[d.type] !== undefined) catTotals[d.type] += d.prix || 0;
+          });
+        }
+      } catch (e) { /* ignore */ }
+    });
+
+    const marge = ht > 0 && coutTotal > 0 ? ((ht - coutTotal) / ht * 100) : 0;
+    const gain = ht - coutTotal;
+
+    // Gros chiffre HT
+    const totalHT = document.getElementById('railTotalHT');
+    if (totalHT) totalHT.innerHTML = `<span class="cur">CHF</span>${fmt0(ht)}`;
+
+    // Total sub
+    const postesCount = document.querySelectorAll('.poste-card').length;
+    const sub = document.getElementById('railTotalSub');
+    if (sub) sub.textContent = `HT · ${postesCount} poste${postesCount > 1 ? 's' : ''} · ${fmt0(ttc)} TTC`;
+
+    // Marge
+    const margePct = document.getElementById('railMargePct');
+    if (margePct) margePct.textContent = coutTotal > 0 ? `${marge.toFixed(1)} %` : '—';
+    const margeBar = document.getElementById('railMargeBar');
+    if (margeBar) margeBar.style.width = `${Math.max(0, Math.min(100, marge * 2))}%`;
+    const railCout = document.getElementById('railCout');
+    if (railCout) railCout.textContent = `Coût ${fmt(coutTotal)}`;
+    const railGain = document.getElementById('railGain');
+    if (railGain) railGain.textContent = `Gain ${fmt(gain)}`;
+
+    // Répartition par catégorie
+    const catBreak = document.getElementById('railCatBreak');
+    if (catBreak) {
+      const labels = { personnel: 'Personnel', vehicules: 'Véhicules', engins: 'Engins', materiel: 'Matériel' };
+      catBreak.innerHTML = Object.keys(labels).map(k => {
+        const v = catTotals[k] || 0;
+        const pct = ht > 0 ? (v / ht * 100) : 0;
+        return `
+          <div class="cat-break">
+            <div class="cat-break-row"><span class="k">${labels[k]}</span><span class="v">${fmt(v)}</span></div>
+            <div class="cat-break-bar"><div class="cat-break-bar-fill" style="width:${pct}%"></div></div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Totaux HT/TVA/RPLP/TTC
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setText('railHT', fmt(ht));
+    setText('railTVA', fmt(tva));
+    setText('railRPLP', fmt(rplp));
+    setText('railTTC', fmt(ttc));
+
+    // Infos dossier
+    const vendeur = document.querySelector('[name="vendeur"]')?.value || '—';
+    setText('railVendeur', vendeur);
+    const volume = document.querySelector('[name="volumeEstime"]')?.value || '—';
+    setText('railVolume', `${volume} m³`);
+    const kmTxt = typeof KmCalculator !== 'undefined' && KmCalculator._lastResult
+      ? `${KmCalculator._lastResult.totalKm} km` : '—';
+    setText('railKm', kmTxt);
+    setText('railPostesCount', String(postesCount));
+
+    // Page head
+    const client = document.querySelector('[name="client"]')?.value?.trim() || 'Nouveau devis';
+    const ref = document.querySelector('[name="ref"]')?.value?.trim() || '—';
+    setText('pageTitle', client);
+    setText('pageRef', ref);
+    setText('pagePostesCount', `${postesCount} poste${postesCount > 1 ? 's' : ''}`);
+  },
+
+  _sumPostes() {
+    let total = 0;
+    document.querySelectorAll('[name="postePrix"]').forEach(input => {
+      const val = parseFloat(input.value);
+      if (!isNaN(val)) total += val;
+    });
+    return total;
+  },
+
+  init() {
+    // Reactiver sur changements de champs clés
+    ['client', 'ref', 'volumeEstime'].forEach(name => {
+      document.querySelector(`[name="${name}"]`)?.addEventListener('input', () => this.update());
+    });
+    // Actions boutons right rail
+    document.getElementById('railExportVentil')?.addEventListener('click', () => VentilationExport.generate());
+    document.getElementById('railPlanning')?.addEventListener('click', () => PlanningExport.generate());
+    this.update();
   }
 };
 
@@ -1936,31 +2055,26 @@ const DossierList = {
     this._body = document.getElementById('dossierListBody');
     this._filter = document.getElementById('dossierFilter');
 
-    document.getElementById('listBtn')?.addEventListener('click', () => this.toggle());
+    // Le bouton "listBtn" dans la sidebar refresh la liste
+    document.getElementById('listBtn')?.addEventListener('click', () => this.refresh());
     document.getElementById('closeDossierList')?.addEventListener('click', () => this.close());
     this._filter?.addEventListener('input', () => this._render());
-  },
 
-  toggle() {
-    if (this._panel.classList.contains('hidden')) {
-      this.open();
-    } else {
-      this.close();
+    // Charge automatiquement au démarrage si utilisateur connecté
+    if (UserManager.getUserId && UserManager.getUserId()) {
+      this.fetch();
     }
   },
+
+  toggle() { this.refresh(); },
 
   async open() {
-    this._panel.classList.remove('hidden');
-    if (!this._loaded) {
-      await this.fetch();
-    } else {
-      this._render();
-    }
-    this._filter.focus();
+    if (!this._loaded) await this.fetch();
+    else this._render();
   },
 
   close() {
-    this._panel.classList.add('hidden');
+    // Plus de panel à cacher dans la nouvelle UI
   },
 
   async fetch() {
@@ -1992,36 +2106,42 @@ const DossierList = {
     const filtered = query
       ? this._dossiers.filter(d =>
           d.ref.toLowerCase().includes(query) ||
-          d.client.toLowerCase().includes(query)
+          (d.client || '').toLowerCase().includes(query)
         )
       : this._dossiers;
 
     if (filtered.length === 0) {
-      this._body.innerHTML = `<div class="dossier-empty">${query ? 'Aucun résultat pour "' + query + '"' : 'Aucun dossier trouvé.'}</div>`;
+      this._body.innerHTML = `<div class="side-empty">${query ? 'Aucun résultat' : 'Aucun dossier'}</div>`;
       return;
     }
 
     const fmtCHF = (v) => {
       const n = parseFloat(v) || 0;
-      return n.toLocaleString('fr-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' CHF';
+      if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+      return Math.round(n).toString();
     };
 
-    this._body.innerHTML = filtered.map(d => `
-      <div class="dossier-row" data-ref="${d.ref}">
-        <div>
-          <div class="ref">${d.ref}</div>
-          <div class="client">${d.client || '—'}</div>
-        </div>
-        <div class="montant">${fmtCHF(d.montantHT)}</div>
-        <div class="meta">${d.date || ''}</div>
-      </div>
-    `).join('');
+    const activeRef = document.querySelector('[name="ref"]')?.value?.trim();
 
-    this._body.querySelectorAll('.dossier-row').forEach(row => {
+    this._body.innerHTML = filtered.map(d => {
+      const statusClass = (d.statut || 'draft').toLowerCase().includes('ok') ? 'status-ok' : 'status-draft';
+      const isActive = d.ref === activeRef;
+      return `
+        <div class="dossier-item ${isActive ? 'active' : ''}" data-ref="${d.ref}">
+          <span class="dossier-dot ${statusClass}"></span>
+          <div class="dossier-ref">${d.ref}</div>
+          <div class="dossier-amount">${fmtCHF(d.montantHT)}</div>
+          <div class="dossier-client">${d.client || '—'}</div>
+          <div class="dossier-meta">${(d.date || '').split(' ')[0]}</div>
+        </div>
+      `;
+    }).join('');
+
+    this._body.querySelectorAll('.dossier-item').forEach(row => {
       row.addEventListener('click', () => {
         const ref = row.dataset.ref;
-        document.getElementById('searchRef').value = ref;
-        this.close();
+        const sr = document.getElementById('searchRef');
+        if (sr) sr.value = ref;
         DossierLoader.load(ref);
       });
     });
@@ -2337,6 +2457,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   ProfilePanel.init();
   CompanySearch.init();
   KmCalculator.init();
+  RightRail.init();
 
   // Logout
   document.getElementById('logoutBtn')?.addEventListener('click', () => {
