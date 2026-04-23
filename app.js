@@ -1305,6 +1305,7 @@ const MobileShell = {
       backdrop.addEventListener('click', () => {
         sidebar.classList.remove('open');
         backdrop.classList.add('hidden');
+        this._collapseSearch();
       });
 
       // Fermer le drawer quand on clique sur un dossier
@@ -1315,6 +1316,26 @@ const MobileShell = {
         }
       });
     }
+
+    // Recherche mobile : tap icône loupe → expand la barre
+    const searchWrap = document.querySelector('.topbar-search');
+    const searchIcon = searchWrap?.querySelector('.search-icon');
+    const searchInput = document.getElementById('searchRef');
+    if (searchWrap && searchIcon) {
+      searchIcon.addEventListener('click', (e) => {
+        // Seulement en mobile (icône cliquable)
+        if (window.innerWidth <= 768) {
+          e.stopPropagation();
+          searchWrap.classList.add('expanded');
+          backdrop?.classList.remove('hidden');
+          setTimeout(() => searchInput?.focus(), 50);
+        }
+      });
+    }
+    // Fermer la recherche quand on tape Escape ou clique ailleurs
+    searchInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this._collapseSearch();
+    });
 
     // Update bottom bar amount au rendu des postes / changement HT
     document.querySelector('[name="montantHT"]')?.addEventListener('input', () => this.updateBottomBar());
@@ -1330,6 +1351,17 @@ const MobileShell = {
     const ht = parseFloat(document.querySelector('[name="montantHT"]')?.value) || 0;
     const fmt = (v) => Math.round(v).toLocaleString('fr-CH');
     el.textContent = `CHF ${fmt(ht)}`;
+  },
+
+  _collapseSearch() {
+    const wrap = document.querySelector('.topbar-search');
+    const backdrop = document.getElementById('mobileBackdrop');
+    const sidebar = document.querySelector('.sidebar');
+    if (wrap?.classList.contains('expanded')) {
+      wrap.classList.remove('expanded');
+      // Cacher le backdrop uniquement si le sidebar n'est pas ouvert
+      if (!sidebar?.classList.contains('open')) backdrop?.classList.add('hidden');
+    }
   }
 };
 

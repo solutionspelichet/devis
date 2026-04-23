@@ -115,7 +115,7 @@ input:focus, textarea:focus, select:focus { outline: none; }
 @media (max-width: 768px) {
   .app-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: 52px 1fr;
+    grid-template-rows: 56px 1fr;
     grid-template-areas:
       "topbar"
       "main";
@@ -124,7 +124,7 @@ input:focus, textarea:focus, select:focus { outline: none; }
   }
   .sidebar {
     position: fixed;
-    top: 52px;
+    top: 56px;
     left: 0; bottom: 0;
     width: 85vw;
     max-width: 320px;
@@ -138,14 +138,82 @@ input:focus, textarea:focus, select:focus { outline: none; }
   .main {
     padding: 16px 12px 96px;
   }
-  .brand-info { display: none; }
-  .topbar { padding: 0 10px; gap: 10px; }
-  .topbar-search { max-width: none; height: 32px; }
-  .brand { min-width: 0; padding-right: 10px; }
-  .brand { border-right: none; }
-  .user-chip .name { display: none; }
-  .user-chip { padding: 4px; }
+
+  /* TOPBAR mobile : hamburger | brand P + titre | search icon | avatar */
+  .topbar {
+    padding: 0 8px;
+    gap: 4px;
+    height: 56px;
+  }
+  .brand {
+    border-right: none;
+    padding-right: 6px;
+    padding-left: 2px;
+    min-width: 0;
+    gap: 8px;
+  }
+  .brand-mark { width: 32px; height: 32px; font-size: 16px; }
+  .brand-info { display: flex; min-width: 0; }
+  .brand-name { font-size: 14px; }
+  .brand-sub { display: none; }
+
+  /* Barre de recherche compacte : input cachée, icône clickable */
+  .topbar-search {
+    max-width: none;
+    height: 34px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  .topbar-search input,
+  .topbar-search-btn { display: none; }
+  .topbar-search .search-icon {
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .topbar-search .search-icon:hover { background: var(--surface-2); color: var(--ink); }
+
+  /* Recherche élargie mobile (overlay) */
+  .topbar-search.expanded {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 56px;
+    padding: 0 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    z-index: 35;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .topbar-search.expanded input,
+  .topbar-search.expanded .topbar-search-btn {
+    display: block;
+  }
+  .topbar-search.expanded input {
+    flex: 1;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0 12px;
+    height: 36px;
+  }
+  .topbar-search.expanded .search-icon { display: none; }
+  .topbar-search.expanded .topbar-search-btn { height: 36px; padding: 0 12px; }
+
+  /* topbar-right : garder juste settings + avatar/logout */
+  .topbar-right { gap: 2px; margin-left: 0; }
   .topbar-right .version { display: none; }
+  .topbar-right #navUserName { display: none; }
+  .topbar-right #profileBtn { display: none; }
+  .icon-btn { width: 34px; height: 34px; }
+  .user-chip .name { display: none; }
+  .user-chip { padding: 4px; gap: 0; }
+
+  /* MAIN content */
   .page-head { flex-direction: column; align-items: stretch; gap: 12px; }
   .page-title { font-size: 22px; }
   .page-actions { flex-wrap: wrap; }
@@ -159,6 +227,12 @@ input:focus, textarea:focus, select:focus { outline: none; }
   /* Le bouton submit principal se cache — on utilise le bottom bar */
   #submitBtn, #submitBtnTop { display: none; }
   .mobile-bottom-bar { display: flex !important; }
+}
+
+/* Very small screens (< 380px) : hide brand text, keep only P mark */
+@media (max-width: 379px) {
+  .brand-info { display: none; }
+  .brand { padding-right: 4px; }
 }
 
 /* Masquer le bouton menu mobile en desktop */
