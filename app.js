@@ -1289,6 +1289,112 @@ const PriceCalc = {
 };
 
 // ============================================
+// MOBILE SHELL (drawer sidebar + bottom bar)
+// ============================================
+const MobileShell = {
+  init() {
+    const menuBtn = document.getElementById('mobileMenuBtn');
+    const backdrop = document.getElementById('mobileBackdrop');
+    const sidebar = document.querySelector('.sidebar');
+
+    if (menuBtn && backdrop && sidebar) {
+      menuBtn.addEventListener('click', () => {
+        sidebar.classList.toggle('open');
+        backdrop.classList.toggle('hidden');
+      });
+      backdrop.addEventListener('click', () => {
+        sidebar.classList.remove('open');
+        backdrop.classList.add('hidden');
+      });
+
+      // Fermer le drawer quand on clique sur un dossier
+      document.getElementById('dossierListBody')?.addEventListener('click', (e) => {
+        if (e.target.closest('.dossier-item')) {
+          sidebar.classList.remove('open');
+          backdrop.classList.add('hidden');
+        }
+      });
+    }
+
+    // Update bottom bar amount au rendu des postes / changement HT
+    document.querySelector('[name="montantHT"]')?.addEventListener('input', () => this.updateBottomBar());
+    document.addEventListener('input', (e) => {
+      if (e.target?.name === 'postePrix' || e.target?.name === 'montantHT') this.updateBottomBar();
+    });
+    this.updateBottomBar();
+  },
+
+  updateBottomBar() {
+    const el = document.getElementById('mbbAmount');
+    if (!el) return;
+    const ht = parseFloat(document.querySelector('[name="montantHT"]')?.value) || 0;
+    const fmt = (v) => Math.round(v).toLocaleString('fr-CH');
+    el.textContent = `CHF ${fmt(ht)}`;
+  }
+};
+
+// ============================================
+// PWA INSTALL PROMPT
+// ============================================
+const PWAInstall = {
+  _deferredPrompt: null,
+
+  init() {
+    // Chrome / Android : beforeinstallprompt
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this._deferredPrompt = e;
+      this._showHint('android');
+    });
+
+    // iOS : pas d'API, afficher un hint manuel si mode non-standalone
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+    if (isIOS && !isStandalone && !localStorage.getItem('pelichet_hide_ios_install')) {
+      setTimeout(() => this._showHint('ios'), 3000);
+    }
+  },
+
+  _showHint(platform) {
+    // Ne pas montrer plusieurs fois
+    if (document.getElementById('installHint')) return;
+
+    const hint = document.createElement('div');
+    hint.id = 'installHint';
+    hint.className = 'install-hint';
+    if (platform === 'ios') {
+      hint.innerHTML = `
+        <span>📱 Installe Pelichet sur ton écran d'accueil — Partager ↑ puis "Sur l'écran d'accueil"</span>
+        <button type="button" aria-label="Fermer">×</button>
+      `;
+      hint.querySelector('button').addEventListener('click', () => {
+        hint.remove();
+        localStorage.setItem('pelichet_hide_ios_install', '1');
+      });
+    } else {
+      hint.innerHTML = `
+        <span>📱 Installer l'application Pelichet ?</span>
+        <button type="button" class="btn btn-red btn-xs">Installer</button>
+        <button type="button" aria-label="Fermer">×</button>
+      `;
+      hint.querySelector('.btn-red').addEventListener('click', async () => {
+        if (this._deferredPrompt) {
+          this._deferredPrompt.prompt();
+          await this._deferredPrompt.userChoice;
+          this._deferredPrompt = null;
+        }
+        hint.remove();
+      });
+      hint.querySelectorAll('button[aria-label="Fermer"]').forEach(b =>
+        b.addEventListener('click', () => hint.remove())
+      );
+    }
+    document.body.appendChild(hint);
+  }
+};
+
+// ============================================
 // RIGHT RAIL (totaux + répartition + infos dossier)
 // ============================================
 const RightRail = {
@@ -1378,6 +1484,9 @@ const RightRail = {
     setText('pageTitle', client);
     setText('pageRef', ref);
     setText('pagePostesCount', `${postesCount} poste${postesCount > 1 ? 's' : ''}`);
+
+    // Bottom bar mobile
+    setText('mbbAmount', `CHF ${Math.round(ht).toLocaleString('fr-CH')}`);
   },
 
   _sumPostes() {
@@ -2458,6 +2567,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   CompanySearch.init();
   KmCalculator.init();
   RightRail.init();
+  MobileShell.init();
+  PWAInstall.init();
 
   // Logout
   document.getElementById('logoutBtn')?.addEventListener('click', () => {

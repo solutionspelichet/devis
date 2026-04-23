@@ -99,20 +99,224 @@ input:focus, textarea:focus, select:focus { outline: none; }
 @media (max-width: 1280px) {
   .app-shell { grid-template-columns: 240px 1fr 300px; }
 }
-@media (max-width: 1024px) {
+
+/* Tablette : masquer le right rail */
+@media (max-width: 1080px) {
   .app-shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: 52px auto 1fr;
+    grid-template-columns: 240px 1fr;
     grid-template-areas:
-      "topbar"
-      "sidebar"
-      "main";
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
+      "topbar topbar"
+      "sidebar main";
   }
   .rightrail { display: none; }
-  .sidebar { max-height: 320px; }
+}
+
+/* Mobile : single column + drawer sidebar + bottom bar */
+@media (max-width: 768px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 52px 1fr;
+    grid-template-areas:
+      "topbar"
+      "main";
+    height: 100vh;
+    overflow: hidden;
+  }
+  .sidebar {
+    position: fixed;
+    top: 52px;
+    left: 0; bottom: 0;
+    width: 85vw;
+    max-width: 320px;
+    z-index: 55;
+    transform: translateX(-100%);
+    transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    box-shadow: 0 0 30px -8px oklch(0 0 0 / 0.2);
+    max-height: none;
+  }
+  .sidebar.open { transform: translateX(0); }
+  .main {
+    padding: 16px 12px 96px;
+  }
+  .brand-info { display: none; }
+  .topbar { padding: 0 10px; gap: 10px; }
+  .topbar-search { max-width: none; height: 32px; }
+  .brand { min-width: 0; padding-right: 10px; }
+  .brand { border-right: none; }
+  .user-chip .name { display: none; }
+  .user-chip { padding: 4px; }
+  .topbar-right .version { display: none; }
+  .page-head { flex-direction: column; align-items: stretch; gap: 12px; }
+  .page-title { font-size: 22px; }
+  .page-actions { flex-wrap: wrap; }
+  .page-actions .btn { flex: 1; }
+  .card { padding: 14px; border-radius: var(--radius-md); }
+  .card-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .route { grid-template-columns: 1fr; gap: 10px; }
+  .route-arrow { display: none; }
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  .col-span-2 { grid-column: auto; }
+  /* Le bouton submit principal se cache — on utilise le bottom bar */
+  #submitBtn, #submitBtnTop { display: none; }
+  .mobile-bottom-bar { display: flex !important; }
+}
+
+/* Masquer le bouton menu mobile en desktop */
+.mobile-menu-btn {
+  display: none;
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  background: transparent;
+  align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.mobile-menu-btn:hover { background: var(--surface-2); color: var(--ink); }
+@media (max-width: 768px) {
+  .mobile-menu-btn { display: inline-flex; }
+}
+
+/* Backdrop drawer */
+.mobile-backdrop {
+  position: fixed;
+  inset: 52px 0 0 0;
+  z-index: 50;
+  background: oklch(0.15 0.02 265 / 0.4);
+  backdrop-filter: blur(2px);
+  animation: fadeIn 180ms;
+}
+.mobile-backdrop.hidden { display: none; }
+
+/* Bottom bar mobile : masquée par défaut */
+.mobile-bottom-bar {
+  display: none;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 40;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 10px 14px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 -8px 20px -8px oklch(0.20 0.02 265 / 0.1);
+}
+.mbb-total {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  flex: 1;
+  min-width: 0;
+}
+.mbb-label {
+  font-size: 10px;
+  color: var(--ink-4);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mbb-amount {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mbb-submit {
+  background: var(--red);
+  color: white;
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  border: none;
+}
+.mbb-submit:hover { background: var(--red-ink); }
+.mbb-submit:active { transform: scale(0.98); }
+.mbb-submit.loading { opacity: 0.7; pointer-events: none; }
+
+/* Ajustements mobile supplémentaires */
+@media (max-width: 768px) {
+  .toast-layer {
+    top: 60px;
+    right: 8px;
+    left: 8px;
+  }
+  .toast { max-width: none; }
+
+  .modal-overlay .modal {
+    max-height: calc(100vh - 96px);
+    border-radius: var(--radius-md);
+  }
+  .settings-modal { max-height: calc(100vh - 40px); }
+
+  .login-modal { padding: 20px; }
+
+  .cb-grid { grid-template-columns: 1fr; }
+
+  .rdv-row input[type="date"] { flex: 1; min-width: 0; }
+
+  .poste-card input[name="posteTitre"] { font-size: 14px; }
+
+  .km-head { flex-direction: column; align-items: flex-start; }
+
+  input, textarea, select { font-size: 16px; } /* iOS : évite zoom sur focus */
+
+  .field-label { font-size: 12px; }
+
+  /* Évite overflow horizontal */
+  body { overflow-x: hidden; }
+  .main { max-width: 100vw; }
+}
+
+/* Safe area iOS (encoche) */
+@supports (padding: max(0px)) {
+  .topbar { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .main { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+}
+
+/* Installed app (display-mode: standalone) */
+@media all and (display-mode: standalone) {
+  .topbar {
+    padding-top: env(safe-area-inset-top);
+    height: calc(52px + env(safe-area-inset-top));
+  }
+  .app-shell {
+    grid-template-rows: calc(52px + env(safe-area-inset-top)) 1fr;
+  }
+}
+
+/* Install prompt (iOS) */
+.install-hint {
+  position: fixed;
+  left: 16px; right: 16px;
+  bottom: 80px;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  z-index: 90;
+  box-shadow: 0 10px 30px -10px oklch(0 0 0 / 0.3);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: modalIn 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.install-hint.hidden { display: none; }
+.install-hint button {
+  margin-left: auto;
+  color: var(--ink-4);
+  font-size: 16px;
+  padding: 2px 6px;
 }
 
 /* ---- TOPBAR ---- */
