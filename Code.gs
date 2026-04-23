@@ -9,10 +9,11 @@
 // CONFIGURATION
 // ============================================
 const CONFIG = {
-  TEMPLATE_PELICHET_ID: '17LFpCQWcyiYgvgAM9Og_wkzsu1GwK2hmYZFICSHfSxg',
+  TEMPLATE_PELICHET_ID: '141tclld00jgVrxuQ4b4T738LDkk2A19j21mfmJTrDDk',
   TEMPLATE_AUTRE_ID: '1QWDp-ACk1dL7bXF2fq5VQRbPW4jxwXtUmq8hA1z4cD0',
-  TEMPLATE_RESA_ID: '15QenLctlfoeBb--sC8WRM-Mi5NJjUn8kr01CMsnrwQg',
+  TEMPLATE_RESA_ID: '1U2hICEGuhzv9acMZ6MeeykIB41Lx3H0JhVEKL_8sABA',
   FOLDER_ID: '1MP1I55oDhisTnm4zFJmki1Wap3fUff6U',
+  SIGNATURES_FOLDER_ID: '15EmN3RiLKjH5i43zae6BvRlA3LKniTBF',
   SIGNATURES_FOLDER_NAME: 'Signatures',
   SPREADSHEET_ID: '1AUfeykbUZ07SG-WkqVuxWJY6plH43EZp0tJgrp_gwYM',
   COLOR_PELICHET: '#D32F2F',
@@ -231,6 +232,63 @@ function searchSwissCompany(query) {
   });
 
   return results;
+}
+
+/**
+ * Calcule la date d'intervention prévue à partir des RDV des postes.
+ * Si un seul poste avec RDV → affiche cette date
+ * Si plusieurs postes/RDV → affiche la plage "du dd.MM.yyyy au dd.MM.yyyy"
+ * Fallback sur data.datePrevue si présent, sinon chaîne vide
+ */
+function calculerDatePrevue(data) {
+  var dates = [];
+
+  function parseDate(v) {
+    if (!v) return null;
+    if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+    var s = String(v).trim();
+    // Format ISO "YYYY-MM-DD" du champ <input type="date">
+    var isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      // Force midi local pour eviter decalage timezone
+      return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]), 12, 0, 0);
+    }
+    // Format "dd.MM.yyyy" ou "dd/MM/yyyy"
+    var frMatch = s.match(/^(\d{1,2})[\.\/](\d{1,2})[\.\/](\d{4})/);
+    if (frMatch) {
+      return new Date(parseInt(frMatch[3]), parseInt(frMatch[2]) - 1, parseInt(frMatch[1]), 12, 0, 0);
+    }
+    // Fallback natif
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  safeArray(data.postes).forEach(function(p) {
+    safeArray(p.rdvs).forEach(function(r) {
+      var d = parseDate(r.date);
+      if (d) dates.push(d);
+    });
+  });
+
+  Logger.log('calculerDatePrevue: ' + dates.length + ' dates trouvees');
+
+  if (dates.length === 0) {
+    // Fallback manuel si champ existant
+    var fallback = parseDate(data.datePrevue);
+    if (fallback) return Utilities.formatDate(fallback, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+    return safe(data.datePrevue);
+  }
+
+  // Trier chronologiquement
+  dates.sort(function(a, b) { return a - b; });
+  var premiere = Utilities.formatDate(dates[0], CONFIG.TIMEZONE, 'dd.MM.yyyy');
+
+  if (dates.length === 1) return premiere;
+
+  var derniere = Utilities.formatDate(dates[dates.length - 1], CONFIG.TIMEZONE, 'dd.MM.yyyy');
+  if (premiere === derniere) return premiere;
+
+  return 'du ' + premiere + ' au ' + derniere;
 }
 
 /**
@@ -619,15 +677,16 @@ function addUser(userData) {
  * Retourne l'ID du fichier Drive
  */
 function uploadSignature(userId, signatureBase64) {
-  var folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
-
-  // Chercher ou creer le sous-dossier Signatures
-  var sigFolders = folder.getFoldersByName(CONFIG.SIGNATURES_FOLDER_NAME);
+  // Dossier dédié aux signatures (indépendant du dossier principal)
   var sigFolder;
-  if (sigFolders.hasNext()) {
-    sigFolder = sigFolders.next();
-  } else {
-    sigFolder = folder.createFolder(CONFIG.SIGNATURES_FOLDER_NAME);
+  try {
+    sigFolder = DriveApp.getFolderById(CONFIG.SIGNATURES_FOLDER_ID);
+  } catch (e) {
+    // Fallback : sous-dossier dans le dossier principal
+    Logger.log('SIGNATURES_FOLDER_ID introuvable, fallback sous-dossier: ' + e);
+    var folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+    var sigFolders = folder.getFoldersByName(CONFIG.SIGNATURES_FOLDER_NAME);
+    sigFolder = sigFolders.hasNext() ? sigFolders.next() : folder.createFolder(CONFIG.SIGNATURES_FOLDER_NAME);
   }
 
   // Extraire le type MIME et les donnees
@@ -2041,7 +2100,7 @@ function doPost(e) {
       '{{client}}': client,
       '{{adresse_client}}': safe(data.adresseClient),
       '{{contact}}': safe(data.contact),
-      '{{date_prevue}}': safe(data.datePrevue),
+      '{{date_prevue}}': calculerDatePrevue(data),
       '{{adresse_depart}}': safe(data.adresseDepart),
       '{{adresse_arrivee}}': safe(data.adresseArrivee),
       '{{ht}}': fmt(montantHT),
@@ -2206,8 +2265,20 @@ function remplirTableauPrestations(body, postes) {
     // BUG FIX: parseFloat avant fmt pour éviter "NaN CHF"
     newRow.getCell(1).setText(p.prix ? fmt(parseFloat(p.prix)) : 'Inclus');
 
+    // Mettre en gras le titre + supprimer tout surlignage hérité du template
     try {
-      newRow.getCell(0).getChild(0).asParagraph().editAsText().setBold(0, titre.length, true);
+      var txt0 = newRow.getCell(0).getChild(0).asParagraph().editAsText();
+      txt0.setBold(0, titre.length, true);
+      // Supprimer le surlignage sur toute la cellule
+      var fullText = txt0.getText();
+      if (fullText.length > 0) {
+        txt0.setBackgroundColor(0, fullText.length - 1, null);
+      }
+      var txt1 = newRow.getCell(1).getChild(0).asParagraph().editAsText();
+      var t1 = txt1.getText();
+      if (t1.length > 0) {
+        txt1.setBackgroundColor(0, t1.length - 1, null);
+      }
     } catch (e) { /* silencieux si mise en forme échoue */ }
   });
 
