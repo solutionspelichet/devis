@@ -1304,6 +1304,38 @@ const CalendarView = {
     document.getElementById('calendarPrev')?.addEventListener('click', () => this._nav(-1));
     document.getElementById('calendarNext')?.addEventListener('click', () => this._nav(+1));
     document.getElementById('calendarToday')?.addEventListener('click', () => { this._cursor = this._firstOfMonth(new Date()); this._render(); });
+    document.getElementById('calendarSync')?.addEventListener('click', () => this._showSync());
+    document.getElementById('calendarIcsDl')?.addEventListener('click', () => this._downloadIcs());
+    document.getElementById('calendarSyncBannerBtn')?.addEventListener('click', () => this._showSync());
+    document.getElementById('calendarSyncBannerClose')?.addEventListener('click', () => {
+      document.getElementById('calendarSyncBanner')?.classList.add('hidden');
+      localStorage.setItem('pelichet_cal_banner_hidden', '1');
+    });
+    if (localStorage.getItem('pelichet_cal_banner_hidden') === '1') {
+      document.getElementById('calendarSyncBanner')?.classList.add('hidden');
+    }
+
+    document.getElementById('csmClose')?.addEventListener('click', () => document.getElementById('calendarSyncModal')?.classList.add('hidden'));
+    document.getElementById('csmCopy')?.addEventListener('click', (e) => this._copyUrl(e.currentTarget));
+    document.getElementById('csmDownloadIcs')?.addEventListener('click', () => this._downloadIcs());
+    document.getElementById('csmOpenGoogle')?.addEventListener('click', () => {
+      this._copyUrl();
+      window.open('https://calendar.google.com/calendar/u/0/r/settings/addbyurl', '_blank');
+    });
+    document.getElementById('csmOpenOutlook')?.addEventListener('click', () => {
+      this._copyUrl();
+      window.open('https://outlook.live.com/calendar/0/addfromweb', '_blank');
+    });
+
+    // Onglets plateforme
+    document.querySelectorAll('.csm-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.csm-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.csm-panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.querySelector(`.csm-panel[data-panel="${tab.dataset.tab}"]`)?.classList.add('active');
+      });
+    });
     document.addEventListener('keydown', (e) => {
       if (!this._isOpen()) return;
       if (e.key === 'Escape') this.close();
@@ -1561,6 +1593,65 @@ const CalendarView = {
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     return `${d.getFullYear()}-${mm}-${dd}`;
+  },
+
+  _icsUrl() {
+    const userId = UserManager.getUserId();
+    return `${CONFIG.SCRIPT_URL}?action=ics&user=${encodeURIComponent(userId)}`;
+  },
+
+  _showSync() {
+    const modal = document.getElementById('calendarSyncModal');
+    const input = document.getElementById('csmUrl');
+    const url = this._icsUrl();
+    if (input) input.value = url;
+    // Lien webcal:// pour iPhone (ouvre directement l'app Calendrier)
+    const webcal = url.replace(/^https?:\/\//, 'webcal://');
+    const webcalLink = document.getElementById('csmWebcal');
+    if (webcalLink) webcalLink.href = webcal;
+    modal?.classList.remove('hidden');
+  },
+
+  _copyUrl(btn) {
+    const input = document.getElementById('csmUrl');
+    if (!input) return;
+    const url = input.value;
+    input.select();
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        Toast.success('URL copiée');
+        if (btn) {
+          const orig = btn.textContent;
+          btn.textContent = '✓ Copié';
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        }
+      }).catch(() => {
+        document.execCommand('copy');
+        Toast.success('URL copiée');
+      });
+    } else {
+      document.execCommand('copy');
+      Toast.success('URL copiée');
+    }
+  },
+
+  async _downloadIcs() {
+    try {
+      const resp = await fetch(this._icsUrl());
+      const text = await resp.text();
+      const blob = new Blob([text], { type: 'text/calendar' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pelichet-${UserManager.getUserId()}.ics`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      Toast.success('📅 Fichier .ics téléchargé');
+    } catch (err) {
+      Toast.error('Erreur : ' + err.message);
+    }
   },
 
   _esc(s) {
@@ -2676,12 +2767,12 @@ const FormSubmitter = {
           setTimeout(() => this._downloadBase64File(d.b64, d.name, d.mime), i * 600);
         });
 
-        // WhatsApp (optionnel : partager le lien Drive du devis) — après les téléchargements
-        const waNumber = (data.mobileSociete || '').replace(/\s+/g, '');
-        if (waNumber) {
-          const waText = encodeURIComponent(`Documents ${data.ref}:\nPDF: ${res.pdfUrl}`);
-          setTimeout(() => window.open(`https://wa.me/${waNumber}?text=${waText}`, '_blank'), downloads.length * 600 + 500);
-        }
+        // WhatsApp désactivé temporairement
+        // const waNumber = (data.mobileSociete || '').replace(/\s+/g, '');
+        // if (waNumber) {
+        //   const waText = encodeURIComponent(`Documents ${data.ref}:\nPDF: ${res.pdfUrl}`);
+        //   setTimeout(() => window.open(`https://wa.me/${waNumber}?text=${waText}`, '_blank'), downloads.length * 600 + 500);
+        // }
       } else {
         Toast.error('Erreur serveur : ' + (res.message || 'Inconnue'));
       }

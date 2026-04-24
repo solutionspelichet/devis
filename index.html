@@ -242,6 +242,12 @@
                     </div>
                 </div>
                 <div class="page-actions">
+                    <button type="button" class="btn btn-ghost" id="calendarBtn">
+                        <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7">
+                            <rect x="3" y="5" width="14" height="12" rx="1.5"/><path d="M3 8h14M7 3v4M13 3v4" stroke-linecap="round"/>
+                        </svg>
+                        Calendrier
+                    </button>
                     <button type="button" class="btn btn-ghost" id="autoTotalBtn">Auto-total</button>
                     <button type="submit" form="devisForm" id="submitBtnTop" class="btn btn-red">Générer devis</button>
                 </div>
@@ -462,7 +468,7 @@
                 </button>
                 <div class="mini-actions">
                     <button type="button" class="btn btn-ghost" id="railExportVentil">Ventilation</button>
-                    <button type="button" class="btn btn-ghost" id="railPlanning">Planning</button>
+                    <button type="button" class="btn btn-ghost" id="railCalendar">📅 Calendrier</button>
                 </div>
             </div>
 
@@ -487,6 +493,129 @@
             </div>
         </aside>
 
+    </div>
+
+    <!-- CALENDAR OVERLAY -->
+    <div id="calendarOverlay" class="calendar-overlay hidden">
+        <div class="calendar-panel">
+            <div class="calendar-header">
+                <button type="button" id="calendarClose" class="icon-btn" title="Fermer">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 5l10 10M15 5L5 15" stroke-linecap="round"/></svg>
+                </button>
+                <div class="calendar-title-wrap">
+                    <button type="button" id="calendarPrev" class="icon-btn" title="Mois précédent">
+                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5l-5 5 5 5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <h2 id="calendarTitle" class="calendar-title">—</h2>
+                    <button type="button" id="calendarNext" class="icon-btn" title="Mois suivant">
+                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5l5 5-5 5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
+                <button type="button" id="calendarToday" class="btn btn-ghost btn-xs">Aujourd'hui</button>
+                <button type="button" id="calendarSync" class="btn btn-ghost btn-xs" title="Synchroniser avec iPhone / Google / Outlook">
+                    <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10a6 6 0 0110-4m2 4a6 6 0 01-10 4M15 3v4h-4M5 17v-4h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Synchroniser
+                </button>
+                <button type="button" id="calendarIcsDl" class="btn btn-ghost btn-xs" title="Télécharger fichier .ics">
+                    <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v10m0 0 4-4m-4 4-4-4M4 17h12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    .ics
+                </button>
+            </div>
+            <div class="calendar-weekdays">
+                <div>Lundi</div><div>Mardi</div><div>Mercredi</div><div>Jeudi</div><div>Vendredi</div><div>Samedi</div><div>Dimanche</div>
+            </div>
+            <div class="calendar-grid" id="calendarGrid"></div>
+            <div id="calendarLoading" class="calendar-loading hidden">Chargement des missions…</div>
+            <div id="calendarSyncBanner" class="calendar-sync-banner">
+                <div class="csb-icon">🔄</div>
+                <div class="csb-text">
+                    <strong>Synchronise tes missions avec ton agenda</strong>
+                    <span>iPhone, Google Calendar, Outlook — mise à jour automatique à chaque nouveau devis</span>
+                </div>
+                <button type="button" id="calendarSyncBannerBtn" class="btn btn-primary btn-xs">Configurer</button>
+                <button type="button" id="calendarSyncBannerClose" class="icon-btn" aria-label="Fermer" style="width:28px;height:28px">×</button>
+            </div>
+        </div>
+        <div id="calendarDetail" class="calendar-detail hidden"></div>
+        <div id="calendarSyncModal" class="calendar-sync-modal hidden">
+            <div class="csm-card">
+                <button type="button" id="csmClose" class="cal-detail-close" aria-label="Fermer">×</button>
+                <div class="cal-detail-date">🔄 Synchronisation calendrier</div>
+                <div class="cal-detail-client">Agenda live</div>
+                <p class="csm-intro">
+                    Abonne ton agenda <strong>(iPhone, Google, Outlook)</strong> à l'URL ci-dessous pour voir tes missions apparaître automatiquement.<br>
+                    ✅ L'agenda se met à jour tout seul à chaque nouveau devis généré.<br>
+                    ✅ Chaque commercial a sa propre URL privée — personne d'autre ne voit tes missions.
+                </p>
+
+                <label class="csm-label">Ton URL d'abonnement privée</label>
+                <div class="csm-url-row">
+                    <input type="text" id="csmUrl" readonly onclick="this.select()">
+                    <button type="button" id="csmCopy" class="btn btn-primary btn-xs">📋 Copier</button>
+                </div>
+                <div class="csm-qr-hint">Astuce : tu peux aussi scanner cette URL en QR code depuis un autre appareil.</div>
+
+                <div class="csm-tabs">
+                    <button type="button" class="csm-tab active" data-tab="ios">📱 iPhone / iPad</button>
+                    <button type="button" class="csm-tab" data-tab="google">🟦 Google Calendar</button>
+                    <button type="button" class="csm-tab" data-tab="outlook">🟥 Outlook</button>
+                    <button type="button" class="csm-tab" data-tab="android">🤖 Android</button>
+                </div>
+
+                <div class="csm-panel active" data-panel="ios">
+                    <h4>Sur iPhone ou iPad</h4>
+                    <ol>
+                        <li>Appuie sur <strong>Copier</strong> l'URL ci-dessus</li>
+                        <li>Ouvre l'app <strong>Réglages</strong></li>
+                        <li>Descends jusqu'à <strong>Calendrier → Comptes → Ajouter un compte</strong></li>
+                        <li>Tape <strong>Autre → Ajouter un calendrier avec abonnement</strong></li>
+                        <li>Colle l'URL et appuie sur <strong>Suivant</strong> puis <strong>Enregistrer</strong></li>
+                    </ol>
+                    <div class="csm-tip">💡 <strong>Plus simple :</strong> tape directement sur le bouton ci-dessous depuis ton iPhone :
+                        <a id="csmWebcal" class="btn btn-ghost btn-xs" style="margin-top:8px" href="#">Ouvrir sur iPhone Calendar</a>
+                    </div>
+                </div>
+
+                <div class="csm-panel" data-panel="google">
+                    <h4>Sur Google Calendar (ordinateur)</h4>
+                    <ol>
+                        <li>Copie l'URL ci-dessus</li>
+                        <li>Ouvre <a href="https://calendar.google.com/calendar/u/0/r/settings/addbyurl" target="_blank">calendar.google.com → Ajouter à partir d'une URL</a></li>
+                        <li>Colle l'URL et clique sur <strong>Ajouter un agenda</strong></li>
+                        <li>Le nouveau calendrier <em>"Pelichet — ton-prénom"</em> apparaît dans la colonne de gauche</li>
+                    </ol>
+                    <div class="csm-tip">⏱️ Google met à jour l'agenda toutes les ~12-24 h. Pour forcer : clique 3 points → Paramètres → Actualiser.</div>
+                    <button type="button" class="btn btn-blue btn-xs csm-action" id="csmOpenGoogle">Ouvrir Google Calendar</button>
+                </div>
+
+                <div class="csm-panel" data-panel="outlook">
+                    <h4>Sur Outlook (web ou desktop)</h4>
+                    <ol>
+                        <li>Copie l'URL ci-dessus</li>
+                        <li>Dans Outlook : <strong>Calendrier → Ajouter un calendrier → S'abonner depuis le Web</strong></li>
+                        <li>Colle l'URL, donne-lui un nom (ex: "Missions Pelichet"), choisis une couleur</li>
+                        <li>Clique sur <strong>Importer</strong></li>
+                    </ol>
+                    <div class="csm-tip">⏱️ Outlook rafraîchit l'agenda toutes les ~3 h par défaut.</div>
+                    <button type="button" class="btn btn-red btn-xs csm-action" id="csmOpenOutlook">Ouvrir Outlook Web</button>
+                </div>
+
+                <div class="csm-panel" data-panel="android">
+                    <h4>Sur Android</h4>
+                    <ol>
+                        <li>La meilleure méthode : <strong>ajoute ton agenda Google</strong> (voir onglet Google)</li>
+                        <li>L'agenda Google sera ensuite synchronisé sur ton téléphone Android automatiquement</li>
+                        <li>Alternative : installe l'app <strong>ICSx⁵</strong> depuis le Play Store et colle l'URL dedans</li>
+                    </ol>
+                </div>
+
+                <div class="csm-foot">
+                    <button type="button" id="csmDownloadIcs" class="btn btn-ghost btn-xs">
+                        ⬇ Télécharger .ics à la place (import manuel unique)
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Backdrop drawer mobile -->

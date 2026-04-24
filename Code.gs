@@ -1336,6 +1336,28 @@ function doGet(e) {
       }
     }
 
+    if (action === 'ics') {
+      try {
+        var icsUserId = e.parameter.user || '';
+        if (!icsUserId) return ContentService.createTextOutput('userId requis').setMimeType(ContentService.MimeType.TEXT);
+        var icsContent = generateICS(icsUserId);
+        return ContentService.createTextOutput(icsContent).setMimeType(ContentService.MimeType.TEXT);
+      } catch (err) {
+        return ContentService.createTextOutput('Erreur: ' + err).setMimeType(ContentService.MimeType.TEXT);
+      }
+    }
+
+    if (action === 'calendar_data') {
+      try {
+        var calUserId = e.parameter.user || '';
+        if (!calUserId) return jsonResponse({ status: 'error', message: 'userId requis' });
+        var calData = getCalendarData(calUserId);
+        return jsonResponse({ status: 'success', data: calData });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Calendar: ' + err });
+      }
+    }
+
     if (action === 'planning_generate') {
       try {
         var planUserId = e.parameter.user || '';
@@ -1667,6 +1689,280 @@ function genererJoursOuvres(dateDebut, nbJours, feriesSet) {
     current.setDate(current.getDate() + 1);
   }
   return jours;
+}
+
+/**
+ * Retourne les données de calendrier pour un utilisateur (vue agrégée par jour)
+ * Format retour : { entries: [{date, ref, client, titre, jours, effectif, personnel, vehicules, engins, materiel, tache}], minDate, maxDate }
+ */
+function getCalendarData(userId) {
+  var sheet = getSheet(userId);
+  if (!sheet) return { entries: [], minDate: null, maxDate: null };
+  var values = sheet.getDataRange().getValues();
+  if (values.length < 2) return { entries: [], minDate: null, maxDate: null };
+
+  // Déduplication par ref (garder la version la plus récente)
+  var colMap = buildColumnIndex(values[0]);
+  var refIdx = colMap.ref !== undefined ? colMap.ref : 1;
+  var seenRefs = {};
+  var latestRows = [];
+  for (var i = values.length - 1; i >= 1; i--) {
+    var ref = String(values[i][refIdx] || '').trim();
+    if (!ref || seenRefs[ref]) continue;
+    seenRefs[ref] = true;
+    latestRows.push(values[i]);
+  }
+
+  // Collecter toutes les années pour les jours fériés
+  var yearsSet = {};
+  var allEntries = [];
+
+  latestRows.forEach(function(row) {
+    // Chercher le JSON dans les colonnes
+    var data = null;
+    for (var c = row.length - 1; c >= 0; c--) {
+      var cellVal = row[c];
+      if (cellVal && String(cellVal).trim().startsWith('{"')) {
+        try { data = JSON.parse(cellVal); break; } catch (e) { /* skip */ }
+      }
+    }
+    if (!data) return;
+
+    var postes = safeArray(data.postes).filter(function(p) { return p.mode === 'detail'; });
+    var client = safe(data.client, 'Client');
+    var ref = safe(data.ref, 'SANS_REF');
+
+    postes.forEach(function(p) {
+      var rdvs = safeArray(p.rdvs).filter(function(r) { return r.date; });
+      if (rdvs.length === 0) return;
+      var rawDate = rdvs[0].date;
+      var dateDebut = parseDateSafe(rawDate);
+      if (!dateDebut) return;
+      yearsSet[dateDebut.getFullYear()] = true;
+
+      var nbJoursVal = parseFloat(p.jours) || 1;
+      var joursOuvres = getJoursOuvres(dateDebut, Math.ceil(nbJoursVal));
+
+      // Extraction des ressources
+      var personnelList = safeArray(p.personnel);
+      var vehiculesList = safeArray(p.vehicules);
+      var enginsList = safeArray(p.engins);
+      var materielList = safeArray(p.materiel);
+
+      var effectif = 0;
+      personnelList.forEach(function(s) {
+        var m = String(s).match(/^(\d+)x/);
+        if (m) effectif += parseInt(m[1]);
+      });
+
+      joursOuvres.forEach(function(jour) {
+        var dateStr = Utilities.formatDate(jour, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+        allEntries.push({
+          date: dateStr,
+          ref: ref,
+          client: client,
+          titre: safe(p.titre, 'Prestation'),
+          jours: nbJoursVal,
+          effectif: effectif,
+          personnel: transformerPersonnel(personnelList),
+          vehicules: vehiculesList,
+          engins: enginsList,
+          materiel: materielList,
+          tache: safe(p.tache)
+        });
+      });
+    });
+  });
+
+  // Trier par date
+  allEntries.sort(function(a, b) { return a.date < b.date ? -1 : 1; });
+
+  var minDate = allEntries.length > 0 ? allEntries[0].date : null;
+  var maxDate = allEntries.length > 0 ? allEntries[allEntries.length - 1].date : null;
+
+  return { entries: allEntries, minDate: minDate, maxDate: maxDate };
+}
+
+/**
+ * Exporte un Google Doc en DOCX (Word) via l'API Drive.
+ * Retourne le Blob DOCX ou null en cas d'erreur.
+ */
+function exportDocAsDocx(docId) {
+  try {
+    // Laisser le temps à Drive d'indexer le document après saveAndClose
+    Utilities.sleep(800);
+
+    var url = 'https://docs.google.com/document/d/' + docId + '/export?format=docx';
+    var token = ScriptApp.getOAuthToken();
+    var response = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true,
+      followRedirects: true
+    });
+    var code = response.getResponseCode();
+    Logger.log('exportDocAsDocx docId=' + docId + ' code=' + code);
+
+    if (code === 200) {
+      var blob = response.getBlob();
+      blob.setContentType('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      blob.setName('export.docx');
+      Logger.log('DOCX export OK, size=' + blob.getBytes().length);
+      return blob;
+    }
+
+    // Tentative alternative : API Drive v3 export
+    var altUrl = 'https://www.googleapis.com/drive/v3/files/' + docId
+      + '/export?mimeType=' + encodeURIComponent('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    var altResp = UrlFetchApp.fetch(altUrl, {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true,
+      followRedirects: true
+    });
+    var altCode = altResp.getResponseCode();
+    Logger.log('exportDocAsDocx fallback code=' + altCode);
+    if (altCode === 200) {
+      var b2 = altResp.getBlob();
+      b2.setContentType('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      return b2;
+    }
+
+    Logger.log('exportDocAsDocx body: ' + response.getContentText().substring(0, 300));
+  } catch (e) {
+    Logger.log('exportDocAsDocx error: ' + e);
+  }
+  return null;
+}
+
+/**
+ * Retourne (ou crée) le sous-dossier Drive dédié à un utilisateur.
+ * Structure : FOLDER_ID/<USERID>/
+ * Si userId vide ou introuvable, retourne le dossier racine.
+ */
+function getUserFolder(userId) {
+  var rootFolder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+  if (!userId) return rootFolder;
+
+  var folderName = String(userId).toUpperCase().trim();
+  if (!folderName) return rootFolder;
+
+  // Chercher le sous-dossier existant
+  var existing = rootFolder.getFoldersByName(folderName);
+  if (existing.hasNext()) return existing.next();
+
+  // Créer le sous-dossier
+  var newFolder = rootFolder.createFolder(folderName);
+  Logger.log('Sous-dossier utilisateur créé : ' + folderName + ' (ID: ' + newFolder.getId() + ')');
+  return newFolder;
+}
+
+/**
+ * Génère un flux iCalendar (.ics) à partir des missions d'un utilisateur.
+ * Compatible avec iPhone Calendar, Google Calendar, Outlook.
+ * Chaque prestation devient un événement sur toute sa durée (en jours).
+ */
+function generateICS(userId) {
+  var calData = getCalendarData(userId);
+  var entries = calData.entries || [];
+
+  // Regrouper les entrées consécutives d'une même prestation (même ref + titre)
+  // en un seul événement multi-jours
+  var groups = {};
+  entries.forEach(function(e) {
+    var key = e.ref + '|' + e.titre;
+    if (!groups[key]) groups[key] = { ref: e.ref, titre: e.titre, client: e.client, dates: [], entry: e };
+    groups[key].dates.push(e.date);
+  });
+
+  function esc(s) {
+    return String(s || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/;/g, '\\;')
+      .replace(/,/g, '\\,')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '');
+  }
+  function fmtDate(s) {
+    // 'YYYY-MM-DD' -> 'YYYYMMDD'
+    return s.replace(/-/g, '');
+  }
+  function addDay(dateStr) {
+    var parts = dateStr.split('-');
+    var d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]) + 1);
+    var mm = String(d.getMonth() + 1); if (mm.length < 2) mm = '0' + mm;
+    var dd = String(d.getDate()); if (dd.length < 2) dd = '0' + dd;
+    return d.getFullYear() + '-' + mm + '-' + dd;
+  }
+
+  var now = new Date();
+  var dtstamp = Utilities.formatDate(now, 'UTC', "yyyyMMdd'T'HHmmss'Z'");
+
+  var lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Pelichet NLC//Devis & Logistique//FR',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:Pelichet — ' + userId,
+    'X-WR-TIMEZONE:Europe/Zurich',
+    'X-PUBLISHED-TTL:PT6H',
+    'REFRESH-INTERVAL;VALUE=DURATION:PT6H'
+  ];
+
+  Object.keys(groups).forEach(function(key) {
+    var g = groups[key];
+    g.dates.sort();
+    var dateDebut = g.dates[0];
+    var dateFin = g.dates[g.dates.length - 1];
+    var dtend = addDay(dateFin); // ICS DTEND pour all-day = lendemain du dernier jour
+
+    var e = g.entry;
+    var descLines = [];
+    descLines.push('Client: ' + g.client);
+    descLines.push('Prestation: ' + g.titre);
+    descLines.push('Durée: ' + (e.jours > 1 ? (e.jours + ' jours') : '1 jour'));
+    if (e.personnel && e.personnel.length) descLines.push('Personnel: ' + e.personnel.join(', '));
+    if (e.vehicules && e.vehicules.length) descLines.push('Véhicules: ' + e.vehicules.join(', '));
+    if (e.engins && e.engins.length) descLines.push('Véhicules spéciaux: ' + e.engins.join(', '));
+    if (e.materiel && e.materiel.length) descLines.push('Matériel: ' + e.materiel.join(', '));
+    if (e.tache) descLines.push('\nInstructions:\n' + e.tache);
+
+    var summary = g.client + ' — ' + g.titre;
+    if (e.effectif) summary += ' (' + e.effectif + 'H)';
+
+    var uid = (g.ref + '-' + fmtDate(dateDebut) + '@pelichet.ch').replace(/\s+/g, '');
+
+    lines.push('BEGIN:VEVENT');
+    lines.push('UID:' + uid);
+    lines.push('DTSTAMP:' + dtstamp);
+    lines.push('DTSTART;VALUE=DATE:' + fmtDate(dateDebut));
+    lines.push('DTEND;VALUE=DATE:' + fmtDate(dtend));
+    lines.push('SUMMARY:' + esc(summary));
+    lines.push('DESCRIPTION:' + esc(descLines.join('\n')));
+    lines.push('CATEGORIES:Pelichet,Logistique');
+    lines.push('STATUS:CONFIRMED');
+    lines.push('TRANSP:OPAQUE');
+    lines.push('END:VEVENT');
+  });
+
+  lines.push('END:VCALENDAR');
+
+  // ICS : lignes séparées par CRLF
+  return lines.join('\r\n');
+}
+
+/**
+ * Parse une date robustement (ISO, dd.MM.yyyy, etc.)
+ */
+function parseDateSafe(v) {
+  if (!v) return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : new Date(v.getFullYear(), v.getMonth(), v.getDate(), 12, 0, 0);
+  var s = String(v).trim();
+  var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]), 12, 0, 0);
+  var fr = s.match(/^(\d{1,2})[\.\/](\d{1,2})[\.\/](\d{4})/);
+  if (fr) return new Date(parseInt(fr[3]), parseInt(fr[2]) - 1, parseInt(fr[1]), 12, 0, 0);
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -2068,7 +2364,9 @@ function doPost(e) {
     const estPelichet = data.typeSociete === 'Pelichet';
     const postes = safeArray(data.postes);
 
-    const folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+    // Dossier dédié à l'utilisateur (créé automatiquement si n'existe pas)
+    const userId = safe(data.userId);
+    const folder = getUserFolder(userId);
     const fileNameBase = 'Devis_' + ref + '_' + client.replace(/\s+/g, '_');
 
     // 1. GENERATION DEVIS
@@ -2084,8 +2382,7 @@ function doPost(e) {
     const rplp = montantHT * CONFIG.RPLP_RATE;
     const totalTTC = montantHT + tva + rplp;
 
-    // Recuperer les infos utilisateur (titre + signature)
-    var userId = safe(data.userId);
+    // Recuperer les infos utilisateur (titre + signature) — userId déjà défini plus haut
     var userInfo = userId ? getUserById(userId) : null;
     var vendeurTitre = safe(data.vendeurTitre, userInfo ? userInfo.titre : '');
 
@@ -2131,8 +2428,9 @@ function doPost(e) {
     // 2. FICHE RESA
     var resaStatus = 'skipped';
     var resaError = '';
+    var resaFileId = null;
     try {
-      genererFicheResa(data, folder, ref, client);
+      resaFileId = genererFicheResa(data, folder, ref, client);
       resaStatus = 'ok';
       Logger.log('Fiche RESA generee: ' + ref);
     } catch (err) {
@@ -2141,9 +2439,48 @@ function doPost(e) {
       Logger.log('ERREUR RESA: ' + err + '\n' + (err.stack || ''));
     }
 
-    // 3. PDF + ARCHIVAGE
+    // 3. PDF DEVIS + ARCHIVAGE
     const pdfBlob = copyDevis.getAs('application/pdf');
     const pdfFile = folder.createFile(pdfBlob).setName(fileNameBase + '.pdf');
+
+    // 4. PDF RESA + DOCX RESA
+    var resaPdfB64 = '';
+    var resaPdfName = '';
+    var resaDocxB64 = '';
+    var resaDocxName = '';
+    if (resaFileId) {
+      try {
+        var resaFile = DriveApp.getFileById(resaFileId);
+        var resaPdfBlob = resaFile.getAs('application/pdf');
+        resaPdfB64 = Utilities.base64Encode(resaPdfBlob.getBytes());
+        resaPdfName = resaFile.getName() + '.pdf';
+
+        // Export DOCX via API Drive
+        var resaDocxBlob = exportDocAsDocx(resaFileId);
+        if (resaDocxBlob) {
+          resaDocxB64 = Utilities.base64Encode(resaDocxBlob.getBytes());
+          resaDocxName = resaFile.getName() + '.docx';
+        }
+      } catch (e) {
+        Logger.log('Erreur export RESA: ' + e);
+      }
+    }
+
+    // 5. DOCX DEVIS
+    var docxB64 = '';
+    var docxName = '';
+    try {
+      var devisDocxBlob = exportDocAsDocx(copyDevis.getId());
+      if (devisDocxBlob) {
+        docxB64 = Utilities.base64Encode(devisDocxBlob.getBytes());
+        docxName = fileNameBase + '.docx';
+      }
+    } catch (e) {
+      Logger.log('Erreur export DOCX devis: ' + e);
+    }
+
+    // Encoder le PDF devis en base64
+    var pdfB64 = Utilities.base64Encode(pdfBlob.getBytes());
 
     archiver(ref, estPelichet, client, data, montantHT, pdfFile);
 
@@ -2154,7 +2491,15 @@ function doPost(e) {
       pdfUrl: pdfFile.getUrl(),
       docUrl: copyDevis.getUrl(),
       resa: resaStatus,
-      resaError: resaError
+      resaError: resaError,
+      pdfB64: pdfB64,
+      pdfName: fileNameBase + '.pdf',
+      docxB64: docxB64,
+      docxName: docxName,
+      resaPdfB64: resaPdfB64,
+      resaPdfName: resaPdfName,
+      resaDocxB64: resaDocxB64,
+      resaDocxName: resaDocxName
     });
 
   } catch (error) {
@@ -2291,7 +2636,8 @@ function remplirTableauPrestations(body, postes) {
 function genererFicheResa(data, folder, ref, client) {
   const fileNameResa = ref + ' RESA - ' + client.replace(/\s+/g, '_');
   const copyResa = DriveApp.getFileById(CONFIG.TEMPLATE_RESA_ID).makeCopy(fileNameResa, folder);
-  const docResa = DocumentApp.openById(copyResa.getId());
+  const resaFileId = copyResa.getId();
+  const docResa = DocumentApp.openById(resaFileId);
   const body = docResa.getBody();
 
   const volumeEstime = safe(data.volumeEstime, '200');
@@ -2516,6 +2862,7 @@ function genererFicheResa(data, folder, ref, client) {
   }
 
   docResa.saveAndClose();
+  return resaFileId;
 }
 
 // ============================================
