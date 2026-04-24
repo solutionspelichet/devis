@@ -1289,6 +1289,288 @@ const PriceCalc = {
 };
 
 // ============================================
+// CALENDAR VIEW (vue calendrier des missions)
+// ============================================
+const CalendarView = {
+  _entries: [],
+  _byDate: {},
+  _cursor: null, // Premier jour du mois affiché
+  _loaded: false,
+
+  init() {
+    document.getElementById('calendarBtn')?.addEventListener('click', () => this.open());
+    document.getElementById('railCalendar')?.addEventListener('click', () => this.open());
+    document.getElementById('calendarClose')?.addEventListener('click', () => this.close());
+    document.getElementById('calendarPrev')?.addEventListener('click', () => this._nav(-1));
+    document.getElementById('calendarNext')?.addEventListener('click', () => this._nav(+1));
+    document.getElementById('calendarToday')?.addEventListener('click', () => { this._cursor = this._firstOfMonth(new Date()); this._render(); });
+    document.addEventListener('keydown', (e) => {
+      if (!this._isOpen()) return;
+      if (e.key === 'Escape') this.close();
+      if (e.key === 'ArrowLeft') this._nav(-1);
+      if (e.key === 'ArrowRight') this._nav(+1);
+    });
+    document.getElementById('calendarOverlay')?.addEventListener('click', (e) => {
+      const detail = document.getElementById('calendarDetail');
+      if (detail && !detail.classList.contains('hidden') && !detail.contains(e.target) && !e.target.closest('.cal-entry')) {
+        detail.classList.add('hidden');
+      }
+    });
+  },
+
+  _isOpen() {
+    return !document.getElementById('calendarOverlay')?.classList.contains('hidden');
+  },
+
+  async open() {
+    document.getElementById('calendarOverlay').classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    if (!this._cursor) this._cursor = this._firstOfMonth(new Date());
+    if (!this._loaded) {
+      await this._fetch();
+    }
+    this._render();
+  },
+
+  close() {
+    document.getElementById('calendarOverlay').classList.add('hidden');
+    document.getElementById('calendarDetail')?.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+  },
+
+  async _fetch() {
+    const loading = document.getElementById('calendarLoading');
+    loading?.classList.remove('hidden');
+    try {
+      const userId = UserManager.getUserId();
+      const url = `${CONFIG.SCRIPT_URL}?action=calendar_data&user=${encodeURIComponent(userId)}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+      if (result.status === 'success' && result.data) {
+        this._entries = result.data.entries || [];
+        this._byDate = {};
+        this._entries.forEach(e => {
+          if (!this._byDate[e.date]) this._byDate[e.date] = [];
+          this._byDate[e.date].push(e);
+        });
+        this._loaded = true;
+      } else {
+        Toast.error('Erreur chargement calendrier : ' + (result.message || 'Inconnue'));
+      }
+    } catch (err) {
+      Toast.error('Erreur : ' + err.message);
+    } finally {
+      loading?.classList.add('hidden');
+    }
+  },
+
+  _nav(dir) {
+    const d = new Date(this._cursor);
+    d.setMonth(d.getMonth() + dir);
+    this._cursor = this._firstOfMonth(d);
+    this._render();
+  },
+
+  _firstOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); },
+
+  _render() {
+    if (!this._cursor) this._cursor = this._firstOfMonth(new Date());
+    const year = this._cursor.getFullYear();
+    const month = this._cursor.getMonth();
+
+    // Titre
+    const monthName = this._cursor.toLocaleDateString('fr-CH', { month: 'long', year: 'numeric' });
+    document.getElementById('calendarTitle').textContent = monthName;
+
+    // Déterminer le premier lundi à afficher (peut être dans le mois précédent)
+    const first = new Date(year, month, 1);
+    let startOffset = first.getDay() - 1; // Lundi = 1 → 0
+    if (startOffset < 0) startOffset = 6; // Dimanche → fin
+    const gridStart = new Date(year, month, 1 - startOffset);
+
+    // 6 semaines × 7 jours = 42 cases
+    const grid = document.getElementById('calendarGrid');
+    const today = new Date();
+    const todayStr = this._dateKey(today);
+
+    const clientColors = {};
+    let colorIdx = 0;
+    const colorFor = (ref) => {
+      if (clientColors[ref] === undefined) clientColors[ref] = (colorIdx++) % 6;
+      return clientColors[ref];
+    };
+
+    let html = '';
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(gridStart);
+      d.setDate(gridStart.getDate() + i);
+      const key = this._dateKey(d);
+      const dayNum = d.getDate();
+      const isOtherMonth = d.getMonth() !== month;
+      const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+      const isToday = key === todayStr;
+
+      const entries = this._byDate[key] || [];
+      const shown = entries.slice(0, 3);
+      const extra = entries.length - shown.length;
+
+      const entriesHTML = shown.map(e => {
+        const colorClass = `color-${colorFor(e.ref)}`;
+        const personnelTags = (e.personnel || []).slice(0, 2).map(p => `<span class="cal-entry-res">${this._esc(p)}</span>`).join('');
+        const vehTags = (e.vehicules || []).slice(0, 2).map(v => `<span class="cal-entry-res">${this._esc(v)}</span>`).join('');
+        const enginTags = (e.engins || []).slice(0, 1).map(g => `<span class="cal-entry-res">${this._esc(g)}</span>`).join('');
+        return `
+          <div class="cal-entry ${colorClass}" data-date="${key}" data-ref="${this._esc(e.ref)}" data-idx="${entries.indexOf(e)}">
+            <div class="cal-entry-client">${this._esc(e.client)}</div>
+            <div class="cal-entry-resources">${personnelTags}${vehTags}${enginTags}</div>
+          </div>
+        `;
+      }).join('');
+      const moreHTML = extra > 0 ? `<div class="cal-day-more" data-date="${key}">+${extra} autre${extra > 1 ? 's' : ''}</div>` : '';
+
+      const classes = ['cal-day'];
+      if (isOtherMonth) classes.push('other-month');
+      if (isWeekend) classes.push('weekend');
+      if (isToday) classes.push('today');
+
+      html += `
+        <div class="${classes.join(' ')}" data-date="${key}">
+          <span class="cal-day-num">${dayNum}</span>
+          ${entriesHTML}
+          ${moreHTML}
+        </div>
+      `;
+    }
+
+    grid.innerHTML = html;
+
+    // Event : click entrée → detail popover
+    grid.querySelectorAll('.cal-entry').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const date = el.dataset.date;
+        const ref = el.dataset.ref;
+        const entry = (this._byDate[date] || []).find(x => x.ref === ref);
+        if (entry) this._showDetail(entry, el);
+      });
+    });
+
+    // Event : click "+N autres" → detail du jour
+    grid.querySelectorAll('.cal-day-more').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const date = el.dataset.date;
+        const entries = this._byDate[date] || [];
+        this._showDayDetail(date, entries, el);
+      });
+    });
+  },
+
+  _showDetail(entry, anchor) {
+    const detail = document.getElementById('calendarDetail');
+    const dateFmt = new Date(entry.date).toLocaleDateString('fr-CH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+    const list = (arr) => (arr || []).map(x => `<span class="cal-detail-tag">${this._esc(x)}</span>`).join('');
+    const section = (title, items, badge) => {
+      if (!items || items.length === 0) return '';
+      return `
+        <div class="cal-detail-section">
+          <div class="cal-detail-section-title">${title} ${badge !== undefined ? `<span class="badge">${badge}</span>` : ''}</div>
+          <div class="cal-detail-list">${list(items)}</div>
+        </div>
+      `;
+    };
+
+    detail.innerHTML = `
+      <button type="button" class="cal-detail-close" aria-label="Fermer">×</button>
+      <div class="cal-detail-date">${dateFmt}</div>
+      <div class="cal-detail-client">${this._esc(entry.client)}</div>
+      <div class="cal-detail-ref">${this._esc(entry.ref)}</div>
+      <div class="cal-detail-titre">${this._esc(entry.titre)} — ${entry.jours}${entry.jours > 1 ? ' jours' : ' jour'}</div>
+      ${section('Personnel', entry.personnel, entry.effectif || entry.personnel?.length)}
+      ${section('Véhicules', entry.vehicules)}
+      ${section('Véhicules spéciaux', entry.engins)}
+      ${section('Matériel', entry.materiel)}
+      ${entry.tache ? `
+        <div class="cal-detail-section">
+          <div class="cal-detail-section-title">À faire</div>
+          <div class="cal-detail-tache">${this._esc(entry.tache)}</div>
+        </div>
+      ` : ''}
+    `;
+
+    detail.classList.remove('hidden');
+    this._positionDetail(detail, anchor);
+
+    detail.querySelector('.cal-detail-close').addEventListener('click', () => detail.classList.add('hidden'));
+  },
+
+  _showDayDetail(date, entries, anchor) {
+    const detail = document.getElementById('calendarDetail');
+    const dateFmt = new Date(date).toLocaleDateString('fr-CH', { weekday: 'long', day: 'numeric', month: 'long' });
+
+    const cards = entries.map((e, i) => `
+      <div style="padding:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;cursor:pointer"
+           onclick="CalendarView._showDetail(CalendarView._byDate['${date}'][${i}], this)">
+        <div style="font-weight:600;font-size:13px">${this._esc(e.client)}</div>
+        <div style="font-size:11px;color:var(--ink-3);margin-top:2px">${this._esc(e.titre)} · ${e.effectif}H · ${(e.vehicules || []).join(', ') || '—'}</div>
+      </div>
+    `).join('');
+
+    detail.innerHTML = `
+      <button type="button" class="cal-detail-close" aria-label="Fermer">×</button>
+      <div class="cal-detail-date">${dateFmt}</div>
+      <div class="cal-detail-client" style="margin-bottom:12px">${entries.length} mission${entries.length > 1 ? 's' : ''}</div>
+      ${cards}
+    `;
+
+    detail.classList.remove('hidden');
+    this._positionDetail(detail, anchor);
+
+    detail.querySelector('.cal-detail-close').addEventListener('click', () => detail.classList.add('hidden'));
+  },
+
+  _positionDetail(detail, anchor) {
+    const rect = anchor.getBoundingClientRect();
+    const detailW = 460;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let left = rect.right + 8;
+    if (left + detailW > vw - 20) left = rect.left - detailW - 8;
+    if (left < 20) left = (vw - detailW) / 2; // fallback centré
+
+    let top = rect.top;
+    const detailH = detail.offsetHeight || 400;
+    if (top + detailH > vh - 20) top = Math.max(20, vh - detailH - 20);
+
+    detail.style.left = `${Math.max(20, left)}px`;
+    detail.style.top = `${top}px`;
+
+    // Mobile : centrer
+    if (vw <= 768) {
+      detail.style.left = '10px';
+      detail.style.right = '10px';
+      detail.style.top = '10px';
+      detail.style.width = 'auto';
+      detail.style.maxHeight = 'calc(100vh - 20px)';
+    }
+  },
+
+  _dateKey(d) {
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  },
+
+  _esc(s) {
+    const d = document.createElement('div');
+    d.textContent = String(s || '');
+    return d.innerHTML;
+  }
+};
+
+// ============================================
 // MOBILE SHELL (drawer sidebar + bottom bar)
 // ============================================
 const MobileShell = {
@@ -2380,9 +2662,26 @@ const FormSubmitter = {
         } else if (res.resa === 'error') {
           Toast.error('Erreur RESA : ' + (res.resaError || 'Inconnue'));
         }
+
+        // Téléchargements automatiques : PDF devis + DOCX devis + PDF RESA + DOCX RESA
+        const downloads = [
+          { b64: res.pdfB64, name: res.pdfName, mime: 'application/pdf' },
+          { b64: res.docxB64, name: res.docxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+          { b64: res.resaPdfB64, name: res.resaPdfName, mime: 'application/pdf' },
+          { b64: res.resaDocxB64, name: res.resaDocxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+        ].filter(d => d.b64 && d.name);
+
+        // Déclencher chaque téléchargement espacé de 600 ms (certains navigateurs bloquent les téléchargements simultanés)
+        downloads.forEach((d, i) => {
+          setTimeout(() => this._downloadBase64File(d.b64, d.name, d.mime), i * 600);
+        });
+
+        // WhatsApp (optionnel : partager le lien Drive du devis) — après les téléchargements
         const waNumber = (data.mobileSociete || '').replace(/\s+/g, '');
-        const waText = encodeURIComponent(`Documents ${data.ref}:\nPDF: ${res.pdfUrl}`);
-        window.open(`https://wa.me/${waNumber}?text=${waText}`, '_blank');
+        if (waNumber) {
+          const waText = encodeURIComponent(`Documents ${data.ref}:\nPDF: ${res.pdfUrl}`);
+          setTimeout(() => window.open(`https://wa.me/${waNumber}?text=${waText}`, '_blank'), downloads.length * 600 + 500);
+        }
       } else {
         Toast.error('Erreur serveur : ' + (res.message || 'Inconnue'));
       }
@@ -2393,6 +2692,27 @@ const FormSubmitter = {
       btn.disabled = false;
       btnText.textContent = 'Générer Devis + RESA';
       loader.classList.add('hidden');
+    }
+  },
+
+  /** Décode un fichier base64 et déclenche un téléchargement automatique */
+  _downloadBase64File(b64, filename, mime) {
+    try {
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mime || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      Toast.info('📥 ' + filename);
+    } catch (err) {
+      Toast.error('Erreur téléchargement ' + filename + ' : ' + err.message);
     }
   }
 };
@@ -2601,6 +2921,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   RightRail.init();
   MobileShell.init();
   PWAInstall.init();
+  CalendarView.init();
 
   // Logout
   document.getElementById('logoutBtn')?.addEventListener('click', () => {
