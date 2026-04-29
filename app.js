@@ -319,18 +319,37 @@ const UserManager = {
 // KM CALCULATOR (calcul kilométrique)
 // ============================================
 const KmCalculator = {
-  // Coûts CHF/km supplémentaire par type de véhicule (source: grille tarifaire Pelichet)
-  // Fourgon/Voiture = 0.8, Camion 18T = 1.5, Tracteur Remorque = 1.7
-  KM_RATES: {
+  // Fallback CHF/km par véhicule si non défini dans les tarifs (grille Pelichet historique)
+  // Les valeurs réelles sont lues depuis Settings → Tarifs (colonne CHF/km)
+  KM_RATES_FALLBACK: {
     'VL': 0.8, '1F': 0.8, 'Box IT': 0.8, 'PL avec hayon': 1.5,
     'PL': 1.5, 'Semi': 1.7
   },
-  // Catégories pour l'affichage groupé
+  // Catégories pour l'affichage groupé (informatif)
   KM_CATEGORIES: [
     { label: 'Fourgon / Voiture (VL, 1F, Box IT)', rate: 0.8 },
     { label: 'Camion 18T (PL, PL avec hayon)', rate: 1.5 },
     { label: 'Tracteur Remorque (Semi)', rate: 1.7 }
   ],
+
+  /** Retourne le tarif CHF/km d'un véhicule depuis Settings (avec fallback) */
+  _getRate(vehName) {
+    // Priorité 1 : tarif défini dans Settings (vehicules)
+    let r = TarifManager?.getCoutKm?.('vehicules', vehName) || 0;
+    if (r > 0) return r;
+    // Priorité 2 : tarif défini sur les engins (parfois utilisés comme véhicules spéciaux)
+    r = TarifManager?.getCoutKm?.('engins', vehName) || 0;
+    if (r > 0) return r;
+    // Priorité 3 : fallback historique
+    return this.KM_RATES_FALLBACK[vehName] || 0;
+  },
+
+  // Compatibilité descendante : KM_RATES utilisé partout via getter
+  get KM_RATES() {
+    return new Proxy({}, {
+      get: (_, key) => this._getRate(key)
+    });
+  },
   FORFAIT_KM: 50,
   _lastResult: null,
 
@@ -378,15 +397,26 @@ const KmCalculator = {
       ? `${data.excessKm} km supplémentaires (au-delà du forfait de ${data.forfaitKm} km)`
       : `Aucun supplément (${data.totalKm} km ≤ ${data.forfaitKm} km forfait)`;
 
-    // Calculer les coûts par catégorie de véhicule
+    // Calculer les coûts par véhicule défini dans Settings
     let costsHTML = '';
     let addBtnHTML = '';
     if (data.excessKm > 0) {
-      costsHTML = '<div class="km-costs"><div style="font-weight:600;margin-bottom:4px">Coût supplément / véhicule :</div>';
-      this.KM_CATEGORIES.forEach(cat => {
-        const cost = (data.excessKm * cat.rate).toFixed(2);
-        costsHTML += `<div class="km-cost-row"><span>${cat.label}</span><span class="cost-val">${cost} CHF</span></div>`;
-      });
+      const tarifsVeh = (TarifManager.getData()?.items?.vehicules || [])
+        .filter(v => parseFloat(v.coutKm) > 0);
+      costsHTML = '<div class="km-costs"><div style="font-weight:600;margin-bottom:4px">Coût supplément / véhicule (par km) :</div>';
+      if (tarifsVeh.length === 0) {
+        // Fallback : afficher les catégories si aucun véhicule n'a coutKm défini
+        this.KM_CATEGORIES.forEach(cat => {
+          const cost = (data.excessKm * cat.rate).toFixed(2);
+          costsHTML += `<div class="km-cost-row"><span>${cat.label}</span><span class="cost-val">${cost} CHF</span></div>`;
+        });
+        costsHTML += '<div class="km-cost-row" style="font-style:italic;color:var(--ink-4);margin-top:4px;font-size:10px">Astuce : définis CHF/km dans ⚙️ Tarifs pour personnaliser</div>';
+      } else {
+        tarifsVeh.forEach(v => {
+          const cost = (data.excessKm * parseFloat(v.coutKm)).toFixed(2);
+          costsHTML += `<div class="km-cost-row"><span>${v.item} (${v.coutKm} CHF/km)</span><span class="cost-val">${cost} CHF</span></div>`;
+        });
+      }
       costsHTML += '</div>';
 
       // Calculer le coût total en fonction des véhicules déjà sélectionnés dans les postes
@@ -530,12 +560,15 @@ const KmCalculator = {
     });
 
     if (totalAjoute === 0) {
-      Toast.warning('Aucun véhicule facturable km dans les postes.');
+      Toast.warning('Aucun véhicule facturable km dans les postes (vérifie qu\'ils ont un tarif km défini).');
       return;
     }
 
+    // Recalcule automatiquement le total HT global à partir des prix postes
+    PriceCalc.applyAutoTotal();
     PriceCalc.updateBreakdown();
-    Toast.success(`Frais km ajoutés aux postes : +${totalAjoute.toFixed(2)} CHF répartis`);
+    if (typeof RightRail !== 'undefined') RightRail.update();
+    Toast.success(`Frais km ajoutés : +${totalAjoute.toFixed(2)} CHF · Total HT actualisé`);
   },
 
   /** Retourne les km supplémentaires (pour la ventilation) */
@@ -774,6 +807,14 @@ const TarifManager = {
       : (parseFloat(found.cout) || 0) / 2;
   },
 
+  /** Retourne le coût CHF/km d'un véhicule/engin (0 si non défini) */
+  getCoutKm(type, itemName) {
+    if (!this._data || !this._data.items || !this._data.items[type]) return 0;
+    const found = this._data.items[type].find(t => t.item === itemName);
+    if (!found) return 0;
+    return parseFloat(found.coutKm) || 0;
+  },
+
   /** Retourne l'unité d'un item ('jour', 'piece', 'forfait') */
   getUnite(type, itemName) {
     if (!this._data || !this._data.items || !this._data.items[type]) return 'jour';
@@ -954,12 +995,14 @@ const SettingsPanel = {
     allTypes.forEach(type => {
       const list = items[type] || [];
       list.forEach((t, idx) => {
+        const showKm = (type === 'vehicules' || type === 'engins');
         tarifsHTML += `
           <tr data-type="${type}" data-idx="${idx}">
             <td><select class="tarif-type">${allTypes.map(tt => `<option value="${tt}" ${tt === type ? 'selected' : ''}>${tt}</option>`).join('')}</select></td>
             <td><input type="text" class="tarif-item" value="${t.item || ''}"></td>
             <td><input type="number" class="tarif-cout" value="${t.cout || 0}" min="0" step="0.5"></td>
             <td><input type="number" class="tarif-demi" value="${t.coutDemiJour ?? ''}" min="0" step="0.5" placeholder="auto"></td>
+            <td><input type="number" class="tarif-km" value="${t.coutKm ?? ''}" min="0" step="0.1" placeholder="${showKm ? '0.0' : '—'}" ${showKm ? '' : 'disabled'}></td>
             <td><select class="tarif-unite"><option value="jour" ${t.unite === 'jour' ? 'selected' : ''}>jour</option><option value="piece" ${t.unite === 'piece' ? 'selected' : ''}>piece</option><option value="forfait" ${t.unite === 'forfait' ? 'selected' : ''}>forfait</option></select></td>
             <td><button type="button" class="tarif-remove" onclick="this.closest('tr').remove()">&times;</button></td>
           </tr>`;
@@ -977,6 +1020,7 @@ const SettingsPanel = {
         <td><input type="text" class="tarif-item" value="" placeholder="Nom item"></td>
         <td><input type="number" class="tarif-cout" value="0" min="0" step="0.5"></td>
         <td><input type="number" class="tarif-demi" value="" min="0" step="0.5" placeholder="auto"></td>
+        <td><input type="number" class="tarif-km" value="" min="0" step="0.1" placeholder="0.0"></td>
         <td><select class="tarif-unite"><option value="jour">jour</option><option value="piece">piece</option><option value="forfait">forfait</option></select></td>
         <td><button type="button" class="tarif-remove" onclick="this.closest('tr').remove()">&times;</button></td>
       </tr>`);
@@ -997,11 +1041,14 @@ const SettingsPanel = {
       const cout = parseFloat(tr.querySelector('.tarif-cout')?.value) || 0;
       const demiVal = tr.querySelector('.tarif-demi')?.value;
       const coutDemiJour = (demiVal !== undefined && demiVal !== '') ? parseFloat(demiVal) : null;
+      const kmVal = tr.querySelector('.tarif-km')?.value;
+      const coutKm = (kmVal !== undefined && kmVal !== '') ? parseFloat(kmVal) : null;
       const unite = tr.querySelector('.tarif-unite')?.value || 'jour';
       if (!type || !item) return;
       if (!data.items[type]) data.items[type] = [];
       const entry = { item, cout, unite };
       if (coutDemiJour !== null && !isNaN(coutDemiJour)) entry.coutDemiJour = coutDemiJour;
+      if (coutKm !== null && !isNaN(coutKm)) entry.coutKm = coutKm;
       data.items[type].push(entry);
     });
 
@@ -2046,8 +2093,16 @@ const PosteManager = {
     if (!grid) return;
     grid.innerHTML = '';
     const defaults = CONFIG.LISTS[type] || [];
-    const customs = (CustomItems.load()[type] || []).filter(c => !defaults.includes(c));
-    const allItems = [...defaults, ...customs];
+    const customs = (CustomItems.load()[type] || []);
+    // Inclure aussi les items du panneau Tarifs (toute entrée tarif = item disponible)
+    const tarifItems = (TarifManager.getData()?.items?.[type] || []).map(t => t.item).filter(Boolean);
+    // Union sans doublons (préserve l'ordre : defaults puis customs puis tarifs)
+    const allItems = [];
+    const seen = new Set();
+    [...defaults, ...customs, ...tarifItems].forEach(item => {
+      const key = item.trim().toLowerCase();
+      if (!seen.has(key) && item) { seen.add(key); allItems.push(item); }
+    });
     allItems.forEach(item => this._addCheckboxItem(grid, item, false, 1, type));
   },
 

@@ -1087,6 +1087,7 @@ function getTarifs() {
     var unite = String(values[i][3] || 'jour').trim();
     var marge = parseFloat(values[i][4]);
     var coutDemiJour = (values[i].length > 5 && values[i][5] !== '' && values[i][5] !== null) ? parseFloat(values[i][5]) : null;
+    var coutKm = (values[i].length > 6 && values[i][6] !== '' && values[i][6] !== null) ? parseFloat(values[i][6]) : null;
 
     if (!type) continue;
 
@@ -1098,6 +1099,7 @@ function getTarifs() {
       if (!items[type]) items[type] = [];
       var entry = { item: item, cout: cout, unite: unite };
       if (coutDemiJour !== null && !isNaN(coutDemiJour)) entry.coutDemiJour = coutDemiJour;
+      if (coutKm !== null && !isNaN(coutKm)) entry.coutKm = coutKm;
       items[type].push(entry);
       // Si une marge est definie sur la ligne, l'utiliser comme defaut categorie
       if (!isNaN(marge) && !marges[type]) marges[type] = marge;
@@ -1121,13 +1123,13 @@ function saveTarifs(data) {
   sheet.clearContents();
 
   // En-tetes
-  sheet.appendRow(['Type', 'Item', 'Cout unitaire', 'Unite', 'Marge %', 'Cout 1/2 jour']);
-  sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
+  sheet.appendRow(['Type', 'Item', 'Cout unitaire', 'Unite', 'Marge %', 'Cout 1/2 jour', 'CHF/km']);
+  sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
 
   // Marges par categorie
   var marges = data.marges || {};
   for (var cat in marges) {
-    sheet.appendRow(['_marge', cat, marges[cat], '%', '']);
+    sheet.appendRow(['_marge', cat, marges[cat], '%', '', '', '']);
   }
 
   // Items
@@ -1136,7 +1138,8 @@ function saveTarifs(data) {
     var list = items[type] || [];
     for (var i = 0; i < list.length; i++) {
       var demiJour = (list[i].coutDemiJour !== undefined && list[i].coutDemiJour !== null) ? list[i].coutDemiJour : '';
-      sheet.appendRow([type, list[i].item, list[i].cout, list[i].unite || 'jour', marges[type] || '', demiJour]);
+      var km = (list[i].coutKm !== undefined && list[i].coutKm !== null) ? list[i].coutKm : '';
+      sheet.appendRow([type, list[i].item, list[i].cout, list[i].unite || 'jour', marges[type] || '', demiJour, km]);
     }
   }
 
@@ -1156,37 +1159,37 @@ function saveTarifs(data) {
  */
 function creerOngletTarifs(ss) {
   var sheet = ss.insertSheet(TARIFS_SHEET_NAME);
-  sheet.appendRow(['Type', 'Item', 'Cout unitaire', 'Unite', 'Marge %', 'Cout 1/2 jour']);
-  sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
+  sheet.appendRow(['Type', 'Item', 'Cout unitaire', 'Unite', 'Marge %', 'Cout 1/2 jour', 'CHF/km']);
+  sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
 
   // Marges par defaut
-  sheet.appendRow(['_marge', 'personnel', 35, '%', '', '']);
-  sheet.appendRow(['_marge', 'vehicules', 25, '%', '', '']);
-  sheet.appendRow(['_marge', 'engins', 40, '%', '', '']);
-  sheet.appendRow(['_marge', 'materiel', 10, '%', '', '']);
+  sheet.appendRow(['_marge', 'personnel', 35, '%', '', '', '']);
+  sheet.appendRow(['_marge', 'vehicules', 25, '%', '', '', '']);
+  sheet.appendRow(['_marge', 'engins', 40, '%', '', '', '']);
+  sheet.appendRow(['_marge', 'materiel', 10, '%', '', '', '']);
 
-  // Tarifs par defaut — cout journée et cout demi-journée (source: grille tarifaire Pelichet)
-  // Format: [type, item, cout/jour, unite, '', cout/demi-jour]
+  // Tarifs par defaut — cout journée, cout demi-journée et CHF/km (source: grille Pelichet)
+  // Format: [type, item, cout/jour, unite, '', cout/demi-jour, CHF/km]
   var defauts = [
-    ['personnel', 'Manutentionnaire', 380, 'jour', '', 210],
-    ['personnel', 'Manutentionnaire du lourd', 400, 'jour', '', 220],
-    ['personnel', 'Chauffeur', 380, 'jour', '', 210],
-    ['personnel', "Chef d'equipe", 450, 'jour', '', 250],
-    ['personnel', 'CHAUF-LIVREUR', 400, 'jour', '', 220],
-    ['personnel', 'emballeur', 380, 'jour', '', 210],
-    ['vehicules', 'VL', 150, 'jour', '', 75],
-    ['vehicules', '1F', 150, 'jour', '', 75],
-    ['vehicules', 'PL', 350, 'jour', '', 250],
-    ['vehicules', 'Semi', 500, 'jour', '', 500],
-    ['vehicules', 'Box IT', 150, 'jour', '', 75],
-    ['vehicules', 'PL avec hayon', 350, 'jour', '', 250],
-    ['engins', 'Chariot elevateur', 600, 'jour', '', 400],
-    ['engins', 'Grue mobile', 1200, 'jour', '', 800],
-    ['engins', 'Monte-meuble', 400, 'jour', '', 300],
-    ['materiel', 'Chariots', 5, 'piece', '', ''],
-    ['materiel', 'Rouleaux bulle', 15, 'piece', '', ''],
-    ['materiel', 'Adhesif', 3, 'piece', '', ''],
-    ['materiel', 'Transpalette', 30, 'jour', '', 20]
+    ['personnel', 'Manutentionnaire', 380, 'jour', '', 210, ''],
+    ['personnel', 'Manutentionnaire du lourd', 400, 'jour', '', 220, ''],
+    ['personnel', 'Chauffeur', 380, 'jour', '', 210, ''],
+    ['personnel', "Chef d'equipe", 450, 'jour', '', 250, ''],
+    ['personnel', 'CHAUF-LIVREUR', 400, 'jour', '', 220, ''],
+    ['personnel', 'emballeur', 380, 'jour', '', 210, ''],
+    ['vehicules', 'VL', 150, 'jour', '', 75, 0.8],
+    ['vehicules', '1F', 150, 'jour', '', 75, 0.8],
+    ['vehicules', 'PL', 350, 'jour', '', 250, 1.5],
+    ['vehicules', 'Semi', 500, 'jour', '', 500, 1.7],
+    ['vehicules', 'Box IT', 150, 'jour', '', 75, 0.8],
+    ['vehicules', 'PL avec hayon', 350, 'jour', '', 250, 1.5],
+    ['engins', 'Chariot elevateur', 600, 'jour', '', 400, ''],
+    ['engins', 'Grue mobile', 1200, 'jour', '', 800, ''],
+    ['engins', 'Monte-meuble', 400, 'jour', '', 300, ''],
+    ['materiel', 'Chariots', 5, 'piece', '', '', ''],
+    ['materiel', 'Rouleaux bulle', 15, 'piece', '', '', ''],
+    ['materiel', 'Adhesif', 3, 'piece', '', '', ''],
+    ['materiel', 'Transpalette', 30, 'jour', '', 20, '']
   ];
   defauts.forEach(function(row) { sheet.appendRow(row); });
 
@@ -1196,6 +1199,7 @@ function creerOngletTarifs(ss) {
   sheet.setColumnWidth(4, 80);
   sheet.setColumnWidth(5, 80);
   sheet.setColumnWidth(6, 120);
+  sheet.setColumnWidth(7, 90);
 
   return sheet;
 }
@@ -2668,14 +2672,31 @@ function genererFicheResa(data, folder, ref, client) {
   }
 
   // ---- TABLEAU RESSOURCES ----
-  // Trouver la table de log (première table avec "date" dans l'en-tête)
+  // Trouver la table de log : on essaye plusieurs mots-clés en-tête
+  // (date, heure, hommes, vehicule, ressource) avec accents/sans, casse ignorée
   var tables = body.getTables();
   var logTable = null;
+  var headerKeywords = ['date', 'heure', 'homme', 'vehicule', 'véhicule', 'ressource', 'effectif'];
+  Logger.log('RESA: ' + tables.length + ' tables trouvees');
   for (var t = 0; t < tables.length; t++) {
-    if (tables[t].getRow(0).getText().toLowerCase().indexOf('date') !== -1) {
-      logTable = tables[t];
-      break;
-    }
+    try {
+      var headerText = tables[t].getRow(0).getText().toLowerCase();
+      Logger.log('RESA table[' + t + '] header: ' + headerText.substring(0, 100));
+      for (var hk = 0; hk < headerKeywords.length; hk++) {
+        if (headerText.indexOf(headerKeywords[hk]) !== -1) {
+          logTable = tables[t];
+          Logger.log('RESA: log table = table[' + t + '] (matched keyword: ' + headerKeywords[hk] + ')');
+          break;
+        }
+      }
+      if (logTable) break;
+    } catch (e) { /* ignore */ }
+  }
+  // Fallback : si aucune table avec ces mots-clés, prendre la dernière table du document
+  // (souvent c'est celle des ressources, vide attendant des lignes)
+  if (!logTable && tables.length > 0) {
+    logTable = tables[tables.length - 1];
+    Logger.log('RESA: fallback - using last table as log table');
   }
 
   // ---- SUPPRIMER "PRESTATION X" du template si present ----
@@ -2714,13 +2735,43 @@ function genererFicheResa(data, folder, ref, client) {
     return t;
   }
 
+  // Recherche du placeholder {{instructions}} avec plusieurs stratégies
   var instRange = body.findText('\\{\\{instructions\\}\\}');
-  if (instRange) {
-    var element = instRange.getElement();
-    var paragraph = element.getParent().asParagraph();
-    var container = paragraph.getParent();
-    var insertionIndex = container.getChildIndex(paragraph);
+  var paragraph = null;
+  var container = null;
+  var insertionIndex = -1;
 
+  if (instRange) {
+    Logger.log('RESA: placeholder {{instructions}} trouvé via findText');
+    var element = instRange.getElement();
+    paragraph = element.getParent().asParagraph();
+    container = paragraph.getParent();
+    insertionIndex = container.getChildIndex(paragraph);
+  } else {
+    // Fallback 1 : chercher par itération paragraph par paragraph (gère les runs splités)
+    Logger.log('RESA: findText {{instructions}} a échoué, tentative paragraphes');
+    var paras = body.getParagraphs();
+    for (var pi = 0; pi < paras.length; pi++) {
+      var ptext = paras[pi].getText();
+      if (ptext && ptext.indexOf('{{instructions}}') !== -1) {
+        paragraph = paras[pi];
+        container = paragraph.getParent();
+        insertionIndex = container.getChildIndex(paragraph);
+        Logger.log('RESA: placeholder trouvé via getParagraphs au paragraphe ' + pi);
+        break;
+      }
+      // Match aussi sans accolades cassées (ex: {{ instructions }})
+      if (ptext && /\{\s*\{\s*instructions\s*\}\s*\}/i.test(ptext)) {
+        paragraph = paras[pi];
+        container = paragraph.getParent();
+        insertionIndex = container.getChildIndex(paragraph);
+        Logger.log('RESA: placeholder trouvé via regex tolérant');
+        break;
+      }
+    }
+  }
+
+  if (paragraph && container && insertionIndex >= 0) {
     var allPostes = safeArray(data.postes);
 
     // Traiter TOUS les postes (simples et détaillés)
@@ -2858,7 +2909,11 @@ function genererFicheResa(data, folder, ref, client) {
     });
 
     // Supprimer le paragraphe {{instructions}}
-    paragraph.removeFromParent();
+    try { paragraph.removeFromParent(); } catch (e) { /* ignore */ }
+  } else {
+    Logger.log('RESA ERREUR: placeholder {{instructions}} introuvable dans le template. ' +
+               'Vérifie que le doc template (ID: ' + CONFIG.TEMPLATE_RESA_ID + ') contient bien {{instructions}} ' +
+               'sur une ligne dédiée. Astuce : retape le placeholder en une seule fois (sans copier-coller).');
   }
 
   docResa.saveAndClose();
