@@ -813,12 +813,19 @@ const TarifManager = {
     return qty * this.getCout(type, label) * jours;
   },
 
+  /** Vérifie si un tarif existe pour un item ; renvoie true si OK, false sinon */
+  _hasTariff(type, label) {
+    if (!this._data?.items?.[type]) return false;
+    return this._data.items[type].some(t => t.item === label);
+  },
+
   /** Calcule le prix d'un poste détail à partir de ses ressources */
   calculerPrixPoste(card) {
     const nbJours = parseFloat(card.querySelector('[name="nbJours"]')?.value) || 1;
     let totalCout = 0;
     let totalPrix = 0;
     const details = [];
+    const missing = []; // items sans tarif défini
 
     // --- 1. Engins (dropdown rows) ---
     const enginsRows = card.querySelector('.detail-section.engins .rows');
@@ -831,7 +838,9 @@ const TarifManager = {
         if (!label) return;
         const qty = parseFloat(row.querySelector('input[name="qty"]')?.value) || 1;
         const dureeVal = row.querySelector('[name="enginDuree"]')?.value || '';
-        coutEngins += this._coutItem('engins', label, qty, dureeVal, nbJours);
+        const c = this._coutItem('engins', label, qty, dureeVal, nbJours);
+        if (c === 0 && !this._hasTariff('engins', label)) missing.push({ type: 'engins', label });
+        coutEngins += c;
       });
     }
     if (coutEngins > 0) {
@@ -850,17 +859,17 @@ const TarifManager = {
       grid.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
         const cbItem = cb.closest('.cb-item');
         const label = cb.value;
+        const hasTariff = this._hasTariff(type, label);
+        if (!hasTariff) missing.push({ type, label });
 
         const cbRows = cbItem.querySelectorAll('.cb-row');
         if (cbRows.length > 0) {
-          // Personnel / Véhicules : plusieurs lignes qté+durée
           cbRows.forEach(row => {
             const qty = parseFloat(row.querySelector('.cb-qty')?.value) || 1;
             const dureeVal = row.querySelector('.cb-duree')?.value || '';
             coutCat += this._coutItem(type, label, qty, dureeVal, nbJours);
           });
         } else {
-          // Matériel : juste qté (pièce/forfait)
           const qty = parseFloat(cbItem.querySelector('.cb-qty')?.value) || 1;
           coutCat += this._coutItem(type, label, qty, '', nbJours);
         }
@@ -874,7 +883,12 @@ const TarifManager = {
       }
     });
 
-    return { cout: Math.round(totalCout * 100) / 100, prix: Math.round(totalPrix * 100) / 100, details };
+    return {
+      cout: Math.round(totalCout * 100) / 100,
+      prix: Math.round(totalPrix * 100) / 100,
+      details,
+      missing
+    };
   },
 
   /** Met à jour les données en mémoire */
@@ -2308,7 +2322,9 @@ const PosteManager = {
     if (!infoDiv || !detailDiv) return;
 
     const calc = TarifManager.calculerPrixPoste(card);
-    if (calc.prix === 0 && calc.cout === 0) {
+    const hasMissing = calc.missing && calc.missing.length > 0;
+
+    if (calc.prix === 0 && calc.cout === 0 && !hasMissing) {
       infoDiv.classList.add('hidden');
       return;
     }
@@ -2328,6 +2344,18 @@ const PosteManager = {
     if (prixManuel > 0 && Math.abs(ecart) > 1) {
       const cls = ecart > 0 ? 'ecart-positif' : 'ecart-negatif';
       html += `<div class="prix-auto-ligne ${cls}"><span>Ecart</span><span>${ecart > 0 ? '+' : ''}${fmtCHF(ecart)} CHF (${ecartPct}%)</span></div>`;
+    }
+
+    if (hasMissing) {
+      const labels = { personnel: 'Personnel', vehicules: 'Véhicules', engins: 'Engins', materiel: 'Matériel' };
+      const list = calc.missing.map(m => `<li><strong>${labels[m.type] || m.type}</strong> · ${m.label}</li>`).join('');
+      html += `
+        <div class="prix-auto-warning">
+          <div class="paw-title">⚠️ Tarifs manquants — non comptés dans le prix</div>
+          <ul>${list}</ul>
+          <div class="paw-hint">Ouvre <strong>⚙️ Tarifs &amp; Marges</strong> pour ajouter ces items au tarif et obtenir un prix complet.</div>
+        </div>
+      `;
     }
 
     detailDiv.innerHTML = html;

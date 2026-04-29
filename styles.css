@@ -1227,6 +1227,35 @@ select {
 }
 .prix-auto-ligne.ecart-positif { color: oklch(0.35 0.12 155); }
 .prix-auto-ligne.ecart-negatif { color: var(--red-ink); }
+.prix-auto-warning {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--amber-soft);
+  border-left: 3px solid var(--amber);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.prix-auto-warning .paw-title {
+  font-weight: 600;
+  color: oklch(0.40 0.10 75);
+  margin-bottom: 6px;
+}
+.prix-auto-warning ul {
+  margin: 0 0 6px 16px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.prix-auto-warning ul strong {
+  color: var(--ink);
+  margin-right: 4px;
+}
+.prix-auto-warning .paw-hint {
+  font-size: 10px;
+  color: var(--ink-3);
+  margin-top: 4px;
+}
 .prix-auto-apply {
   margin-top: 8px;
   background: var(--ink); color: var(--bg);
