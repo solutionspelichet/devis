@@ -134,7 +134,7 @@ function fmt(v) {
  * Retourne { totalKm, forfaitKm, excessKm, legs[] }
  */
 function calculerKilometrage(adresseDepart, adresseArrivee) {
-  var PELICHET = 'Chemin Francois-Lehmann 12, 1218 Le Grand-Saconnex, Suisse';
+  var PELICHET = 'Chemin Grenet 25, 1214 Vernier, Suisse';
   var FORFAIT_KM = 50; // 25 aller + 25 retour, canton de Genève
 
   var directions = Maps.newDirectionFinder()
@@ -2350,6 +2350,22 @@ function doPost(e) {
       }
     }
 
+    // --- Sauvegarde brouillon (sans génération devis/RESA) ---
+    if (data._action === 'save_draft') {
+      try {
+        var draftRef = safe(data.ref, '').trim();
+        if (!draftRef) return jsonResponse({ status: 'error', message: 'Référence requise' });
+        var draftClient = safe(data.client, 'CLIENT_INCONNU');
+        var draftMontant = parseFloat(data.montantHT) || 0;
+        var draftEstPelichet = data.typeSociete === 'Pelichet';
+        archiver(draftRef, draftEstPelichet, draftClient, data, draftMontant, null, 'Brouillon');
+        Logger.log('Brouillon sauvegardé: ' + draftRef + ' user=' + safe(data.userId));
+        return jsonResponse({ status: 'success', mode: 'draft', ref: draftRef });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur sauvegarde brouillon: ' + err });
+      }
+    }
+
     // --- Traitement devis standard (avec lock) ---
     var lock = LockService.getScriptLock();
     if (!lock.tryLock(CONFIG.LOCK_TIMEOUT_MS)) {
@@ -2517,7 +2533,7 @@ function doPost(e) {
 // ============================================
 // ARCHIVAGE SPREADSHEET
 // ============================================
-function archiver(ref, estPelichet, client, data, montantHT, pdfFile) {
+function archiver(ref, estPelichet, client, data, montantHT, pdfFile, statut) {
   try {
     const ss = getSs();
     if (!ss) return;
@@ -2545,6 +2561,8 @@ function archiver(ref, estPelichet, client, data, montantHT, pdfFile) {
       return '[' + safe(p.titre, 'PRESTATION').toUpperCase() + ': ' + fmt(parseFloat(p.prix) || 0) + ']';
     }).join(' ');
 
+    var pdfUrl = (pdfFile && typeof pdfFile.getUrl === 'function') ? pdfFile.getUrl() : '';
+
     // Colonnes alignées sur le Sheet existant :
     // Date | Réf | Société | Email | Statut Email | Client | Facturation | Contact | Départ | Arrivée | Prévu | Détail Tarifié | HT Global | TTC Global | Lien | JSON
     sheet.appendRow([
@@ -2552,7 +2570,7 @@ function archiver(ref, estPelichet, client, data, montantHT, pdfFile) {
       ref,                                  // B: Réf
       estPelichet ? 'Pelichet' : 'Autre',   // C: Société
       safe(data.email),                      // D: Email
-      'OK',                                  // E: Statut Email
+      safe(statut, 'OK'),                    // E: Statut (Brouillon, OK, etc.)
       client,                                // F: Client
       safe(data.adresseClient),              // G: Facturation
       safe(data.contact),                    // H: Contact
@@ -2562,7 +2580,7 @@ function archiver(ref, estPelichet, client, data, montantHT, pdfFile) {
       detailTarifie,                         // L: Détail Tarifié
       montantHT,                             // M: HT Global
       totalTTC,                              // N: TTC Global
-      pdfFile.getUrl(),                      // O: Lien
+      pdfUrl,                                // O: Lien (vide pour brouillon)
       JSON.stringify(data)                   // P: JSON (rechargement complet)
     ]);
   } catch (err) {

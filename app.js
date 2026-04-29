@@ -2812,6 +2812,53 @@ const FormSubmitter = {
     Modal.show(data, () => this._doSubmit(data));
   },
 
+  /** Sauvegarde sans génération de devis/RESA (brouillon dans le Spreadsheet) */
+  async saveDraft(form) {
+    if (this._submitting) return;
+    // Validation minimale pour brouillon : juste référence requise
+    const refInput = form.querySelector('[name="ref"]');
+    const ref = (refInput?.value || '').trim();
+    if (!ref) {
+      Toast.error('Référence requise pour sauvegarder un brouillon');
+      refInput?.focus();
+      return;
+    }
+
+    const fd = new FormData(form);
+    const data = Object.fromEntries(fd.entries());
+    data.postes = PosteManager.collectAll();
+    data.userId = UserManager.getUserId();
+    data._action = 'save_draft';
+
+    const btn = document.getElementById('saveDraftBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Sauvegarde…'; }
+
+    try {
+      const resp = await fetch(CONFIG.SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      const res = await resp.json();
+      if (res.status === 'success') {
+        Toast.success(`💾 Brouillon "${ref}" sauvegardé`);
+        // Rafraîchir la sidebar dossiers
+        if (typeof DossierList !== 'undefined') {
+          DossierList._loaded = false;
+          DossierList.fetch();
+        }
+      } else {
+        Toast.error('Erreur : ' + (res.message || 'Sauvegarde échouée'));
+      }
+    } catch (err) {
+      Toast.error('Erreur de connexion : ' + err.message);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" style="margin-right:2px"><path d="M3 5a2 2 0 012-2h7l5 5v9a2 2 0 01-2 2H5a2 2 0 01-2-2V5zM12 3v5h5M7 14h6M7 11h6" stroke-linecap="round" stroke-linejoin="round"/></svg> Brouillon`;
+      }
+    }
+  },
+
   async _doSubmit(data) {
     this._submitting = true;
     const btn = document.getElementById('submitBtn');
@@ -3113,6 +3160,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Auto total button
   document.getElementById('autoTotalBtn')?.addEventListener('click', () => PriceCalc.applyAutoTotal());
+  document.getElementById('saveDraftBtn')?.addEventListener('click', () => {
+    const form = document.getElementById('devisForm');
+    if (form) FormSubmitter.saveDraft(form);
+  });
 
   // Export ventilation
   document.getElementById('exportVentilBtn')?.addEventListener('click', () => VentilationExport.generate());
