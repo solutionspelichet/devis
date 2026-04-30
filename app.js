@@ -3070,28 +3070,151 @@ const DossierList = {
 
     const activeRef = document.querySelector('[name="ref"]')?.value?.trim();
 
+    const statusFromString = (s) => {
+      const lo = (s || '').toLowerCase();
+      if (lo.includes('refus') || lo.includes('non accept') || lo.includes('annul')) return 'status-refus';
+      if (lo.includes('brouillon')) return 'status-draft';
+      if (lo.includes('réalis') || lo.includes('realis')) return 'status-won';
+      if (lo.includes('ok') || lo.includes('accept')) return 'status-ok';
+      return 'status-draft';
+    };
+
     this._body.innerHTML = filtered.map(d => {
-      const statusClass = (d.statut || 'draft').toLowerCase().includes('ok') ? 'status-ok' : 'status-draft';
+      const statusClass = statusFromString(d.statut);
       const isActive = d.ref === activeRef;
       return `
-        <div class="dossier-item ${isActive ? 'active' : ''}" data-ref="${d.ref}">
-          <span class="dossier-dot ${statusClass}"></span>
+        <div class="dossier-item ${isActive ? 'active' : ''}" data-ref="${d.ref}" data-statut="${d.statut || ''}">
+          <span class="dossier-dot ${statusClass}" title="${d.statut || ''}"></span>
           <div class="dossier-ref">${d.ref}</div>
           <div class="dossier-amount">${fmtCHF(d.montantHT)}</div>
           <div class="dossier-client">${d.client || '—'}</div>
           <div class="dossier-meta">${(d.date || '').split(' ')[0]}</div>
+          <button type="button" class="dossier-menu-btn" data-ref="${d.ref}" aria-label="Actions">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="3" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="13" r="1.2"/></svg>
+          </button>
         </div>
       `;
     }).join('');
 
     this._body.querySelectorAll('.dossier-item').forEach(row => {
-      row.addEventListener('click', () => {
+      row.addEventListener('click', (e) => {
+        // Si clic sur le menu, ne pas charger
+        if (e.target.closest('.dossier-menu-btn')) return;
         const ref = row.dataset.ref;
         const sr = document.getElementById('searchRef');
         if (sr) sr.value = ref;
         DossierLoader.load(ref);
       });
     });
+
+    // Menu contextuel
+    this._body.querySelectorAll('.dossier-menu-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        DossierMenu.show(btn);
+      });
+    });
+  }
+};
+
+// ============================================
+// DOSSIER CONTEXT MENU (statut + delete)
+// ============================================
+const DossierMenu = {
+  _menu: null,
+  _currentRef: null,
+
+  init() {
+    document.addEventListener('click', () => this.hide());
+  },
+
+  show(btn) {
+    this._currentRef = btn.dataset.ref;
+    this.hide();
+    const menu = document.createElement('div');
+    menu.className = 'dossier-context-menu';
+    menu.innerHTML = `
+      <button type="button" data-action="status:Accepté"><span class="dot status-ok"></span> Marquer accepté</button>
+      <button type="button" data-action="status:Réalisé"><span class="dot status-won"></span> Marquer réalisé</button>
+      <button type="button" data-action="status:Refusé"><span class="dot status-refus"></span> Marquer refusé</button>
+      <button type="button" data-action="status:Brouillon"><span class="dot status-draft"></span> Repasser brouillon</button>
+      <hr>
+      <button type="button" data-action="delete" class="danger">🗑️ Supprimer</button>
+    `;
+    document.body.appendChild(menu);
+    const r = btn.getBoundingClientRect();
+    menu.style.top = (r.bottom + 4) + 'px';
+    menu.style.left = Math.min(r.left, window.innerWidth - 220) + 'px';
+    menu.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = b.dataset.action;
+        this._do(action);
+        this.hide();
+      });
+    });
+    this._menu = menu;
+    setTimeout(() => menu.classList.add('open'), 10);
+  },
+
+  hide() {
+    if (this._menu) { this._menu.remove(); this._menu = null; }
+  },
+
+  async _do(action) {
+    const ref = this._currentRef;
+    if (!ref) return;
+
+    if (action === 'delete') {
+      if (!confirm(`Supprimer définitivement le dossier ${ref} ?\n(toutes les versions seront retirées du suivi)`)) return;
+      try {
+        const resp = await fetch(CONFIG.SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            _action: 'delete_dossier',
+            ref,
+            userId: UserManager.getUserId()
+          })
+        });
+        const res = await resp.json();
+        if (res.status === 'success') {
+          Toast.success(`🗑️ Dossier ${ref} supprimé (${res.deleted || 1} ligne)`);
+          DossierList._loaded = false;
+          DossierList.fetch();
+        } else {
+          Toast.error('Erreur : ' + (res.message || 'Suppression échouée'));
+        }
+      } catch (err) {
+        Toast.error('Erreur : ' + err.message);
+      }
+      return;
+    }
+
+    if (action.startsWith('status:')) {
+      const statut = action.split(':')[1];
+      try {
+        const resp = await fetch(CONFIG.SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            _action: 'set_status',
+            ref,
+            statut,
+            userId: UserManager.getUserId()
+          })
+        });
+        const res = await resp.json();
+        if (res.status === 'success') {
+          Toast.success(`✅ ${ref} → ${statut}`);
+          DossierList._loaded = false;
+          DossierList.fetch();
+        } else {
+          Toast.error('Erreur : ' + (res.message || 'Statut non modifié'));
+        }
+      } catch (err) {
+        Toast.error('Erreur : ' + err.message);
+      }
+    }
   }
 };
 
@@ -3495,6 +3618,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   MobileShell.init();
   PWAInstall.init();
   RealiseManager.init();
+  DossierMenu.init();
   CalendarView.init();
 
   // Logout

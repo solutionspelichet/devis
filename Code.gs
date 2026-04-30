@@ -1515,6 +1515,67 @@ function listerDossiers(userId) {
   return dossiers;
 }
 
+/**
+ * Met à jour le statut d'un dossier dans le sheet de l'utilisateur.
+ * Cible uniquement la ligne LA PLUS RÉCENTE pour cette référence.
+ * Statuts possibles : 'OK', 'Brouillon', 'Réalisé', 'Refusé', 'Accepté'
+ */
+function setDossierStatus(userId, ref, statut) {
+  var sheet = getSheet(userId);
+  if (!sheet) return false;
+  var values = sheet.getDataRange().getValues();
+  if (values.length < 2) return false;
+  var colMap = buildColumnIndex(values[0]);
+  var refIdx = colMap.ref !== undefined ? colMap.ref : 1;
+  var statutIdx = colMap.statut !== undefined ? colMap.statut : 4;
+  var refUpper = String(ref).trim().toUpperCase();
+  // Parcourir du plus récent au plus ancien et mettre à jour la première occurrence
+  for (var i = values.length - 1; i >= 1; i--) {
+    if (String(values[i][refIdx]).trim().toUpperCase() === refUpper) {
+      sheet.getRange(i + 1, statutIdx + 1).setValue(statut);
+      Logger.log('setDossierStatus: ' + ref + ' -> ' + statut + ' (row ' + (i + 1) + ')');
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Supprime un dossier (toutes les lignes correspondant à la ref) du sheet utilisateur.
+ * Retourne le nombre de lignes supprimées.
+ */
+function deleteDossier(userId, ref) {
+  var sheet = getSheet(userId);
+  if (!sheet) return 0;
+  var values = sheet.getDataRange().getValues();
+  if (values.length < 2) return 0;
+  var colMap = buildColumnIndex(values[0]);
+  var refIdx = colMap.ref !== undefined ? colMap.ref : 1;
+  var refUpper = String(ref).trim().toUpperCase();
+  // Supprimer du plus bas au plus haut pour ne pas perturber les indices
+  var deletedCount = 0;
+  for (var i = values.length - 1; i >= 1; i--) {
+    if (String(values[i][refIdx]).trim().toUpperCase() === refUpper) {
+      sheet.deleteRow(i + 1);
+      deletedCount++;
+    }
+  }
+  Logger.log('deleteDossier: ' + ref + ' -> ' + deletedCount + ' ligne(s) supprimée(s)');
+  return deletedCount;
+}
+
+/** Détermine si un statut doit être inclus dans le calendrier/agenda */
+function isStatutPourAgenda(statut) {
+  if (!statut) return true; // par défaut inclus
+  var s = String(statut).trim().toLowerCase();
+  // Exclure les statuts qui ne sont pas validés
+  if (s.indexOf('refus') !== -1) return false;     // Refusé, Refus
+  if (s.indexOf('non accept') !== -1) return false; // Non accepté
+  if (s.indexOf('brouillon') !== -1) return false; // Brouillon
+  if (s.indexOf('annul') !== -1) return false;      // Annulé
+  return true;
+}
+
 function rechercherDossier(ref, userId) {
   const sheet = getSheet(userId);
   if (!sheet) return null;
@@ -1706,14 +1767,18 @@ function getCalendarData(userId) {
   if (values.length < 2) return { entries: [], minDate: null, maxDate: null };
 
   // Déduplication par ref (garder la version la plus récente)
+  // + filtrage des statuts non agendables (Brouillon, Refusé, Annulé)
   var colMap = buildColumnIndex(values[0]);
   var refIdx = colMap.ref !== undefined ? colMap.ref : 1;
+  var statutIdx = colMap.statut !== undefined ? colMap.statut : 4;
   var seenRefs = {};
   var latestRows = [];
   for (var i = values.length - 1; i >= 1; i--) {
     var ref = String(values[i][refIdx] || '').trim();
     if (!ref || seenRefs[ref]) continue;
     seenRefs[ref] = true;
+    var statut = String(values[i][statutIdx] || '').trim();
+    if (!isStatutPourAgenda(statut)) continue; // Skip Brouillon, Refusé, Annulé
     latestRows.push(values[i]);
   }
 
@@ -2573,6 +2638,33 @@ function doPost(e) {
         return jsonResponse({ status: 'error', message: 'Utilisateur introuvable' });
       } catch (err) {
         return jsonResponse({ status: 'error', message: 'Erreur upload signature: ' + err });
+      }
+    }
+
+    // --- Mise à jour du statut d'un dossier (Accepté / Refusé / Brouillon / Réalisé) ---
+    if (data._action === 'set_status') {
+      try {
+        var stRef = safe(data.ref, '').trim();
+        var stStatut = safe(data.statut, '').trim();
+        var stUser = safe(data.userId);
+        if (!stRef || !stStatut) return jsonResponse({ status: 'error', message: 'Référence et statut requis' });
+        var ok = setDossierStatus(stUser, stRef, stStatut);
+        return jsonResponse({ status: ok ? 'success' : 'error', ref: stRef, statut: stStatut });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur statut: ' + err });
+      }
+    }
+
+    // --- Suppression d'un dossier ---
+    if (data._action === 'delete_dossier') {
+      try {
+        var dlRef = safe(data.ref, '').trim();
+        var dlUser = safe(data.userId);
+        if (!dlRef) return jsonResponse({ status: 'error', message: 'Référence requise' });
+        var deleted = deleteDossier(dlUser, dlRef);
+        return jsonResponse({ status: deleted ? 'success' : 'error', ref: dlRef, deleted: deleted });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur suppression: ' + err });
       }
     }
 
