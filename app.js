@@ -3107,12 +3107,20 @@ const DossierList = {
       });
     });
 
-    // Menu contextuel
+    // Menu contextuel — clic sur le bouton ⋮
     this._body.querySelectorAll('.dossier-menu-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
         DossierMenu.show(btn);
+      });
+    });
+    // Right-click sur la ligne du dossier ouvre aussi le menu
+    this._body.querySelectorAll('.dossier-item').forEach(row => {
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const btn = row.querySelector('.dossier-menu-btn');
+        if (btn) DossierMenu.showAt(btn, e.clientX, e.clientY);
       });
     });
   }
@@ -3130,6 +3138,11 @@ const DossierMenu = {
   },
 
   show(btn) {
+    const r = btn.getBoundingClientRect();
+    this.showAt(btn, r.left, r.bottom + 4);
+  },
+
+  showAt(btn, x, y) {
     this._currentRef = btn.dataset.ref;
     this.hide();
     const menu = document.createElement('div');
@@ -3143,9 +3156,8 @@ const DossierMenu = {
       <button type="button" data-action="delete" class="danger">🗑️ Supprimer</button>
     `;
     document.body.appendChild(menu);
-    const r = btn.getBoundingClientRect();
-    menu.style.top = (r.bottom + 4) + 'px';
-    menu.style.left = Math.min(r.left, window.innerWidth - 220) + 'px';
+    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 16) + 'px';
+    menu.style.left = Math.min(x, window.innerWidth - 220) + 'px';
     menu.querySelectorAll('button').forEach(b => {
       b.addEventListener('click', (e) => {
         e.stopPropagation();
