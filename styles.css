@@ -1799,6 +1799,114 @@ select {
   border-radius: var(--radius-sm);
 }
 
+/* ---- RÉALISÉ MODAL ---- */
+.realise-poste {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.realise-poste-head {
+  background: var(--surface-2);
+  padding: 10px 14px;
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+}
+.realise-poste-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.realise-poste-sub { font-size: 11px; color: var(--ink-3); }
+
+.realise-day {
+  padding: 10px 14px;
+  border-top: 1px dashed var(--border);
+}
+.realise-day:first-child { border-top: none; }
+.realise-day-head {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 8px;
+}
+.realise-day-date {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--ink);
+}
+.realise-day-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr) auto;
+  gap: 8px;
+}
+@media (max-width: 768px) {
+  .realise-day-grid { grid-template-columns: 1fr; }
+}
+.realise-field {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.realise-field-label {
+  font-size: 10px; font-weight: 600;
+  color: var(--ink-4);
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.realise-field-estim {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-style: italic;
+  margin-bottom: 2px;
+  font-family: var(--font-mono);
+}
+.realise-field input {
+  font-size: 12px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+}
+.realise-field input:focus {
+  border-color: var(--ink-3);
+  background: var(--surface);
+}
+
+/* Synthèse */
+.realise-summary { margin-top: 20px; }
+.realise-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+@media (max-width: 640px) {
+  .realise-summary-grid { grid-template-columns: 1fr; }
+}
+.rs-card {
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.rs-label {
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-4);
+  margin-bottom: 6px;
+}
+.rs-value {
+  font-family: var(--font-display);
+  font-size: 24px; font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.rs-delta {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  margin-top: 4px;
+}
+.rs-delta.positive { color: oklch(0.50 0.13 155); }
+.rs-delta.negative { color: var(--red-ink); }
+
 /* Calendar sync banner */
 .calendar-sync-banner {
   display: flex;

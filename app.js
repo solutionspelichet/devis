@@ -1723,6 +1723,356 @@ const CalendarView = {
 };
 
 // ============================================
+// RÉALISÉ MANAGER (saisie des ressources réelles jour par jour)
+// ============================================
+const RealiseManager = {
+  _modal: null,
+  _data: null, // structure { postes: [{titre, jours: [{date, personnel, vehicules, materiel, notes}]}], montantFacture, notes }
+
+  init() {
+    this._modal = document.getElementById('realiseModal');
+    document.getElementById('realiseBtn')?.addEventListener('click', () => this.open());
+    document.getElementById('realiseClose')?.addEventListener('click', () => this.close());
+    document.getElementById('realiseSave')?.addEventListener('click', () => this.save());
+    document.getElementById('realiseUseEstim')?.addEventListener('click', () => this._fillFromEstim());
+    document.getElementById('realiseUseReel')?.addEventListener('click', () => this._fillFromReel());
+  },
+
+  open() {
+    if (!this._modal) return;
+    const ref = document.querySelector('[name="ref"]')?.value?.trim();
+    if (!ref) { Toast.warning('Référence dossier requise.'); return; }
+
+    const postes = PosteManager.collectAll().filter(p => p.mode === 'detail');
+    if (postes.length === 0) { Toast.warning('Aucun poste détaillé à réaliser.'); return; }
+
+    document.getElementById('realiseRefLabel').textContent = ref + ' · ' + (document.querySelector('[name="client"]')?.value || '');
+
+    // Charger les données existantes : mémoire > localStorage > rien
+    const existing = window._currentDossierRealise || this._restoreFromLocal(ref) || null;
+    this._render(postes, existing);
+
+    // Initialiser le montant facturé avec l'existant ou le HT du devis
+    const inputFact = document.getElementById('realiseMontantFacture');
+    const ht = parseFloat(document.querySelector('[name="montantHT"]')?.value) || 0;
+    inputFact.value = (existing?.montantFacture ?? ht).toFixed(2);
+    document.getElementById('realiseNotes').value = existing?.notes || '';
+
+    this._modal.classList.remove('hidden');
+    this._recompute();
+  },
+
+  close() { this._modal?.classList.add('hidden'); },
+
+  _render(postes, existing) {
+    const body = document.getElementById('realiseBody');
+    const fmtDate = (d) => {
+      if (!d) return '';
+      const parts = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return parts ? `${parts[3]}.${parts[2]}.${parts[1]}` : d;
+    };
+
+    let html = '';
+    postes.forEach((poste, pIdx) => {
+      const titre = (poste.titre || `Poste ${pIdx + 1}`).toUpperCase();
+      const nbJours = parseInt(poste.jours) || 1;
+      // Construire la liste des jours à partir des RDVs et nbJours
+      const jours = this._expandJours(poste, existing?.postes?.[pIdx]?.jours || []);
+
+      // Estimés pour ce poste (utilisés en ref)
+      const estPersonnel = (poste.personnel || []).join(', ') || '—';
+      const estVehicules = [...(poste.vehicules || []), ...(poste.engins || [])].join(', ') || '—';
+      const estMateriel = (poste.materiel || []).join(', ') || '—';
+
+      html += `
+        <div class="realise-poste" data-poste-idx="${pIdx}">
+          <div class="realise-poste-head">
+            <div>
+              <div class="realise-poste-title">${this._esc(titre)}</div>
+              <div class="realise-poste-sub">${jours.length} jour${jours.length > 1 ? 's' : ''} · ${this._esc(poste.tache || '')}</div>
+            </div>
+          </div>
+      `;
+
+      jours.forEach((j, jIdx) => {
+        html += `
+          <div class="realise-day" data-day-idx="${jIdx}">
+            <div class="realise-day-head">
+              <span class="realise-day-date">${fmtDate(j.date)}</span>
+              <span class="realise-poste-sub">Jour ${jIdx + 1}/${jours.length}</span>
+            </div>
+            <div class="realise-day-grid">
+              <div class="realise-field">
+                <label class="realise-field-label">Personnel</label>
+                <div class="realise-field-estim">Estim: ${this._esc(estPersonnel)}</div>
+                <input type="text" class="rj-personnel" value="${this._esc(j.personnel || '')}" placeholder="ex: 2x Manutentionnaire, 1x Chauffeur">
+              </div>
+              <div class="realise-field">
+                <label class="realise-field-label">Véhicules / Engins</label>
+                <div class="realise-field-estim">Estim: ${this._esc(estVehicules)}</div>
+                <input type="text" class="rj-vehicules" value="${this._esc(j.vehicules || '')}" placeholder="ex: 1x PL, 1x VL">
+              </div>
+              <div class="realise-field" style="grid-column:1/-1">
+                <label class="realise-field-label">Matériel · Notes</label>
+                <div class="realise-field-estim">Estim matériel: ${this._esc(estMateriel)}</div>
+                <input type="text" class="rj-materiel" value="${this._esc(j.materiel || '')}" placeholder="ex: 5x Chariots — RAS">
+              </div>
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
+    });
+    body.innerHTML = html;
+
+    // Recompute live à chaque changement
+    body.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('input', () => this._recompute());
+    });
+    document.getElementById('realiseMontantFacture')?.addEventListener('input', () => this._recompute());
+  },
+
+  /** Génère la liste des jours d'un poste à partir des RDVs et nbJours */
+  _expandJours(poste, existingJours) {
+    const nbJours = parseInt(poste.jours) || 1;
+    const rdvs = (poste.rdvs || []).filter(r => r.date);
+    const dates = [];
+    if (rdvs.length > 0) {
+      const start = new Date(rdvs[0].date);
+      // Génère N jours ouvrés
+      const days = this._businessDays(start, nbJours);
+      days.forEach(d => dates.push(this._iso(d)));
+    } else {
+      for (let i = 0; i < nbJours; i++) dates.push('');
+    }
+    return dates.map((date, i) => {
+      const ex = existingJours[i] || {};
+      return {
+        date,
+        personnel: ex.personnel || '',
+        vehicules: ex.vehicules || '',
+        materiel: ex.materiel || ''
+      };
+    });
+  },
+
+  _businessDays(start, n) {
+    const out = [];
+    const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    while (out.length < n) {
+      const dow = cur.getDay();
+      if (dow !== 0 && dow !== 6) out.push(new Date(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  },
+
+  _iso(d) {
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${dd}`;
+  },
+
+  /** Parse "2x Manutentionnaire, 1x Chauffeur" → array d'items */
+  _parseEntries(str) {
+    if (!str) return [];
+    return String(str).split(/[,;]+/).map(s => s.trim()).filter(s => s);
+  },
+
+  /** Calcule le coût d'une ligne réelle pour un type donné */
+  _coutLigne(type, str) {
+    let total = 0;
+    this._parseEntries(str).forEach(entry => {
+      const m = entry.match(/^(\d+)x?\s+(.+)$/i);
+      if (!m) return;
+      const qty = parseInt(m[1]) || 1;
+      const nom = m[2].trim();
+      // 1 jour par défaut pour les ressources réelles
+      const cout = TarifManager.getCout(type, nom);
+      total += qty * cout;
+    });
+    return total;
+  },
+
+  _recompute() {
+    // Coût estimé = somme des coûts initiaux des postes
+    const postes = PosteManager.collectAll().filter(p => p.mode === 'detail');
+    let coutEstim = 0;
+    postes.forEach((p, pIdx) => {
+      const card = document.querySelectorAll('.poste-card')[pIdx];
+      if (card) {
+        const calc = TarifManager.calculerPrixPoste(card);
+        coutEstim += calc.cout;
+      }
+    });
+
+    // Coût réel = somme des coûts saisis dans les inputs jour par jour
+    let coutReel = 0;
+    document.querySelectorAll('.realise-day').forEach(day => {
+      const personnel = day.querySelector('.rj-personnel')?.value || '';
+      const vehicules = day.querySelector('.rj-vehicules')?.value || '';
+      const materiel = day.querySelector('.rj-materiel')?.value || '';
+      coutReel += this._coutLigne('personnel', personnel);
+      // Véhicules : tester sur vehicules ET engins
+      this._parseEntries(vehicules).forEach(entry => {
+        const m = entry.match(/^(\d+)x?\s+(.+)$/i);
+        if (!m) return;
+        const qty = parseInt(m[1]) || 1;
+        const nom = m[2].trim();
+        coutReel += qty * (TarifManager.getCout('vehicules', nom) || TarifManager.getCout('engins', nom));
+      });
+      // Matériel : pièce par défaut
+      this._parseEntries(materiel).forEach(entry => {
+        const m = entry.match(/^(\d+)x?\s+(.+)$/i);
+        if (!m) return;
+        const qty = parseInt(m[1]) || 1;
+        const nom = m[2].trim();
+        coutReel += qty * TarifManager.getCout('materiel', nom);
+      });
+    });
+
+    const fmt = (v) => v.toLocaleString('fr-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' CHF';
+    document.getElementById('rsCoutEstim').textContent = fmt(coutEstim);
+    document.getElementById('rsCoutReel').textContent = fmt(coutReel);
+
+    // Delta coût
+    const deltaCout = coutReel - coutEstim;
+    const deltaCoutPct = coutEstim > 0 ? ((deltaCout / coutEstim) * 100).toFixed(1) : 0;
+    const deltaEl = document.getElementById('rsCoutDelta');
+    deltaEl.textContent = (deltaCout >= 0 ? '+' : '') + fmt(deltaCout) + ' (' + deltaCoutPct + '%)';
+    deltaEl.className = 'rs-delta ' + (deltaCout > 0 ? 'negative' : 'positive');
+
+    // Marge réelle = (montantFacture - coutReel) / montantFacture
+    const montantFact = parseFloat(document.getElementById('realiseMontantFacture')?.value) || 0;
+    const margeEl = document.getElementById('rsMargeReel');
+    const margeDeltaEl = document.getElementById('rsMargeDelta');
+    if (montantFact > 0 && coutReel > 0) {
+      const margePct = ((montantFact - coutReel) / montantFact * 100).toFixed(1);
+      const margeMontant = montantFact - coutReel;
+      margeEl.textContent = margePct + ' %';
+      margeDeltaEl.textContent = (margeMontant >= 0 ? '+' : '') + fmt(margeMontant);
+      margeDeltaEl.className = 'rs-delta ' + (margeMontant > 0 ? 'positive' : 'negative');
+    } else {
+      margeEl.textContent = '—';
+      margeDeltaEl.textContent = '';
+    }
+  },
+
+  _fillFromEstim() {
+    const ht = parseFloat(document.querySelector('[name="montantHT"]')?.value) || 0;
+    document.getElementById('realiseMontantFacture').value = ht.toFixed(2);
+    this._recompute();
+  },
+
+  _fillFromReel() {
+    // Coût réel × marge moyenne (ex: 1.4)
+    const txt = document.getElementById('rsCoutReel').textContent;
+    const coutReel = parseFloat(txt.replace(/[^\d.]/g, '')) || 0;
+    const margeMoyenne = 1.4; // par défaut +40%
+    document.getElementById('realiseMontantFacture').value = (coutReel * margeMoyenne).toFixed(2);
+    this._recompute();
+  },
+
+  _esc(s) {
+    const div = document.createElement('div');
+    div.textContent = String(s || '');
+    return div.innerHTML;
+  },
+
+  /** Collecte les données saisies dans le modal */
+  _collect() {
+    const postes = [];
+    document.querySelectorAll('.realise-poste').forEach(pEl => {
+      const jours = [];
+      pEl.querySelectorAll('.realise-day').forEach(dEl => {
+        jours.push({
+          date: dEl.querySelector('.realise-day-date')?.textContent?.trim() || '',
+          personnel: dEl.querySelector('.rj-personnel')?.value || '',
+          vehicules: dEl.querySelector('.rj-vehicules')?.value || '',
+          materiel: dEl.querySelector('.rj-materiel')?.value || ''
+        });
+      });
+      postes.push({ jours });
+    });
+    return {
+      postes,
+      montantFacture: parseFloat(document.getElementById('realiseMontantFacture').value) || 0,
+      notes: document.getElementById('realiseNotes').value || '',
+      savedAt: new Date().toISOString()
+    };
+  },
+
+  async save() {
+    const ref = document.querySelector('[name="ref"]')?.value?.trim();
+    if (!ref) { Toast.error('Référence dossier requise.'); return; }
+    const realise = this._collect();
+
+    const fd = new FormData(document.getElementById('devisForm'));
+    const data = Object.fromEntries(fd.entries());
+    data.postes = PosteManager.collectAll();
+    data.userId = UserManager.getUserId();
+    data.realise = realise;
+    data._action = 'save_realise';
+
+    const btn = document.getElementById('realiseSave');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Sauvegarde…'; }
+
+    try {
+      const resp = await fetch(CONFIG.SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      const res = await resp.json();
+      if (res.status === 'success') {
+        Toast.success(`📋 Réalisé sauvegardé · marge ${this._currentMarge()}`);
+        window._currentDossierRealise = realise;
+
+        // Sauvegarde locale (localStorage) en backup
+        try {
+          const key = 'pelichet_realise_' + ref;
+          localStorage.setItem(key, JSON.stringify({ ref, realise, savedAt: realise.savedAt }));
+        } catch (e) { /* quota plein, ignore */ }
+
+        // Téléchargement automatique du XLSX
+        if (res.xlsxB64 && res.xlsxName) {
+          FormSubmitter._downloadBase64File(
+            res.xlsxB64,
+            res.xlsxName,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          );
+        }
+
+        this.close();
+        if (typeof DossierList !== 'undefined') {
+          DossierList._loaded = false;
+          DossierList.fetch();
+        }
+      } else {
+        Toast.error('Erreur : ' + (res.message || 'Sauvegarde échouée'));
+      }
+    } catch (err) {
+      Toast.error('Erreur de connexion : ' + err.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Sauvegarder le réalisé'; }
+    }
+  },
+
+  /** Restaure le réalisé depuis localStorage si pas encore en mémoire */
+  _restoreFromLocal(ref) {
+    try {
+      const key = 'pelichet_realise_' + ref;
+      const raw = localStorage.getItem(key);
+      if (raw) return JSON.parse(raw).realise;
+    } catch (e) { /* ignore */ }
+    return null;
+  },
+
+  _currentMarge() {
+    return document.getElementById('rsMargeReel')?.textContent || '—';
+  }
+};
+
+// ============================================
 // MOBILE SHELL (drawer sidebar + bottom bar)
 // ============================================
 const MobileShell = {
@@ -2780,8 +3130,10 @@ const DossierLoader = {
       if (data.volumeEstime) form.querySelector('[name="volumeEstime"]').value = data.volumeEstime;
 
       PosteManager.loadPostes(data.postes);
+      // Mémoriser le réalisé existant pour restoration dans le modal
+      window._currentDossierRealise = data.realise || null;
       PriceCalc.updateBreakdown();
-      Toast.success('Dossier chargé !');
+      Toast.success('Dossier chargé !' + (data.realise ? ' (avec réalisé)' : ''));
     } catch (err) {
       Toast.error('Erreur de chargement : ' + err.message);
     } finally {
@@ -3142,6 +3494,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   RightRail.init();
   MobileShell.init();
   PWAInstall.init();
+  RealiseManager.init();
   CalendarView.init();
 
   // Logout

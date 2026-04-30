@@ -253,6 +253,10 @@
                         <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" style="margin-right:2px"><path d="M3 5a2 2 0 012-2h7l5 5v9a2 2 0 01-2 2H5a2 2 0 01-2-2V5zM12 3v5h5M7 14h6M7 11h6" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         Brouillon
                     </button>
+                    <button type="button" class="btn btn-ghost" id="realiseBtn" title="Saisir le réalisé jour par jour et calculer la marge réelle">
+                        <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" style="margin-right:2px"><path d="M4 10l3 3 7-7M4 16h12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        Réalisé
+                    </button>
                     <button type="submit" form="devisForm" id="submitBtnTop" class="btn btn-red">Générer devis</button>
                 </div>
             </div>
@@ -618,6 +622,66 @@
                         ⬇ Télécharger .ics à la place (import manuel unique)
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL RÉALISÉ -->
+    <div id="realiseModal" class="settings-overlay hidden">
+        <div class="settings-modal" style="max-width:1080px">
+            <div class="settings-header">
+                <div>
+                    <h3>📋 Réalisé du dossier</h3>
+                    <div style="font-size:11px;color:var(--ink-3);margin-top:2px" id="realiseRefLabel">—</div>
+                </div>
+                <button type="button" id="realiseClose" class="settings-close-btn">&times;</button>
+            </div>
+            <div class="settings-body">
+                <p style="font-size:12px;color:var(--ink-3);margin-bottom:16px;line-height:1.5">
+                    Saisis ce qui s'est <strong>vraiment passé chaque jour</strong> (effectif, véhicules, matériel) pour calculer la marge réelle.
+                    Format libre — par ex. <code style="font-family:var(--font-mono);font-size:11px;background:var(--surface-2);padding:1px 4px;border-radius:3px">2x Manutentionnaire</code> ou <code style="font-family:var(--font-mono);font-size:11px;background:var(--surface-2);padding:1px 4px;border-radius:3px">1x PL, 1x VL</code>.
+                </p>
+
+                <div id="realiseBody"></div>
+
+                <div class="realise-summary">
+                    <h4 class="settings-section-title mt-6">Synthèse coût/marge</h4>
+                    <div class="realise-summary-grid">
+                        <div class="rs-card">
+                            <div class="rs-label">Coût estimé</div>
+                            <div class="rs-value" id="rsCoutEstim">0 CHF</div>
+                        </div>
+                        <div class="rs-card">
+                            <div class="rs-label">Coût réel</div>
+                            <div class="rs-value" id="rsCoutReel">0 CHF</div>
+                            <div class="rs-delta" id="rsCoutDelta"></div>
+                        </div>
+                        <div class="rs-card">
+                            <div class="rs-label">Marge réelle</div>
+                            <div class="rs-value" id="rsMargeReel">—</div>
+                            <div class="rs-delta" id="rsMargeDelta"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6">
+                    <label class="settings-section-title">Montant facturé final</label>
+                    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+                        <span class="mono" style="font-size:12px;color:var(--ink-3)">CHF</span>
+                        <input type="number" id="realiseMontantFacture" step="0.01" placeholder="0.00" class="font-mono" style="font-size:18px;font-weight:600;flex:1">
+                        <button type="button" id="realiseUseEstim" class="btn btn-ghost btn-xs">= devis</button>
+                        <button type="button" id="realiseUseReel" class="btn btn-ghost btn-xs">= coût réel × marge</button>
+                    </div>
+                    <div style="font-size:11px;color:var(--ink-3);margin-top:6px">Initialisé au montant HT du devis. Tu peux l'ajuster pour le client final.</div>
+                </div>
+
+                <div class="mt-4">
+                    <label class="settings-section-title">Notes générales</label>
+                    <textarea id="realiseNotes" rows="3" placeholder="Notes sur le déroulement de la mission, anomalies, etc." style="width:100%;margin-top:6px"></textarea>
+                </div>
+            </div>
+            <div class="settings-footer">
+                <button type="button" id="realiseSave" class="btn btn-primary">Sauvegarder le réalisé</button>
             </div>
         </div>
     </div>

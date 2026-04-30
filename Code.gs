@@ -1788,6 +1788,232 @@ function getCalendarData(userId) {
 }
 
 /**
+ * Génère un fichier Excel (.xlsx) du réalisé d'un dossier.
+ * - Crée une Spreadsheet temporaire avec une mise en forme propre
+ * - Exporte en XLSX via API Drive
+ * - Sauvegarde dans le dossier utilisateur
+ * - Retourne { fileId, url, b64, name }
+ */
+function genererXlsxRealise(data) {
+  var ref = safe(data.ref, 'SANS_REF');
+  var client = safe(data.client, 'CLIENT');
+  var realise = data.realise || {};
+  var postes = safeArray(data.postes).filter(function(p) { return p.mode === 'detail'; });
+  var fileName = 'Realise_' + ref + '_' + client.replace(/\s+/g, '_');
+
+  // 1) Créer un Spreadsheet temporaire
+  var tempSS = SpreadsheetApp.create('TEMP_' + fileName);
+  var sheet = tempSS.getActiveSheet();
+  sheet.setName('Réalisé');
+
+  var rows = [];
+  // En-tête principal
+  rows.push(['DOSSIER RÉALISÉ', '', '', '', '', '']);
+  rows.push(['Référence', ref, '', 'Client', client, '']);
+  rows.push(['Date export', Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd.MM.yyyy HH:mm'), '', 'Utilisateur', safe(data.userId), '']);
+  rows.push(['', '', '', '', '', '']);
+
+  // Tableau des postes / jours
+  rows.push(['Poste', 'Jour', 'Date', 'Personnel réel', 'Véhicules réel', 'Matériel / Notes']);
+
+  postes.forEach(function(p, pIdx) {
+    var titre = (p.titre || '').toUpperCase();
+    var realiseP = (realise.postes && realise.postes[pIdx]) || { jours: [] };
+    var jours = realiseP.jours || [];
+
+    // Estimés
+    var estPersonnel = safeArray(p.personnel).join(', ');
+    var estVehicules = safeArray(p.vehicules).concat(safeArray(p.engins)).join(', ');
+    var estMateriel = safeArray(p.materiel).join(', ');
+
+    // Ligne d'estimé pour rappel
+    rows.push([titre + ' (estimé)', '', '', estPersonnel, estVehicules, estMateriel]);
+
+    // Lignes de réalisé jour par jour
+    if (jours.length === 0) {
+      rows.push([titre, 'Réalisé', '', '— non saisi —', '', '']);
+    } else {
+      jours.forEach(function(j, jIdx) {
+        rows.push([
+          titre,
+          'J' + (jIdx + 1) + '/' + jours.length,
+          j.date || '',
+          j.personnel || '',
+          j.vehicules || '',
+          j.materiel || ''
+        ]);
+      });
+    }
+    rows.push(['', '', '', '', '', '']);
+  });
+
+  // Synthèse coût/marge
+  var coutEstime = calculerCoutEstime(data);
+  var coutReel = calculerCoutReel(data);
+  var montantFacture = parseFloat(realise.montantFacture) || (parseFloat(data.montantHT) || 0);
+  var margePct = montantFacture > 0 ? ((montantFacture - coutReel) / montantFacture * 100) : 0;
+  var deltaCout = coutReel - coutEstime;
+
+  rows.push(['SYNTHÈSE', '', '', '', '', '']);
+  rows.push(['Coût estimé', '', coutEstime.toFixed(2) + ' CHF', '', '', '']);
+  rows.push(['Coût réel', '', coutReel.toFixed(2) + ' CHF', '', '', '']);
+  rows.push(['Variation coût', '', (deltaCout >= 0 ? '+' : '') + deltaCout.toFixed(2) + ' CHF', '', '', '']);
+  rows.push(['Montant facturé', '', montantFacture.toFixed(2) + ' CHF', '', '', '']);
+  rows.push(['Marge réelle', '', margePct.toFixed(1) + ' %', '', '', '']);
+  rows.push(['Gain/Perte', '', (montantFacture - coutReel).toFixed(2) + ' CHF', '', '', '']);
+
+  if (realise.notes) {
+    rows.push(['', '', '', '', '', '']);
+    rows.push(['Notes', realise.notes, '', '', '', '']);
+  }
+
+  // Écrire dans le sheet
+  sheet.getRange(1, 1, rows.length, 6).setValues(rows);
+
+  // Mise en forme
+  sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setFontSize(14).setBackground('#D32F2F').setFontColor('#FFFFFF').merge();
+  sheet.getRange(2, 1, 2, 6).setFontWeight('bold').setBackground('#FAFAF7');
+  sheet.getRange(5, 1, 1, 6).setFontWeight('bold').setBackground('#1E293B').setFontColor('#FFFFFF');
+  // Synthèse header (trouve la ligne)
+  var syntRow = -1;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][0] === 'SYNTHÈSE') { syntRow = i + 1; break; }
+  }
+  if (syntRow > 0) {
+    sheet.getRange(syntRow, 1, 1, 6).setFontWeight('bold').setBackground('#1E293B').setFontColor('#FFFFFF').merge();
+    sheet.getRange(syntRow + 1, 1, 6, 1).setFontWeight('bold');
+    sheet.getRange(syntRow + 1, 3, 6, 1).setFontFamily('Courier New').setHorizontalAlignment('right');
+  }
+
+  // Largeurs colonnes
+  sheet.setColumnWidth(1, 220);
+  sheet.setColumnWidth(2, 80);
+  sheet.setColumnWidth(3, 130);
+  sheet.setColumnWidth(4, 220);
+  sheet.setColumnWidth(5, 200);
+  sheet.setColumnWidth(6, 240);
+
+  // Bordures
+  sheet.getRange(1, 1, rows.length, 6).setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
+
+  SpreadsheetApp.flush();
+
+  // 2) Exporter en XLSX via API Drive
+  var ssId = tempSS.getId();
+  var xlsxUrl = 'https://docs.google.com/spreadsheets/d/' + ssId + '/export?format=xlsx';
+  var response = UrlFetchApp.fetch(xlsxUrl, {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true,
+    followRedirects: true
+  });
+  if (response.getResponseCode() !== 200) {
+    Logger.log('genererXlsxRealise export failed: ' + response.getResponseCode());
+    DriveApp.getFileById(ssId).setTrashed(true);
+    return null;
+  }
+  var blob = response.getBlob();
+  blob.setContentType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  blob.setName(fileName + '.xlsx');
+
+  // 3) Sauvegarder dans le dossier utilisateur
+  var folder = getUserFolder(safe(data.userId));
+  var file = folder.createFile(blob);
+
+  // 4) Cleanup : trash temp Spreadsheet
+  try { DriveApp.getFileById(ssId).setTrashed(true); } catch (e) { /* ignore */ }
+
+  return {
+    fileId: file.getId(),
+    url: file.getUrl(),
+    b64: Utilities.base64Encode(blob.getBytes()),
+    name: fileName + '.xlsx'
+  };
+}
+
+/** Calcule le coût estimé total d'un dossier (somme des postes) */
+function calculerCoutEstime(data) {
+  var tarifs = getTarifs();
+  var total = 0;
+  var postes = safeArray(data.postes).filter(function(p) { return p.mode === 'detail'; });
+
+  function getCout(type, label) {
+    var items = (tarifs.items && tarifs.items[type]) || [];
+    var found = null;
+    for (var i = 0; i < items.length; i++) if (items[i].item === label) { found = items[i]; break; }
+    return found ? (parseFloat(found.cout) || 0) : 0;
+  }
+
+  postes.forEach(function(p) {
+    var nbJours = parseFloat(p.jours) || 1;
+    // Personnel
+    safeArray(p.personnel).forEach(function(item) {
+      var m = String(item).match(/^(\d+)x\s+(.+?)(?:\s+\[.+?\])?$/);
+      if (!m) return;
+      total += parseInt(m[1]) * getCout('personnel', m[2].trim()) * nbJours;
+    });
+    // Véhicules
+    safeArray(p.vehicules).forEach(function(item) {
+      var m = String(item).match(/^(\d+)x\s+(.+?)(?:\s+\[.+?\])?$/);
+      if (!m) return;
+      total += parseInt(m[1]) * getCout('vehicules', m[2].trim()) * nbJours;
+    });
+    // Engins
+    safeArray(p.engins).forEach(function(item) {
+      var m = String(item).match(/^(\d+)x\s+(.+?)(?:\s+\(\d+T\))?(?:\s+\[.+?\])?$/);
+      if (!m) return;
+      total += parseInt(m[1]) * getCout('engins', m[2].trim()) * nbJours;
+    });
+    // Matériel (pièces, pas multiplié par nbJours)
+    safeArray(p.materiel).forEach(function(item) {
+      var m = String(item).match(/^(\d+)x\s+(.+)$/);
+      if (!m) return;
+      total += parseInt(m[1]) * getCout('materiel', m[2].trim());
+    });
+  });
+  return total;
+}
+
+/** Calcule le coût réel total d'un dossier depuis data.realise */
+function calculerCoutReel(data) {
+  if (!data.realise || !data.realise.postes) return 0;
+  var tarifs = getTarifs();
+
+  function getCout(type, label) {
+    var items = (tarifs.items && tarifs.items[type]) || [];
+    var found = null;
+    for (var i = 0; i < items.length; i++) if (items[i].item === label) { found = items[i]; break; }
+    return found ? (parseFloat(found.cout) || 0) : 0;
+  }
+
+  function parseEntries(str) {
+    return String(str || '').split(/[,;]+/).map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+  }
+
+  var total = 0;
+  data.realise.postes.forEach(function(rp) {
+    safeArray(rp.jours).forEach(function(j) {
+      parseEntries(j.personnel).forEach(function(e) {
+        var m = e.match(/^(\d+)x?\s+(.+)$/i);
+        if (!m) return;
+        total += parseInt(m[1]) * getCout('personnel', m[2].trim());
+      });
+      parseEntries(j.vehicules).forEach(function(e) {
+        var m = e.match(/^(\d+)x?\s+(.+)$/i);
+        if (!m) return;
+        var nom = m[2].trim();
+        total += parseInt(m[1]) * (getCout('vehicules', nom) || getCout('engins', nom));
+      });
+      parseEntries(j.materiel).forEach(function(e) {
+        var m = e.match(/^(\d+)x?\s+(.+)$/i);
+        if (!m) return;
+        total += parseInt(m[1]) * getCout('materiel', m[2].trim());
+      });
+    });
+  });
+  return total;
+}
+
+/**
  * Exporte un Google Doc en DOCX (Word) via l'API Drive.
  * Retourne le Blob DOCX ou null en cas d'erreur.
  */
@@ -2347,6 +2573,40 @@ function doPost(e) {
         return jsonResponse({ status: 'error', message: 'Utilisateur introuvable' });
       } catch (err) {
         return jsonResponse({ status: 'error', message: 'Erreur upload signature: ' + err });
+      }
+    }
+
+    // --- Sauvegarde du réalisé (mise à jour dossier sans regenerer documents) ---
+    if (data._action === 'save_realise') {
+      try {
+        var realiseRef = safe(data.ref, '').trim();
+        if (!realiseRef) return jsonResponse({ status: 'error', message: 'Référence requise' });
+        var realiseClient = safe(data.client, 'CLIENT_INCONNU');
+        var realiseEstPelichet = data.typeSociete === 'Pelichet';
+        // Le montantHT pour archivage = montant facturé final (si défini), sinon estimé
+        var montantFinal = (data.realise && data.realise.montantFacture) ? parseFloat(data.realise.montantFacture) : (parseFloat(data.montantHT) || 0);
+        archiver(realiseRef, realiseEstPelichet, realiseClient, data, montantFinal, null, 'Réalisé');
+
+        // Génération du fichier Excel + sauvegarde Drive
+        var xlsxResult = null;
+        try {
+          xlsxResult = genererXlsxRealise(data);
+          Logger.log('XLSX réalisé créé: ' + (xlsxResult ? xlsxResult.url : 'null'));
+        } catch (xerr) {
+          Logger.log('Erreur génération XLSX: ' + xerr);
+        }
+
+        Logger.log('Réalisé sauvegardé: ' + realiseRef + ' montant=' + montantFinal);
+        return jsonResponse({
+          status: 'success',
+          mode: 'realise',
+          ref: realiseRef,
+          xlsxUrl: xlsxResult ? xlsxResult.url : '',
+          xlsxB64: xlsxResult ? xlsxResult.b64 : '',
+          xlsxName: xlsxResult ? xlsxResult.name : ''
+        });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur sauvegarde réalisé: ' + err });
       }
     }
 
