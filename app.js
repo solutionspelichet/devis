@@ -1800,22 +1800,33 @@ const RealiseManager = {
             <div class="realise-day-head">
               <span class="realise-day-date">${fmtDate(j.date)}</span>
               <span class="realise-poste-sub">Jour ${jIdx + 1}/${jours.length}</span>
+              <button type="button" class="realise-prefill-btn" data-poste-idx="${pIdx}" data-day-idx="${jIdx}" title="Pré-remplir avec l'estimé">⚡ Comme estimé</button>
             </div>
-            <div class="realise-day-grid">
-              <div class="realise-field">
-                <label class="realise-field-label">Personnel</label>
-                <div class="realise-field-estim">Estim: ${this._esc(estPersonnel)}</div>
-                <input type="text" class="rj-personnel" value="${this._esc(j.personnel || '')}" placeholder="ex: 2x Manutentionnaire, 1x Chauffeur">
+            <div class="realise-day-sections">
+              <div class="realise-section">
+                <div class="realise-section-head">
+                  <span class="realise-section-title">Personnel réel</span>
+                  <span class="realise-section-estim">Estim: ${this._esc(estPersonnel)}</span>
+                </div>
+                <div class="realise-chips" data-rtype="personnel" data-poste-idx="${pIdx}" data-day-idx="${jIdx}"></div>
               </div>
-              <div class="realise-field">
-                <label class="realise-field-label">Véhicules / Engins</label>
-                <div class="realise-field-estim">Estim: ${this._esc(estVehicules)}</div>
-                <input type="text" class="rj-vehicules" value="${this._esc(j.vehicules || '')}" placeholder="ex: 1x PL, 1x VL">
+              <div class="realise-section">
+                <div class="realise-section-head">
+                  <span class="realise-section-title">Véhicules / Engins réel</span>
+                  <span class="realise-section-estim">Estim: ${this._esc(estVehicules)}</span>
+                </div>
+                <div class="realise-chips" data-rtype="vehicules" data-poste-idx="${pIdx}" data-day-idx="${jIdx}"></div>
               </div>
-              <div class="realise-field" style="grid-column:1/-1">
-                <label class="realise-field-label">Matériel · Notes</label>
-                <div class="realise-field-estim">Estim matériel: ${this._esc(estMateriel)}</div>
-                <input type="text" class="rj-materiel" value="${this._esc(j.materiel || '')}" placeholder="ex: 5x Chariots — RAS">
+              <div class="realise-section">
+                <div class="realise-section-head">
+                  <span class="realise-section-title">Matériel réel</span>
+                  <span class="realise-section-estim">Estim: ${this._esc(estMateriel)}</span>
+                </div>
+                <div class="realise-chips" data-rtype="materiel" data-poste-idx="${pIdx}" data-day-idx="${jIdx}"></div>
+              </div>
+              <div class="realise-section" style="grid-column:1/-1">
+                <label class="realise-field-label">Notes du jour</label>
+                <input type="text" class="rj-notes" value="${this._esc(j.notes || '')}" placeholder="Remarques sur cette journée…">
               </div>
             </div>
           </div>
@@ -1825,11 +1836,119 @@ const RealiseManager = {
     });
     body.innerHTML = html;
 
-    // Recompute live à chaque changement
-    body.querySelectorAll('input').forEach(inp => {
-      inp.addEventListener('input', () => this._recompute());
+    // Construire les chips pour chaque jour, pré-cochés depuis existing
+    document.querySelectorAll('.realise-chips').forEach(grid => {
+      const type = grid.dataset.rtype;
+      const pIdx = parseInt(grid.dataset.posteIdx);
+      const jIdx = parseInt(grid.dataset.dayIdx);
+      const existingDay = (existing?.postes?.[pIdx]?.jours?.[jIdx]) || {};
+      // Récupérer le contenu pré-existant (string format "2x X, 1x Y") OU le format checkbox tableau
+      let preEntries = [];
+      const raw = existingDay[type === 'vehicules' ? 'vehicules' : type] || '';
+      if (Array.isArray(raw)) {
+        preEntries = raw;
+      } else if (typeof raw === 'string' && raw.trim()) {
+        preEntries = this._parseEntries(raw);
+      }
+      this._buildRealiseChips(grid, type, preEntries);
     });
+
+    // Boutons "Comme estimé"
+    document.querySelectorAll('.realise-prefill-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const pIdx = parseInt(btn.dataset.posteIdx);
+        const jIdx = parseInt(btn.dataset.dayIdx);
+        this._prefillDayFromEstim(pIdx, jIdx);
+      });
+    });
+
     document.getElementById('realiseMontantFacture')?.addEventListener('input', () => this._recompute());
+    document.getElementById('realiseBody')?.addEventListener('input', () => this._recompute());
+    document.getElementById('realiseBody')?.addEventListener('change', () => this._recompute());
+  },
+
+  /** Construit la grille de chips cochables pour un type (personnel/vehicules/materiel) */
+  _buildRealiseChips(grid, type, preEntries) {
+    grid.innerHTML = '';
+    const defaults = CONFIG.LISTS[type] || [];
+    const customs = CustomItems.load()[type] || [];
+    const tarifs = (TarifManager.getData()?.items?.[type] || []).map(t => t.item).filter(Boolean);
+    // Pour vehicules, on inclut aussi les engins pour faciliter
+    let allItems = [...defaults, ...customs, ...tarifs];
+    if (type === 'vehicules') {
+      const enginsList = (TarifManager.getData()?.items?.engins || []).map(t => t.item).filter(Boolean);
+      allItems = [...allItems, ...enginsList];
+    }
+    const seen = new Set();
+    const items = [];
+    allItems.forEach(it => {
+      const k = (it || '').trim().toLowerCase();
+      if (k && !seen.has(k)) { seen.add(k); items.push(it); }
+    });
+
+    // Map des items pré-cochés : nom → qty
+    const preMap = {};
+    preEntries.forEach(e => {
+      const m = String(e).match(/^(\d+)x?\s+(.+?)(?:\s+\[.+?\])?$/i);
+      if (m) preMap[m[2].trim().toLowerCase()] = parseInt(m[1]) || 1;
+    });
+
+    items.forEach(item => {
+      const k = item.toLowerCase();
+      const checked = preMap[k] !== undefined;
+      const qty = preMap[k] || 1;
+      const chip = document.createElement('label');
+      chip.className = 'rchip' + (checked ? ' active' : '');
+      chip.innerHTML = `
+        <input type="checkbox" value="${this._esc(item)}" ${checked ? 'checked' : ''}>
+        <span class="rchip-name">${this._esc(item)}</span>
+        <input type="number" class="rchip-qty ${checked ? '' : 'hidden'}" value="${qty}" min="1">
+      `;
+      const cb = chip.querySelector('input[type="checkbox"]');
+      const qtyInput = chip.querySelector('.rchip-qty');
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          chip.classList.add('active');
+          qtyInput.classList.remove('hidden');
+          qtyInput.focus(); qtyInput.select();
+        } else {
+          chip.classList.remove('active');
+          qtyInput.classList.add('hidden');
+          qtyInput.value = '1';
+        }
+      });
+      grid.appendChild(chip);
+    });
+  },
+
+  /** Pré-remplit un jour avec l'estimé du poste */
+  _prefillDayFromEstim(pIdx, jIdx) {
+    const postes = PosteManager.collectAll().filter(p => p.mode === 'detail');
+    const poste = postes[pIdx];
+    if (!poste) return;
+    ['personnel', 'vehicules', 'materiel'].forEach(type => {
+      const grid = document.querySelector(`.realise-chips[data-rtype="${type}"][data-poste-idx="${pIdx}"][data-day-idx="${jIdx}"]`);
+      if (!grid) return;
+      let estItems = [];
+      if (type === 'personnel') estItems = poste.personnel || [];
+      else if (type === 'vehicules') estItems = [...(poste.vehicules || []), ...(poste.engins || [])];
+      else if (type === 'materiel') estItems = poste.materiel || [];
+      this._buildRealiseChips(grid, type, estItems);
+    });
+    this._recompute();
+    Toast.success('Jour pré-rempli depuis l\'estimé');
+  },
+
+  /** Lit les chips cochés d'une grille → array ["2x Item", ...] */
+  _collectChips(grid) {
+    if (!grid) return [];
+    const out = [];
+    grid.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+      const qty = cb.closest('.rchip')?.querySelector('.rchip-qty')?.value || '1';
+      out.push(`${qty}x ${cb.value}`);
+    });
+    return out;
   },
 
   /** Génère la liste des jours d'un poste à partir des RDVs et nbJours */
@@ -1906,28 +2025,29 @@ const RealiseManager = {
       }
     });
 
-    // Coût réel = somme des coûts saisis dans les inputs jour par jour
+    // Coût réel = somme des coûts saisis dans les chips jour par jour
     let coutReel = 0;
     document.querySelectorAll('.realise-day').forEach(day => {
-      const personnel = day.querySelector('.rj-personnel')?.value || '';
-      const vehicules = day.querySelector('.rj-vehicules')?.value || '';
-      const materiel = day.querySelector('.rj-materiel')?.value || '';
-      coutReel += this._coutLigne('personnel', personnel);
-      // Véhicules : tester sur vehicules ET engins
-      this._parseEntries(vehicules).forEach(entry => {
-        const m = entry.match(/^(\d+)x?\s+(.+)$/i);
+      const personnelEntries = this._collectChips(day.querySelector('.realise-chips[data-rtype="personnel"]'));
+      const vehiculesEntries = this._collectChips(day.querySelector('.realise-chips[data-rtype="vehicules"]'));
+      const materielEntries = this._collectChips(day.querySelector('.realise-chips[data-rtype="materiel"]'));
+
+      personnelEntries.forEach(e => {
+        const m = e.match(/^(\d+)x?\s+(.+)$/i);
+        if (!m) return;
+        coutReel += (parseInt(m[1]) || 1) * TarifManager.getCout('personnel', m[2].trim());
+      });
+      vehiculesEntries.forEach(e => {
+        const m = e.match(/^(\d+)x?\s+(.+)$/i);
         if (!m) return;
         const qty = parseInt(m[1]) || 1;
         const nom = m[2].trim();
         coutReel += qty * (TarifManager.getCout('vehicules', nom) || TarifManager.getCout('engins', nom));
       });
-      // Matériel : pièce par défaut
-      this._parseEntries(materiel).forEach(entry => {
-        const m = entry.match(/^(\d+)x?\s+(.+)$/i);
+      materielEntries.forEach(e => {
+        const m = e.match(/^(\d+)x?\s+(.+)$/i);
         if (!m) return;
-        const qty = parseInt(m[1]) || 1;
-        const nom = m[2].trim();
-        coutReel += qty * TarifManager.getCout('materiel', nom);
+        coutReel += (parseInt(m[1]) || 1) * TarifManager.getCout('materiel', m[2].trim());
       });
     });
 
@@ -1979,17 +2099,22 @@ const RealiseManager = {
     return div.innerHTML;
   },
 
-  /** Collecte les données saisies dans le modal */
+  /** Collecte les données saisies dans le modal (depuis les chips) */
   _collect() {
     const postes = [];
     document.querySelectorAll('.realise-poste').forEach(pEl => {
       const jours = [];
       pEl.querySelectorAll('.realise-day').forEach(dEl => {
+        const personnelArr = this._collectChips(dEl.querySelector('.realise-chips[data-rtype="personnel"]'));
+        const vehiculesArr = this._collectChips(dEl.querySelector('.realise-chips[data-rtype="vehicules"]'));
+        const materielArr = this._collectChips(dEl.querySelector('.realise-chips[data-rtype="materiel"]'));
         jours.push({
           date: dEl.querySelector('.realise-day-date')?.textContent?.trim() || '',
-          personnel: dEl.querySelector('.rj-personnel')?.value || '',
-          vehicules: dEl.querySelector('.rj-vehicules')?.value || '',
-          materiel: dEl.querySelector('.rj-materiel')?.value || ''
+          // Format string pour compatibilité descendante avec _coutLigne / Excel
+          personnel: personnelArr.join(', '),
+          vehicules: vehiculesArr.join(', '),
+          materiel: materielArr.join(', '),
+          notes: dEl.querySelector('.rj-notes')?.value || ''
         });
       });
       postes.push({ jours });
@@ -2069,6 +2194,246 @@ const RealiseManager = {
 
   _currentMarge() {
     return document.getElementById('rsMargeReel')?.textContent || '—';
+  }
+};
+
+// ============================================
+// AFFAIRES VIEW (tableau d'affaires + forecast)
+// ============================================
+const AffairesView = {
+  _affaires: [],
+  _sortKey: 'datePrevue',
+  _sortDir: 'desc',
+
+  init() {
+    document.getElementById('affairesBtn')?.addEventListener('click', () => this.open());
+    document.getElementById('affairesClose')?.addEventListener('click', () => this.close());
+    document.getElementById('affairesSearch')?.addEventListener('input', () => this._render());
+    document.getElementById('affairesStatut')?.addEventListener('change', () => this._render());
+    document.getElementById('affairesExportCsv')?.addEventListener('click', () => this._exportCsv());
+    document.querySelectorAll('.affaires-table th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.sort;
+        if (this._sortKey === key) {
+          this._sortDir = this._sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          this._sortKey = key;
+          this._sortDir = key.includes('mont') || key.includes('cout') || key.includes('gain') || key.includes('marge') ? 'desc' : 'asc';
+        }
+        this._render();
+      });
+    });
+  },
+
+  async open() {
+    document.getElementById('affairesPanel')?.classList.remove('hidden');
+    document.getElementById('affairesTbody').innerHTML = '<tr><td colspan="8" class="affaires-empty">Chargement…</td></tr>';
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=affaires_list&user=${encodeURIComponent(UserManager.getUserId())}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+      if (result.status === 'success' && Array.isArray(result.data)) {
+        this._affaires = result.data;
+        this._render();
+      } else {
+        document.getElementById('affairesTbody').innerHTML = `<tr><td colspan="8" class="affaires-empty">Erreur : ${result.message || 'inconnue'}</td></tr>`;
+      }
+    } catch (err) {
+      document.getElementById('affairesTbody').innerHTML = `<tr><td colspan="8" class="affaires-empty">Erreur de connexion : ${err.message}</td></tr>`;
+    }
+  },
+
+  close() { document.getElementById('affairesPanel')?.classList.add('hidden'); },
+
+  _filtered() {
+    const q = (document.getElementById('affairesSearch')?.value || '').toLowerCase().trim();
+    const statutFilter = (document.getElementById('affairesStatut')?.value || '').trim();
+    return this._affaires.filter(a => {
+      if (q && !((a.ref || '').toLowerCase().includes(q) || (a.client || '').toLowerCase().includes(q))) return false;
+      if (statutFilter) {
+        const s = (a.statut || '').toLowerCase();
+        const f = statutFilter.toLowerCase();
+        if (f === 'refusé' && !s.includes('refus') && !s.includes('annul')) return false;
+        else if (f === 'ok' && !s.includes('ok') && !s.includes('accept')) return false;
+        else if (f === 'réalisé' && !s.includes('réalis') && !s.includes('realis')) return false;
+        else if (f === 'brouillon' && !s.includes('brouillon')) return false;
+      }
+      return true;
+    });
+  },
+
+  _sort(arr) {
+    const key = this._sortKey;
+    const dir = this._sortDir === 'asc' ? 1 : -1;
+    return arr.slice().sort((a, b) => {
+      let va = a[key], vb = b[key];
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      if (va == null) va = '';
+      if (vb == null) vb = '';
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  },
+
+  _statutClass(s) {
+    const lo = (s || '').toLowerCase();
+    if (lo.includes('refus') || lo.includes('annul')) return 'statut-refus';
+    if (lo.includes('réalis') || lo.includes('realis')) return 'statut-realise';
+    if (lo.includes('brouillon')) return 'statut-brouillon';
+    if (lo.includes('ok') || lo.includes('accept')) return 'statut-ok';
+    return 'statut-brouillon';
+  },
+
+  _render() {
+    const fmt = (v) => Math.round(v || 0).toLocaleString('fr-CH');
+    const fmtPct = (v) => (v >= 0 ? '+' : '') + (v || 0).toFixed(1) + ' %';
+    const fmtDate = (d) => {
+      if (!d) return '—';
+      const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? `${m[3]}.${m[2]}.${m[1]}` : d;
+    };
+
+    // Filtre + tri
+    const filtered = this._sort(this._filtered());
+
+    // KPIs (sur les filtrés)
+    const totalCA = filtered.reduce((s, a) => s + (a.montantFacture || 0), 0);
+    const totalCout = filtered.reduce((s, a) => s + (a.coutPourMarge || 0), 0);
+    const totalGain = totalCA - totalCout;
+    const margeGlobale = totalCA > 0 ? (totalGain / totalCA * 100) : 0;
+    const nbAffaires = filtered.length;
+    const nbAcceptes = filtered.filter(a => /ok|accept/i.test(a.statut)).length;
+    const nbRefuses = filtered.filter(a => /refus|annul/i.test(a.statut)).length;
+
+    const kpiHtml = `
+      <div class="kpi-card">
+        <div class="kpi-label">Chiffre d'affaires</div>
+        <div class="kpi-value"><span class="cur">CHF</span>${fmt(totalCA)}</div>
+        <div class="kpi-sub">${nbAffaires} affaire${nbAffaires > 1 ? 's' : ''}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Coût total</div>
+        <div class="kpi-value"><span class="cur">CHF</span>${fmt(totalCout)}</div>
+        <div class="kpi-sub">${filtered.filter(a => a.hasRealise).length} avec réalisé</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Gain</div>
+        <div class="kpi-value ${totalGain >= 0 ? '' : 'pct negative'}"><span class="cur">CHF</span>${fmt(totalGain)}</div>
+        <div class="kpi-sub">${totalGain >= 0 ? 'Bénéfice' : 'Perte'}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Marge moyenne</div>
+        <div class="kpi-value pct ${margeGlobale < 0 ? 'negative' : ''}">${fmtPct(margeGlobale)}</div>
+        <div class="kpi-sub">${nbAcceptes} OK · ${nbRefuses} refusés</div>
+      </div>
+    `;
+    document.getElementById('affairesKpis').innerHTML = kpiHtml;
+
+    // Forecast par mois (12 prochains mois à partir du mois courant)
+    const today = new Date();
+    today.setDate(1);
+    const months = [];
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      months.push({
+        key: `${d.getFullYear()}-${mm}`,
+        label: d.toLocaleDateString('fr-CH', { month: 'short' }) + ' ' + String(d.getFullYear()).slice(2),
+        total: 0,
+        realise: 0
+      });
+    }
+    filtered.forEach(a => {
+      if (!a.mois) return;
+      const m = months.find(mo => mo.key === a.mois);
+      if (!m) return;
+      m.total += a.montantFacture || 0;
+      if (a.hasRealise) m.realise += a.montantFacture || 0;
+    });
+    const maxMonth = Math.max(1, ...months.map(m => m.total));
+    const currentMonthKey = today.toISOString().slice(0, 7);
+    const fcHtml = months.map(m => {
+      const pct = (m.total / maxMonth) * 100;
+      const isCurrent = m.key === currentMonthKey;
+      const hasRealise = m.realise > 0;
+      return `
+        <div class="fc-month ${isCurrent ? 'current' : ''}" title="${m.label}: ${fmt(m.total)} CHF">
+          <div class="fc-bar-wrap">
+            <div class="fc-amount">${fmt(m.total)} CHF</div>
+            <div class="fc-bar ${hasRealise ? 'has-realise' : ''}" style="height:${pct}%"></div>
+          </div>
+          <div class="fc-label">${m.label}</div>
+        </div>
+      `;
+    }).join('');
+    document.getElementById('affairesForecast').innerHTML = fcHtml;
+
+    // Update header sort indicators
+    document.querySelectorAll('.affaires-table th.sortable').forEach(th => {
+      th.classList.remove('sorted-asc', 'sorted-desc');
+      if (th.dataset.sort === this._sortKey) {
+        th.classList.add(this._sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+      }
+    });
+
+    // Table
+    const tbody = document.getElementById('affairesTbody');
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="affaires-empty">Aucune affaire trouvée</td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map(a => `
+      <tr data-ref="${a.ref}">
+        <td class="ref-cell">${a.ref}</td>
+        <td>${a.client || '—'}</td>
+        <td><span class="statut-pill ${this._statutClass(a.statut)}">${a.statut || '—'}</span></td>
+        <td>${fmtDate(a.datePrevue)}</td>
+        <td class="num">${fmt(a.coutPourMarge)} CHF</td>
+        <td class="num">${fmt(a.montantFacture)} CHF</td>
+        <td class="num ${a.gain >= 0 ? 'gain-pos' : 'gain-neg'}">${a.gain >= 0 ? '+' : ''}${fmt(a.gain)} CHF</td>
+        <td class="num ${a.margePct >= 0 ? 'marge-pos' : 'marge-neg'}">${fmtPct(a.margePct)}</td>
+      </tr>
+    `).join('');
+
+    tbody.querySelectorAll('tr').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const ref = tr.dataset.ref;
+        if (ref) {
+          this.close();
+          DossierLoader.load(ref);
+        }
+      });
+    });
+  },
+
+  _exportCsv() {
+    const filtered = this._sort(this._filtered());
+    const BOM = '﻿';
+    const headers = ['Référence', 'Client', 'Statut', 'Date prévue', 'Coût total', 'Montant facturé', 'Gain', 'Marge %', 'Type société'];
+    let csv = BOM + headers.join(';') + '\n';
+    filtered.forEach(a => {
+      csv += [
+        a.ref,
+        '"' + (a.client || '').replace(/"/g, '""') + '"',
+        a.statut || '',
+        a.datePrevue || '',
+        Math.round(a.coutPourMarge || 0).toString().replace('.', ','),
+        Math.round(a.montantFacture || 0).toString().replace('.', ','),
+        Math.round(a.gain || 0).toString().replace('.', ','),
+        (a.margePct || 0).toFixed(1).replace('.', ','),
+        a.typeSociete || ''
+      ].join(';') + '\n';
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `affaires_${UserManager.getUserId()}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    Toast.success('Export CSV téléchargé');
   }
 };
 
@@ -3631,6 +3996,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   PWAInstall.init();
   RealiseManager.init();
   DossierMenu.init();
+  AffairesView.init();
   CalendarView.init();
 
   // Logout

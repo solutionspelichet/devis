@@ -1340,6 +1340,17 @@ function doGet(e) {
       }
     }
 
+    if (action === 'affaires_list') {
+      try {
+        var afUserId = e.parameter.user || '';
+        if (!afUserId) return jsonResponse({ status: 'error', message: 'userId requis' });
+        var affaires = listerAffaires(afUserId);
+        return jsonResponse({ status: 'success', data: affaires });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur affaires: ' + err });
+      }
+    }
+
     if (action === 'ics') {
       try {
         var icsUserId = e.parameter.user || '';
@@ -1562,6 +1573,94 @@ function deleteDossier(userId, ref) {
   }
   Logger.log('deleteDossier: ' + ref + ' -> ' + deletedCount + ' ligne(s) supprimée(s)');
   return deletedCount;
+}
+
+/**
+ * Liste les affaires d'un utilisateur avec coût estimé / réel / marge.
+ * Une affaire = la version la plus récente d'une référence dans le sheet.
+ * Retourne tableau d'objets enrichis.
+ */
+function listerAffaires(userId) {
+  var sheet = getSheet(userId);
+  if (!sheet) return [];
+  var values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+
+  var colMap = buildColumnIndex(values[0]);
+  var refIdx = colMap.ref !== undefined ? colMap.ref : 1;
+  var statutIdx = colMap.statut !== undefined ? colMap.statut : 4;
+
+  // Déduplication : version la plus récente par ref
+  var seen = {};
+  var rows = [];
+  for (var i = values.length - 1; i >= 1; i--) {
+    var ref = String(values[i][refIdx] || '').trim();
+    if (!ref || seen[ref]) continue;
+    seen[ref] = true;
+    rows.push(values[i]);
+  }
+
+  return rows.map(function(row) {
+    // Trouver le JSON
+    var data = null;
+    for (var c = row.length - 1; c >= 0; c--) {
+      var v = row[c];
+      if (v && String(v).trim().startsWith('{"')) {
+        try { data = JSON.parse(v); break; } catch (e) { /* skip */ }
+      }
+    }
+    data = data || {};
+
+    var coutEstime = calculerCoutEstime(data);
+    var coutReel = calculerCoutReel(data);
+    var montantHT = parseFloat(data.montantHT) || 0;
+    var montantFacture = (data.realise && data.realise.montantFacture) ? parseFloat(data.realise.montantFacture) : montantHT;
+
+    // Coût utilisé pour la marge : réel si défini, sinon estimé
+    var coutPourMarge = coutReel > 0 ? coutReel : coutEstime;
+    var margePct = montantFacture > 0 && coutPourMarge > 0 ? ((montantFacture - coutPourMarge) / montantFacture * 100) : 0;
+    var gain = montantFacture - coutPourMarge;
+
+    // Date prévue : première date des RDVs
+    var datePrevue = '';
+    var moisISO = '';
+    var postes = safeArray(data.postes);
+    for (var p = 0; p < postes.length; p++) {
+      var rdvs = safeArray(postes[p].rdvs).filter(function(r) { return r.date; });
+      if (rdvs.length > 0) {
+        datePrevue = String(rdvs[0].date);
+        var m = datePrevue.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) moisISO = m[1] + '-' + m[2];
+        break;
+      }
+    }
+
+    // Date de création de la ligne (col Date)
+    var dateCreation = '';
+    if (colMap.date !== undefined) {
+      var dv = row[colMap.date];
+      if (dv instanceof Date) dateCreation = Utilities.formatDate(dv, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+      else dateCreation = String(dv || '');
+    }
+
+    return {
+      ref: String(row[refIdx] || '').trim(),
+      client: safe(data.client, ''),
+      statut: String(row[statutIdx] || '').trim(),
+      montantHT: montantHT,
+      montantFacture: montantFacture,
+      coutEstime: coutEstime,
+      coutReel: coutReel,
+      coutPourMarge: coutPourMarge,
+      gain: gain,
+      margePct: margePct,
+      datePrevue: datePrevue,
+      mois: moisISO,
+      dateCreation: dateCreation,
+      hasRealise: !!(data.realise && data.realise.savedAt),
+      typeSociete: safe(data.typeSociete, '')
+    };
+  });
 }
 
 /** Détermine si un statut doit être inclus dans le calendrier/agenda */
