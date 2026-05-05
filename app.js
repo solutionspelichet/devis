@@ -2450,15 +2450,25 @@ const AffairesView = {
     const maxMonth = Math.max(1, ...months.map(m => m.total));
     const fc = document.getElementById('affairesForecast');
     fc.style.gridTemplateColumns = `repeat(${nbMonths}, minmax(60px, 1fr))`;
+    // Format compact pour les montants ('45k', '1.2M')
+    const fmtCompact = (v) => {
+      v = Math.round(v || 0);
+      if (v === 0) return '—';
+      if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+      if (v >= 1000) return Math.round(v / 1000) + 'k';
+      return v.toString();
+    };
+
     fc.innerHTML = months.map(m => {
       const pct = (m.total / maxMonth) * 100;
       const isCurrent = m.key === currentMonthKey;
       const hasRealise = m.realise > 0;
       const tooltip = `${m.label}: ${fmt(m.total)} CHF${m.nbAffaires > 0 ? ' (' + m.nbAffaires + ' affaire' + (m.nbAffaires > 1 ? 's' : '') + ')' : ''}`;
+      const isZero = (m.total || 0) === 0;
       return `
         <div class="fc-month ${isCurrent ? 'current' : ''}" title="${tooltip}">
+          <div class="fc-amount ${isZero ? 'zero' : ''}">${fmtCompact(m.total)}</div>
           <div class="fc-bar-wrap">
-            <div class="fc-amount">${fmt(m.total)} CHF</div>
             <div class="fc-bar ${hasRealise ? 'has-realise' : ''}" style="height:${pct}%"></div>
           </div>
           <div class="fc-label">${m.label}</div>
