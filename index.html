@@ -147,8 +147,25 @@
                 <div class="affaires-kpis" id="affairesKpis"></div>
 
                 <!-- Forecast par mois -->
-                <h4 class="settings-section-title mt-6">Forecast — CA par mois (12 prochains mois)</h4>
+                <div class="forecast-head">
+                    <h4 class="settings-section-title">Forecast — CA par mois</h4>
+                    <div class="forecast-range">
+                        <label>Du</label>
+                        <input type="month" id="affairesForecastStart">
+                        <label>au</label>
+                        <input type="month" id="affairesForecastEnd">
+                        <button type="button" id="affairesForecastReset" class="btn btn-ghost btn-xs" title="Remettre la vue par défaut (12 mois à venir)">↺</button>
+                        <div class="forecast-presets">
+                            <button type="button" class="btn btn-ghost btn-xs" data-preset="3">3M</button>
+                            <button type="button" class="btn btn-ghost btn-xs" data-preset="6">6M</button>
+                            <button type="button" class="btn btn-ghost btn-xs active" data-preset="12">12M</button>
+                            <button type="button" class="btn btn-ghost btn-xs" data-preset="ytd">YTD</button>
+                            <button type="button" class="btn btn-ghost btn-xs" data-preset="all">Tout</button>
+                        </div>
+                    </div>
+                </div>
                 <div class="affaires-forecast" id="affairesForecast"></div>
+                <div class="forecast-summary" id="affairesForecastSummary"></div>
 
                 <!-- Filtres -->
                 <h4 class="settings-section-title mt-6">Liste des affaires</h4>

@@ -2204,6 +2204,8 @@ const AffairesView = {
   _affaires: [],
   _sortKey: 'datePrevue',
   _sortDir: 'desc',
+  _forecastStart: null, // 'YYYY-MM'
+  _forecastEnd: null,   // 'YYYY-MM'
 
   init() {
     document.getElementById('affairesBtn')?.addEventListener('click', () => this.open());
@@ -2223,11 +2225,74 @@ const AffairesView = {
         this._render();
       });
     });
+
+    // Plage personnalisée du forecast
+    document.getElementById('affairesForecastStart')?.addEventListener('change', (e) => {
+      this._forecastStart = e.target.value || null;
+      this._clearPreset();
+      this._render();
+    });
+    document.getElementById('affairesForecastEnd')?.addEventListener('change', (e) => {
+      this._forecastEnd = e.target.value || null;
+      this._clearPreset();
+      this._render();
+    });
+    document.getElementById('affairesForecastReset')?.addEventListener('click', () => {
+      this._applyPreset('12');
+    });
+    document.querySelectorAll('.forecast-presets .btn').forEach(btn => {
+      btn.addEventListener('click', () => this._applyPreset(btn.dataset.preset));
+    });
+  },
+
+  _clearPreset() {
+    document.querySelectorAll('.forecast-presets .btn').forEach(b => b.classList.remove('active'));
+  },
+
+  _applyPreset(preset) {
+    const today = new Date();
+    today.setDate(1);
+    const fmtMonth = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+    if (preset === '3' || preset === '6' || preset === '12') {
+      const n = parseInt(preset);
+      this._forecastStart = fmtMonth(today);
+      const end = new Date(today.getFullYear(), today.getMonth() + n - 1, 1);
+      this._forecastEnd = fmtMonth(end);
+    } else if (preset === 'ytd') {
+      this._forecastStart = `${today.getFullYear()}-01`;
+      this._forecastEnd = `${today.getFullYear()}-12`;
+    } else if (preset === 'all') {
+      // Utiliser la plage min-max des affaires
+      const months = this._affaires.map(a => a.mois).filter(Boolean).sort();
+      this._forecastStart = months[0] || fmtMonth(today);
+      this._forecastEnd = months[months.length - 1] || fmtMonth(today);
+    }
+
+    document.getElementById('affairesForecastStart').value = this._forecastStart || '';
+    document.getElementById('affairesForecastEnd').value = this._forecastEnd || '';
+
+    this._clearPreset();
+    document.querySelector(`.forecast-presets .btn[data-preset="${preset}"]`)?.classList.add('active');
+    this._render();
   },
 
   async open() {
     document.getElementById('affairesPanel')?.classList.remove('hidden');
     document.getElementById('affairesTbody').innerHTML = '<tr><td colspan="8" class="affaires-empty">Chargement…</td></tr>';
+
+    // Plage forecast par défaut : 12 mois à venir
+    if (!this._forecastStart) {
+      const today = new Date();
+      today.setDate(1);
+      const fmtMonth = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      this._forecastStart = fmtMonth(today);
+      const end = new Date(today.getFullYear(), today.getMonth() + 11, 1);
+      this._forecastEnd = fmtMonth(end);
+      document.getElementById('affairesForecastStart').value = this._forecastStart;
+      document.getElementById('affairesForecastEnd').value = this._forecastEnd;
+    }
+
     try {
       const url = `${CONFIG.SCRIPT_URL}?action=affaires_list&user=${encodeURIComponent(UserManager.getUserId())}`;
       const resp = await fetch(url);
@@ -2331,35 +2396,67 @@ const AffairesView = {
     `;
     document.getElementById('affairesKpis').innerHTML = kpiHtml;
 
-    // Forecast par mois (12 prochains mois à partir du mois courant)
+    // Forecast par mois selon la plage choisie par l'utilisateur
     const today = new Date();
     today.setDate(1);
+    const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+
+    // Parse plage début/fin
+    const parseMonth = (s) => {
+      if (!s) return null;
+      const m = s.match(/^(\d{4})-(\d{2})/);
+      return m ? new Date(parseInt(m[1]), parseInt(m[2]) - 1, 1) : null;
+    };
+    let dStart = parseMonth(this._forecastStart);
+    let dEnd = parseMonth(this._forecastEnd);
+    if (!dStart) dStart = new Date(today);
+    if (!dEnd) dEnd = new Date(today.getFullYear(), today.getMonth() + 11, 1);
+    if (dEnd < dStart) { const tmp = dStart; dStart = dEnd; dEnd = tmp; }
+
+    // Limite raisonnable : 60 mois max
+    const totalMonths = (dEnd.getFullYear() - dStart.getFullYear()) * 12 + (dEnd.getMonth() - dStart.getMonth()) + 1;
+    const nbMonths = Math.min(60, Math.max(1, totalMonths));
+
     const months = [];
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+    for (let i = 0; i < nbMonths; i++) {
+      const d = new Date(dStart.getFullYear(), dStart.getMonth() + i, 1);
       const mm = String(d.getMonth() + 1).padStart(2, '0');
       months.push({
         key: `${d.getFullYear()}-${mm}`,
         label: d.toLocaleDateString('fr-CH', { month: 'short' }) + ' ' + String(d.getFullYear()).slice(2),
         total: 0,
-        realise: 0
+        realise: 0,
+        nbAffaires: 0
       });
     }
+
+    let totalForecast = 0;
+    let totalRealise = 0;
+    let nbInRange = 0;
     filtered.forEach(a => {
       if (!a.mois) return;
       const m = months.find(mo => mo.key === a.mois);
       if (!m) return;
       m.total += a.montantFacture || 0;
-      if (a.hasRealise) m.realise += a.montantFacture || 0;
+      m.nbAffaires++;
+      totalForecast += a.montantFacture || 0;
+      nbInRange++;
+      if (a.hasRealise) {
+        m.realise += a.montantFacture || 0;
+        totalRealise += a.montantFacture || 0;
+      }
     });
+
     const maxMonth = Math.max(1, ...months.map(m => m.total));
-    const currentMonthKey = today.toISOString().slice(0, 7);
-    const fcHtml = months.map(m => {
+    const fc = document.getElementById('affairesForecast');
+    fc.style.gridTemplateColumns = `repeat(${nbMonths}, minmax(60px, 1fr))`;
+    fc.innerHTML = months.map(m => {
       const pct = (m.total / maxMonth) * 100;
       const isCurrent = m.key === currentMonthKey;
       const hasRealise = m.realise > 0;
+      const tooltip = `${m.label}: ${fmt(m.total)} CHF${m.nbAffaires > 0 ? ' (' + m.nbAffaires + ' affaire' + (m.nbAffaires > 1 ? 's' : '') + ')' : ''}`;
       return `
-        <div class="fc-month ${isCurrent ? 'current' : ''}" title="${m.label}: ${fmt(m.total)} CHF">
+        <div class="fc-month ${isCurrent ? 'current' : ''}" title="${tooltip}">
           <div class="fc-bar-wrap">
             <div class="fc-amount">${fmt(m.total)} CHF</div>
             <div class="fc-bar ${hasRealise ? 'has-realise' : ''}" style="height:${pct}%"></div>
@@ -2368,7 +2465,22 @@ const AffairesView = {
         </div>
       `;
     }).join('');
-    document.getElementById('affairesForecast').innerHTML = fcHtml;
+
+    // Synthèse forecast
+    const summaryEl = document.getElementById('affairesForecastSummary');
+    if (summaryEl) {
+      const startLabel = dStart.toLocaleDateString('fr-CH', { month: 'short', year: 'numeric' });
+      const endLabel = dEnd.toLocaleDateString('fr-CH', { month: 'short', year: 'numeric' });
+      summaryEl.innerHTML = `
+        <span>Période :<strong>${startLabel} → ${endLabel}</strong></span>
+        <span>·</span>
+        <span>Affaires :<strong>${nbInRange}</strong></span>
+        <span>·</span>
+        <span>CA prévu :<strong>${fmt(totalForecast)} CHF</strong></span>
+        <span>·</span>
+        <span>CA réalisé :<strong>${fmt(totalRealise)} CHF</strong></span>
+      `;
+    }
 
     // Update header sort indicators
     document.querySelectorAll('.affaires-table th.sortable').forEach(th => {
