@@ -128,6 +128,151 @@ function fmt(v) {
   return num.toLocaleString('fr-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' CHF';
 }
 
+// ============================================
+// API KEYS — Système d'authentification pour intégrations externes
+// ============================================
+// Stockage : PropertiesService (sécurisé, pas dans Spreadsheet)
+// Niveaux : 'read' < 'write' < 'admin'
+//   - read  : GET endpoints (liste, recherche, calendrier, affaires)
+//   - write : read + création / mise à jour de dossiers + statuts
+//   - admin : tout, y compris suppression + gestion clés + tarifs
+// ============================================
+
+var API_KEYS_PROP = 'API_KEYS_JSON';
+var REQUIRE_API_KEY = false; // false = legacy ouvert ; true = clé obligatoire partout
+var API_PERMISSION_LEVELS = { read: 1, write: 2, admin: 3 };
+
+function _loadApiKeys() {
+  var raw = PropertiesService.getScriptProperties().getProperty(API_KEYS_PROP);
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch (e) { return {}; }
+}
+
+function _saveApiKeys(keys) {
+  PropertiesService.getScriptProperties().setProperty(API_KEYS_PROP, JSON.stringify(keys));
+}
+
+/** Génère une nouvelle clé API. Format : pk_<24 hex>. */
+function apiKeyCreate(name, permission) {
+  if (!name || !permission) throw new Error('name et permission (read/write/admin) requis');
+  if (!API_PERMISSION_LEVELS[permission]) throw new Error('permission invalide: read|write|admin');
+  var keys = _loadApiKeys();
+  // Génération aléatoire 24 hex
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,
+    Utilities.getUuid() + ':' + new Date().getTime() + ':' + Math.random())
+    .map(function(b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('');
+  var key = 'pk_' + raw.substring(0, 32);
+  keys[key] = {
+    name: name,
+    permission: permission,
+    createdAt: new Date().toISOString(),
+    lastUsed: null,
+    active: true
+  };
+  _saveApiKeys(keys);
+  return { key: key, name: name, permission: permission };
+}
+
+/** Liste toutes les clés (sans révéler les valeurs complètes — masquage). */
+function apiKeyList() {
+  var keys = _loadApiKeys();
+  return Object.keys(keys).map(function(k) {
+    var info = keys[k];
+    return {
+      key: k,                                                         // clé complète (admin a le droit de la voir)
+      keyMasked: k.substring(0, 7) + '…' + k.substring(k.length - 4), // version masquée pour affichage
+      name: info.name,
+      permission: info.permission,
+      createdAt: info.createdAt,
+      lastUsed: info.lastUsed,
+      active: info.active !== false
+    };
+  });
+}
+
+/** Désactive une clé (ne supprime pas l'historique). */
+function apiKeyRevoke(key) {
+  var keys = _loadApiKeys();
+  if (!keys[key]) return false;
+  keys[key].active = false;
+  keys[key].revokedAt = new Date().toISOString();
+  _saveApiKeys(keys);
+  return true;
+}
+
+/** Réactive une clé désactivée. */
+function apiKeyReactivate(key) {
+  var keys = _loadApiKeys();
+  if (!keys[key]) return false;
+  keys[key].active = true;
+  delete keys[key].revokedAt;
+  _saveApiKeys(keys);
+  return true;
+}
+
+/** Supprime définitivement une clé. */
+function apiKeyDelete(key) {
+  var keys = _loadApiKeys();
+  if (!keys[key]) return false;
+  delete keys[key];
+  _saveApiKeys(keys);
+  return true;
+}
+
+/** Renomme une clé ou change son niveau. */
+function apiKeyUpdate(key, name, permission) {
+  var keys = _loadApiKeys();
+  if (!keys[key]) return false;
+  if (name) keys[key].name = name;
+  if (permission && API_PERMISSION_LEVELS[permission]) keys[key].permission = permission;
+  _saveApiKeys(keys);
+  return true;
+}
+
+/**
+ * Vérifie qu'une requête contient une clé API valide avec le niveau requis.
+ * Retourne { ok: true, info } ou { ok: false, error, code }.
+ * Si REQUIRE_API_KEY=false, autorise les appels sans clé (legacy) avec niveau implicite 'admin'.
+ */
+function requireApiKey(e, requiredLevel) {
+  var key = '';
+  if (e.parameter && e.parameter.apiKey) key = e.parameter.apiKey;
+  else if (e.postData && e.postData.contents) {
+    try {
+      var body = JSON.parse(e.postData.contents);
+      key = body.apiKey || '';
+    } catch (er) { /* ignore */ }
+  }
+
+  // Mode legacy : pas de clé envoyée et pas d'enforcement -> on laisse passer
+  if (!key && !REQUIRE_API_KEY) return { ok: true, info: { permission: 'admin', name: 'legacy' } };
+
+  if (!key) return { ok: false, code: 401, error: 'API key required' };
+
+  var keys = _loadApiKeys();
+  var info = keys[key];
+  if (!info) return { ok: false, code: 403, error: 'Invalid API key' };
+  if (info.active === false) return { ok: false, code: 403, error: 'Revoked API key' };
+
+  if (API_PERMISSION_LEVELS[info.permission] < API_PERMISSION_LEVELS[requiredLevel]) {
+    return { ok: false, code: 403, error: 'Insufficient permission (have: ' + info.permission + ', need: ' + requiredLevel + ')' };
+  }
+
+  // Mettre à jour la date de dernière utilisation (pas trop souvent : 1 fois par minute max)
+  var now = new Date();
+  if (!info.lastUsed || (now - new Date(info.lastUsed)) > 60000) {
+    info.lastUsed = now.toISOString();
+    _saveApiKeys(keys);
+  }
+
+  return { ok: true, info: info };
+}
+
+/** Helper : retourne une réponse d'erreur d'auth */
+function authError(auth) {
+  return jsonResponse({ status: 'error', code: auth.code || 401, message: auth.error });
+}
+
 /**
  * Calcule le kilométrage du trajet complet :
  * Pelichet Vernier → Départ → Arrivée → Pelichet Vernier
@@ -1338,6 +1483,52 @@ function doGet(e) {
       } catch (err) {
         return jsonResponse({ status: 'error', message: err.toString(), results: [] });
       }
+    }
+
+    // ---- API Keys management (admin) ----
+    if (action === 'apikey_list') {
+      var auth = requireApiKey(e, 'admin');
+      if (!auth.ok) return authError(auth);
+      return jsonResponse({ status: 'success', data: apiKeyList() });
+    }
+
+    if (action === 'apikey_create') {
+      var auth = requireApiKey(e, 'admin');
+      if (!auth.ok) return authError(auth);
+      try {
+        var k = apiKeyCreate(e.parameter.name || 'Untitled', e.parameter.permission || 'read');
+        return jsonResponse({ status: 'success', data: k });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: err.toString() });
+      }
+    }
+
+    if (action === 'apikey_revoke') {
+      var auth = requireApiKey(e, 'admin');
+      if (!auth.ok) return authError(auth);
+      var ok = apiKeyRevoke(e.parameter.key || '');
+      return jsonResponse({ status: ok ? 'success' : 'error', message: ok ? 'Revoked' : 'Key not found' });
+    }
+
+    if (action === 'apikey_reactivate') {
+      var auth = requireApiKey(e, 'admin');
+      if (!auth.ok) return authError(auth);
+      var ok = apiKeyReactivate(e.parameter.key || '');
+      return jsonResponse({ status: ok ? 'success' : 'error', message: ok ? 'Reactivated' : 'Key not found' });
+    }
+
+    if (action === 'apikey_delete') {
+      var auth = requireApiKey(e, 'admin');
+      if (!auth.ok) return authError(auth);
+      var ok = apiKeyDelete(e.parameter.key || '');
+      return jsonResponse({ status: ok ? 'success' : 'error', message: ok ? 'Deleted' : 'Key not found' });
+    }
+
+    if (action === 'apikey_update') {
+      var auth = requireApiKey(e, 'admin');
+      if (!auth.ok) return authError(auth);
+      var ok = apiKeyUpdate(e.parameter.key || '', e.parameter.name || '', e.parameter.permission || '');
+      return jsonResponse({ status: ok ? 'success' : 'error' });
     }
 
     if (action === 'affaires_list') {

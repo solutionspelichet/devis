@@ -211,6 +211,12 @@
                 <button type="button" id="settingsClose" class="settings-close-btn">&times;</button>
             </div>
             <div class="settings-body">
+                <div class="settings-tabs">
+                    <button type="button" class="settings-tab active" data-stab="tarifs">Tarifs &amp; Marges</button>
+                    <button type="button" class="settings-tab" data-stab="apikeys">🔑 Clés API</button>
+                </div>
+
+                <div class="settings-pane active" data-spane="tarifs">
                 <h4 class="settings-section-title">Marges par catégorie</h4>
                 <div id="settingsMarges" class="settings-marges-grid"></div>
 
@@ -224,6 +230,77 @@
                     </table>
                 </div>
                 <button type="button" id="settingsAddRow" class="btn btn-ghost btn-xs mt-2">+ Ajouter un tarif</button>
+                </div>
+
+                <div class="settings-pane" data-spane="apikeys">
+                    <p class="apikey-intro">
+                        Les clés API permettent à des applications externes (ton ERP, mobile, scripts…) de se connecter à ta solution.
+                        Chaque clé a un <strong>niveau de permission</strong> :
+                        <span class="apikey-pill perm-read">read</span> lecture seule,
+                        <span class="apikey-pill perm-write">write</span> lecture + création,
+                        <span class="apikey-pill perm-admin">admin</span> accès total.
+                    </p>
+
+                    <div class="apikey-create">
+                        <input type="text" id="apikeyNewName" placeholder="Nom de l'application (ex: Mon ERP)">
+                        <select id="apikeyNewPerm">
+                            <option value="read">read</option>
+                            <option value="write" selected>write</option>
+                            <option value="admin">admin</option>
+                        </select>
+                        <button type="button" id="apikeyCreateBtn" class="btn btn-primary btn-xs">+ Créer une clé</button>
+                    </div>
+
+                    <div id="apikeyNewResult" class="apikey-new-result hidden"></div>
+
+                    <div class="settings-table-wrap mt-4">
+                        <table class="settings-table apikey-table">
+                            <thead>
+                                <tr><th>Nom</th><th>Clé</th><th>Permission</th><th>Créée</th><th>Dernière utilisation</th><th>Statut</th><th></th></tr>
+                            </thead>
+                            <tbody id="apikeyTbody"></tbody>
+                        </table>
+                    </div>
+
+                    <details class="apikey-docs mt-6">
+                        <summary>📖 Comment utiliser une clé API depuis une autre application</summary>
+                        <div class="apikey-docs-body">
+                            <p>Tu envoies la clé soit en paramètre URL (<code>apiKey=...</code>) soit dans le body JSON (<code>"apiKey": "..."</code>).</p>
+                            <h5>Exemple GET (lister les affaires)</h5>
+                            <pre><code>curl "<span id="apiUrlExample">SCRIPT_URL</span>?action=affaires_list&user=ARNAUD&apiKey=pk_xxxx"</code></pre>
+                            <h5>Exemple POST (sauvegarder un brouillon)</h5>
+<pre><code>curl -X POST "<span class="apiUrlExample">SCRIPT_URL</span>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "_action": "save_draft",
+    "apiKey": "pk_xxxx",
+    "ref": "DEVIS-001",
+    "client": "Acme SA",
+    "userId": "ARNAUD",
+    "montantHT": 1500
+  }'</code></pre>
+                            <h5>Endpoints disponibles</h5>
+                            <table class="apikey-endpoints">
+                                <thead><tr><th>Endpoint</th><th>Méthode</th><th>Niveau</th><th>Description</th></tr></thead>
+                                <tbody>
+                                    <tr><td><code>?action=lister</code></td><td>GET</td><td>read</td><td>Liste des dossiers d'un user</td></tr>
+                                    <tr><td><code>?action=rechercher</code></td><td>GET</td><td>read</td><td>Récupère un dossier complet</td></tr>
+                                    <tr><td><code>?action=affaires_list</code></td><td>GET</td><td>read</td><td>Tableau d'affaires avec marges</td></tr>
+                                    <tr><td><code>?action=calendar_data</code></td><td>GET</td><td>read</td><td>Missions par jour</td></tr>
+                                    <tr><td><code>?action=ics</code></td><td>GET</td><td>read</td><td>Flux iCalendar</td></tr>
+                                    <tr><td><code>?action=tarifs_get</code></td><td>GET</td><td>read</td><td>Tarifs &amp; marges</td></tr>
+                                    <tr><td><code>POST + _action=save_draft</code></td><td>POST</td><td>write</td><td>Sauvegarder un brouillon</td></tr>
+                                    <tr><td><code>POST + _action=save_realise</code></td><td>POST</td><td>write</td><td>Enregistrer le réalisé</td></tr>
+                                    <tr><td><code>POST + _action=set_status</code></td><td>POST</td><td>write</td><td>Changer statut dossier</td></tr>
+                                    <tr><td><code>POST (sans _action)</code></td><td>POST</td><td>write</td><td>Générer devis + RESA</td></tr>
+                                    <tr><td><code>POST + _action=delete_dossier</code></td><td>POST</td><td>admin</td><td>Supprimer un dossier</td></tr>
+                                    <tr><td><code>?action=tarifs_save</code></td><td>POST</td><td>admin</td><td>Modifier les tarifs</td></tr>
+                                    <tr><td><code>?action=apikey_*</code></td><td>GET</td><td>admin</td><td>Gérer les clés API</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </div>
             </div>
             <div class="settings-footer">
                 <button type="button" id="settingsSave" class="btn btn-primary">Sauvegarder</button>

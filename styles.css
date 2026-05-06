@@ -2082,6 +2082,197 @@ select {
 .rs-delta.positive { color: oklch(0.50 0.13 155); }
 .rs-delta.negative { color: var(--red-ink); }
 
+/* ---- SETTINGS TABS ---- */
+.settings-tabs {
+  display: flex; gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.settings-tab {
+  padding: 8px 14px;
+  font-size: 12px; font-weight: 500;
+  color: var(--ink-3);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color 120ms;
+}
+.settings-tab:hover { color: var(--ink); }
+.settings-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--red);
+  font-weight: 600;
+}
+.settings-pane { display: none; }
+.settings-pane.active { display: block; }
+
+/* ---- API KEYS ---- */
+.apikey-intro {
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+.apikey-pill {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  margin: 0 2px;
+}
+.apikey-pill.perm-read { background: var(--blue-soft); color: var(--blue-ink); }
+.apikey-pill.perm-write { background: var(--amber-soft); color: oklch(0.40 0.10 75); }
+.apikey-pill.perm-admin { background: var(--red-soft); color: var(--red-ink); }
+
+.apikey-create {
+  display: flex; gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.apikey-create input { flex: 1; }
+.apikey-create select { width: 100px; }
+.apikey-create .btn { white-space: nowrap; }
+
+.apikey-new-result {
+  background: var(--green-soft);
+  border: 1px solid oklch(0.55 0.13 155);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.apikey-new-result.hidden { display: none; }
+.apikey-new-result strong { color: oklch(0.30 0.12 155); }
+.apikey-new-result .key-display {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.apikey-new-result .key-display code {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  word-break: break-all;
+}
+.apikey-new-result .warn {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--red-ink);
+  font-style: italic;
+}
+
+.apikey-table .key-cell {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.apikey-table .name-cell { font-weight: 600; }
+.apikey-table tr.revoked { opacity: 0.5; }
+.apikey-table tr.revoked .key-cell { text-decoration: line-through; }
+.apikey-table .status-active {
+  display: inline-block; padding: 2px 6px;
+  font-size: 10px; font-weight: 600;
+  background: var(--green-soft); color: oklch(0.35 0.12 155);
+  border-radius: 4px;
+}
+.apikey-table .status-revoked {
+  display: inline-block; padding: 2px 6px;
+  font-size: 10px; font-weight: 600;
+  background: var(--surface-3); color: var(--ink-3);
+  border-radius: 4px;
+}
+.apikey-table .actions {
+  display: flex; gap: 4px;
+}
+.apikey-table .actions button {
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+}
+.apikey-table .actions button:hover { background: var(--surface-3); color: var(--ink); }
+.apikey-table .actions button.danger { color: var(--red-ink); }
+.apikey-table .actions button.danger:hover { background: var(--red-soft); }
+
+.apikey-docs {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+}
+.apikey-docs summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 4px 0;
+}
+.apikey-docs[open] summary { margin-bottom: 10px; }
+.apikey-docs-body {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.apikey-docs-body h5 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 14px;
+  margin-bottom: 6px;
+  color: var(--ink-3);
+}
+.apikey-docs-body pre {
+  background: var(--ink);
+  color: oklch(0.85 0.02 85);
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  overflow-x: auto;
+  margin: 6px 0;
+  line-height: 1.5;
+}
+.apikey-docs-body code { font-family: var(--font-mono); font-size: 11px; }
+.apikey-docs-body p code, .apikey-endpoints code {
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+.apikey-endpoints {
+  width: 100%;
+  font-size: 11px;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+.apikey-endpoints th, .apikey-endpoints td {
+  padding: 5px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.apikey-endpoints th {
+  background: var(--surface);
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+}
+
 /* ---- AFFAIRES PANEL ---- */
 .affaires-kpis {
   display: grid;

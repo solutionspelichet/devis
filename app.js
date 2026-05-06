@@ -2198,6 +2198,143 @@ const RealiseManager = {
 };
 
 // ============================================
+// API KEYS MANAGER (settings panel)
+// ============================================
+const ApiKeysManager = {
+  init() {
+    // Onglets settings
+    document.querySelectorAll('.settings-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.settings-pane').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.querySelector(`.settings-pane[data-spane="${tab.dataset.stab}"]`)?.classList.add('active');
+        if (tab.dataset.stab === 'apikeys') this.refresh();
+      });
+    });
+
+    document.getElementById('apikeyCreateBtn')?.addEventListener('click', () => this.createKey());
+
+    // Remplir l'URL d'exemple dans la doc
+    document.querySelectorAll('#apiUrlExample, .apiUrlExample').forEach(el => {
+      el.textContent = CONFIG.SCRIPT_URL;
+    });
+  },
+
+  async refresh() {
+    const tbody = document.getElementById('apikeyTbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--ink-3);padding:20px">Chargement…</td></tr>';
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=apikey_list`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+      if (result.status !== 'success') {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--ink-3);padding:20px">Erreur : ${result.message || 'inconnue'}</td></tr>`;
+        return;
+      }
+      const keys = result.data || [];
+      if (keys.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--ink-3);padding:20px">Aucune clé. Crée-en une ci-dessus.</td></tr>`;
+        return;
+      }
+      const fmtDate = (s) => s ? new Date(s).toLocaleDateString('fr-CH', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+      tbody.innerHTML = keys.map(k => `
+        <tr class="${k.active ? '' : 'revoked'}" data-key="${k.key}">
+          <td class="name-cell">${this._esc(k.name)}</td>
+          <td class="key-cell" title="${k.key}">${k.keyMasked}</td>
+          <td><span class="apikey-pill perm-${k.permission}">${k.permission}</span></td>
+          <td>${fmtDate(k.createdAt)}</td>
+          <td>${fmtDate(k.lastUsed)}</td>
+          <td>${k.active ? '<span class="status-active">Active</span>' : '<span class="status-revoked">Révoquée</span>'}</td>
+          <td class="actions">
+            <button type="button" data-act="copy" title="Copier la clé">📋</button>
+            ${k.active
+              ? '<button type="button" data-act="revoke" title="Révoquer">🚫</button>'
+              : '<button type="button" data-act="reactivate" title="Réactiver">↻</button>'}
+            <button type="button" data-act="delete" class="danger" title="Supprimer">🗑️</button>
+          </td>
+        </tr>
+      `).join('');
+      tbody.querySelectorAll('button[data-act]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const tr = btn.closest('tr');
+          this._action(btn.dataset.act, tr.dataset.key, keys.find(kk => kk.key === tr.dataset.key));
+        });
+      });
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--ink-3);padding:20px">Erreur connexion : ${err.message}</td></tr>`;
+    }
+  },
+
+  async createKey() {
+    const name = document.getElementById('apikeyNewName')?.value.trim();
+    const perm = document.getElementById('apikeyNewPerm')?.value;
+    if (!name) { Toast.warning('Nom requis'); return; }
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=apikey_create&name=${encodeURIComponent(name)}&permission=${perm}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+      if (result.status === 'success' && result.data) {
+        const result_div = document.getElementById('apikeyNewResult');
+        result_div.innerHTML = `
+          <strong>✅ Clé créée pour "${this._esc(result.data.name)}"</strong>
+          <div class="key-display">
+            <code id="newKeyValue">${result.data.key}</code>
+            <button type="button" class="btn btn-primary btn-xs" id="copyNewKey">📋 Copier</button>
+          </div>
+          <div class="warn">⚠️ Cette clé ne sera plus affichée en clair après cette page. Copie-la maintenant.</div>
+        `;
+        result_div.classList.remove('hidden');
+        document.getElementById('copyNewKey')?.addEventListener('click', () => {
+          navigator.clipboard?.writeText(result.data.key).then(() => Toast.success('Clé copiée'));
+        });
+        document.getElementById('apikeyNewName').value = '';
+        this.refresh();
+      } else {
+        Toast.error(result.message || 'Erreur création');
+      }
+    } catch (err) {
+      Toast.error('Erreur : ' + err.message);
+    }
+  },
+
+  async _action(act, key, info) {
+    if (act === 'copy') {
+      navigator.clipboard?.writeText(key).then(() => Toast.success('Clé copiée'));
+      return;
+    }
+    if (act === 'revoke') {
+      if (!confirm(`Révoquer la clé "${info.name}" ? L'application qui l'utilise ne pourra plus accéder à l'API.`)) return;
+      const resp = await fetch(`${CONFIG.SCRIPT_URL}?action=apikey_revoke&key=${encodeURIComponent(key)}`);
+      const r = await resp.json();
+      if (r.status === 'success') { Toast.success('Clé révoquée'); this.refresh(); }
+      else Toast.error(r.message);
+    }
+    if (act === 'reactivate') {
+      const resp = await fetch(`${CONFIG.SCRIPT_URL}?action=apikey_reactivate&key=${encodeURIComponent(key)}`);
+      const r = await resp.json();
+      if (r.status === 'success') { Toast.success('Clé réactivée'); this.refresh(); }
+      else Toast.error(r.message);
+    }
+    if (act === 'delete') {
+      if (!confirm(`Supprimer DÉFINITIVEMENT la clé "${info.name}" ?`)) return;
+      const resp = await fetch(`${CONFIG.SCRIPT_URL}?action=apikey_delete&key=${encodeURIComponent(key)}`);
+      const r = await resp.json();
+      if (r.status === 'success') { Toast.success('Clé supprimée'); this.refresh(); }
+      else Toast.error(r.message);
+    }
+  },
+
+  _esc(s) {
+    const d = document.createElement('div');
+    d.textContent = String(s || '');
+    return d.innerHTML;
+  }
+};
+
+// ============================================
 // AFFAIRES VIEW (tableau d'affaires + forecast)
 // ============================================
 const AffairesView = {
@@ -4119,6 +4256,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   RealiseManager.init();
   DossierMenu.init();
   AffairesView.init();
+  ApiKeysManager.init();
   CalendarView.init();
 
   // Logout
