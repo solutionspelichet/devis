@@ -2596,20 +2596,48 @@ const ControllerDashboard = {
         end: this._end || ''
       });
       const url = `${CONFIG.SCRIPT_URL}?${params.toString()}`;
+      console.log('[Forecast] Fetching XLSX:', url);
       const resp = await fetch(url);
+      console.log('[Forecast] Response status:', resp.status);
       const result = await resp.json();
-      if (result.status !== 'success' || !result.data?.b64) {
-        Toast.error(result.message || 'Génération échouée');
+      console.log('[Forecast] Result keys:', Object.keys(result.data || {}), 'b64 length:', result.data?.b64?.length);
+
+      if (result.status !== 'success') {
+        Toast.error(result.message || 'Génération échouée — voir logs Apps Script');
         return;
       }
-      // Download
-      FormSubmitter._downloadBase64File(
-        result.data.b64,
-        result.data.name,
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      );
-      Toast.success('📊 Forecast Excel téléchargé');
+
+      const xlsxData = result.data || {};
+
+      // Méthode prioritaire : URL Drive directe (fichier rendu public ANYONE_WITH_LINK)
+      // Cela déclenche le téléchargement natif du navigateur (le plus fiable)
+      if (xlsxData.fileId || xlsxData.downloadUrl) {
+        const downloadUrl = xlsxData.downloadUrl || `https://drive.google.com/uc?export=download&id=${xlsxData.fileId}`;
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = xlsxData.name || 'Forecast.xlsx';
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => document.body.removeChild(a), 1000);
+        Toast.success('📊 Téléchargement lancé : ' + (xlsxData.name || 'Forecast.xlsx'));
+        return;
+      }
+
+      // Fallback base64 (au cas où Drive serait inaccessible)
+      if (xlsxData.b64 && xlsxData.name) {
+        try {
+          this._downloadFromB64(xlsxData.b64, xlsxData.name);
+          Toast.success('📊 Forecast Excel téléchargé');
+          return;
+        } catch (errB64) {
+          console.warn('[Forecast] Base64 download failed:', errB64);
+        }
+      }
+
+      Toast.error('Téléchargement impossible — aucune URL ni base64 reçus');
     } catch (err) {
+      console.error('[Forecast] Erreur:', err);
       Toast.error('Erreur : ' + err.message);
     } finally {
       if (btn) {
@@ -2617,6 +2645,27 @@ const ControllerDashboard = {
         btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v10m0 0 4-4m-4 4-4-4M4 17h12" stroke-linecap="round" stroke-linejoin="round"/></svg> Télécharger Excel`;
       }
     }
+  },
+
+  /** Téléchargement direct base64 → blob → click anchor */
+  _downloadFromB64(b64, filename) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 2000);
   }
 };
 

@@ -2214,7 +2214,82 @@ function genererForecastControllerXlsx(filters) {
   }
 
   // ============================================
-  // Sheet 3 : DÉTAIL DES AFFAIRES
+  // Sheet 3 : DÉTAIL PAR MOIS (un bloc par mois avec liste des dossiers)
+  // ============================================
+  var dpm = ss.insertSheet('Détail par mois');
+  dpm.getRange('A1').setValue('Détail des dossiers par mois');
+  dpm.getRange('A1:F1').merge().setBackground('#1E293B').setFontColor('#FFFFFF')
+    .setFontFamily('Trebuchet MS').setFontSize(14).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  dpm.setRowHeight(1, 32);
+
+  var dpmCurrentRow = 3;
+  // Trier les mois chronologiquement
+  var sortedMonths = months.slice().sort(function(a, b) { return a.localeCompare(b); });
+
+  sortedMonths.forEach(function(mois) {
+    // Récupérer toutes les affaires de ce mois (filtrées)
+    var affMois = affaires.filter(function(a) { return a.mois === mois; });
+    if (affMois.length === 0) return;
+
+    // Trier par CA décroissant
+    affMois.sort(function(a, b) { return (b.montantFacture || 0) - (a.montantFacture || 0); });
+
+    // Header du mois
+    var moisDate = new Date(parseInt(mois.substring(0, 4)), parseInt(mois.substring(5, 7)) - 1, 1);
+    var moisLabel = moisDate.toLocaleDateString('fr-CH', { month: 'long', year: 'numeric' });
+    moisLabel = moisLabel.charAt(0).toUpperCase() + moisLabel.slice(1);
+
+    var totalMois = affMois.reduce(function(s, a) { return s + (a.montantFacture || 0); }, 0);
+
+    dpm.getRange(dpmCurrentRow, 1).setValue('📅 ' + moisLabel + ' — ' + affMois.length + ' dossier' + (affMois.length > 1 ? 's' : '') + ' — Total : ' + Math.round(totalMois).toLocaleString('fr-CH') + ' CHF');
+    dpm.getRange(dpmCurrentRow, 1, 1, 6).merge().setBackground('#D32F2F').setFontColor('#FFFFFF')
+      .setFontWeight('bold').setFontSize(12).setHorizontalAlignment('left').setVerticalAlignment('middle');
+    dpm.setRowHeight(dpmCurrentRow, 28);
+    dpmCurrentRow++;
+
+    // En-tête de tableau
+    var subHeader = ['Référence', 'Client', 'Commercial', 'Statut', 'Date prévue', 'CA (CHF)'];
+    dpm.getRange(dpmCurrentRow, 1, 1, 6).setValues([subHeader])
+      .setBackground('#FAFAF7').setFontWeight('bold').setFontColor('#475569')
+      .setBorder(true, true, true, true, true, true, '#E2E8F0', SpreadsheetApp.BorderStyle.SOLID);
+    dpmCurrentRow++;
+
+    // Lignes des dossiers
+    var rowData = affMois.map(function(a) {
+      return [
+        a.ref,
+        a.client || '—',
+        a.commercial || '—',
+        a.statut || '',
+        a.datePrevue || '',
+        a.montantFacture || 0
+      ];
+    });
+    dpm.getRange(dpmCurrentRow, 1, rowData.length, 6).setValues(rowData);
+    dpm.getRange(dpmCurrentRow, 6, rowData.length, 1).setNumberFormat('#,##0 "CHF"');
+    dpm.getRange(dpmCurrentRow, 1, rowData.length, 6)
+      .setBorder(true, true, true, true, true, true, '#E2E8F0', SpreadsheetApp.BorderStyle.SOLID);
+    dpmCurrentRow += rowData.length;
+
+    // Ligne TOTAL du mois
+    dpm.getRange(dpmCurrentRow, 1).setValue('TOTAL ' + moisLabel.toUpperCase());
+    dpm.getRange(dpmCurrentRow, 6).setValue(totalMois).setNumberFormat('#,##0 "CHF"');
+    dpm.getRange(dpmCurrentRow, 1, 1, 6).setBackground('#FAFAF7').setFontWeight('bold');
+    dpm.getRange(dpmCurrentRow, 1, 1, 6)
+      .setBorder(true, true, true, true, true, true, '#1E293B', SpreadsheetApp.BorderStyle.SOLID_THICK);
+    dpmCurrentRow++;
+
+    // Ligne vide d'espacement
+    dpmCurrentRow++;
+  });
+
+  // Largeurs colonnes
+  [120, 200, 130, 90, 110, 130].forEach(function(w, i) { dpm.setColumnWidth(i + 1, w); });
+  dpm.setFrozenRows(2);
+
+  // ============================================
+  // Sheet 4 : DÉTAIL DES AFFAIRES
   // ============================================
   var detail = ss.insertSheet('Détail affaires');
   detail.getRange('A1').setValue('Détail de toutes les affaires');
@@ -2345,12 +2420,18 @@ function genererForecastControllerXlsx(filters) {
   var folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
   var file = folder.createFile(blob);
 
+  // Rendre le fichier accessible via lien (pour permettre le téléchargement direct par Anthony)
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) { Logger.log('Sharing setup failed: ' + e); }
+
   // 4) Cleanup
   try { DriveApp.getFileById(ssId).setTrashed(true); } catch (e) { /* ignore */ }
 
   return {
     fileId: file.getId(),
     url: file.getUrl(),
+    downloadUrl: 'https://drive.google.com/uc?export=download&id=' + file.getId(),
     b64: Utilities.base64Encode(blob.getBytes()),
     name: fileName + '.xlsx'
   };
