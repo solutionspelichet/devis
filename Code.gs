@@ -1586,11 +1586,13 @@ function doGet(e) {
           }
         }
         var filters = { start: e.parameter.start || '', end: e.parameter.end || '' };
+        Logger.log('forecast_xlsx demandé par ' + fcUserId + ' filters=' + JSON.stringify(filters));
         var result = genererForecastControllerXlsx(filters);
-        if (!result) return jsonResponse({ status: 'error', message: 'Génération XLSX échouée' });
+        if (!result) return jsonResponse({ status: 'error', message: 'Génération XLSX échouée — voir logs Apps Script' });
         return jsonResponse({ status: 'success', data: result });
       } catch (err) {
-        return jsonResponse({ status: 'error', message: 'Erreur XLSX: ' + err });
+        Logger.log('ERREUR forecast_xlsx: ' + err + '\n' + (err.stack || ''));
+        return jsonResponse({ status: 'error', message: 'Erreur XLSX: ' + err.toString() });
       }
     }
 
@@ -2161,15 +2163,19 @@ function genererForecastControllerXlsx(filters) {
     // Highlight colonne TOTAL
     fc.getRange(4, header.length, dataRows.length, 1).setFontWeight('bold').setBackground('#FAFAF7');
 
-    // Conditional formatting : barres de couleur dans cellules
-    var dataRange = fc.getRange(4, 2, dataRows.length - 1, header.length - 2);
-    var rule = SpreadsheetApp.newConditionalFormatRule()
-      .setGradientMaxpointWithValue('#1E40AF', SpreadsheetApp.InterpolationType.NUMBER, '100000')
-      .setGradientMidpointWithValue('#93C5FD', SpreadsheetApp.InterpolationType.NUMBER, '20000')
-      .setGradientMinpointWithValue('#FFFFFF', SpreadsheetApp.InterpolationType.NUMBER, '0')
-      .setRanges([dataRange])
-      .build();
-    fc.setConditionalFormatRules([rule]);
+    // Conditional formatting : barres de couleur dans cellules (non bloquant)
+    try {
+      var dataRange = fc.getRange(4, 2, dataRows.length - 1, header.length - 2);
+      var rule = SpreadsheetApp.newConditionalFormatRule()
+        .setGradientMaxpointWithValue('#1E40AF', SpreadsheetApp.InterpolationType.NUMBER, '100000')
+        .setGradientMidpointWithValue('#93C5FD', SpreadsheetApp.InterpolationType.NUMBER, '20000')
+        .setGradientMinpointWithValue('#FFFFFF', SpreadsheetApp.InterpolationType.NUMBER, '0')
+        .setRanges([dataRange])
+        .build();
+      fc.setConditionalFormatRules([rule]);
+    } catch (cfErr) {
+      Logger.log('Conditional formatting skipped: ' + cfErr);
+    }
 
     // Bordures
     fc.getRange(3, 1, dataRows.length + 1, header.length)
@@ -2184,23 +2190,27 @@ function genererForecastControllerXlsx(filters) {
   fc.setFrozenRows(3);
   fc.setFrozenColumns(1);
 
-  // Insérer un graphique à barres
-  if (dataRows.length > 1) {
-    var chartRange = fc.getRange(3, 1, dataRows.length, header.length);
-    var chart = fc.newChart()
-      .setChartType(Charts.ChartType.COLUMN)
-      .addRange(chartRange)
-      .setPosition(4 + dataRows.length + 2, 1, 0, 0)
-      .setOption('title', 'Forecast mensuel — répartition par commercial')
-      .setOption('isStacked', true)
-      .setOption('legend', { position: 'right' })
-      .setOption('hAxis', { title: 'Mois' })
-      .setOption('vAxis', { title: 'CHF', format: '#,###' })
-      .setOption('height', 380)
-      .setOption('width', 900)
-      .setOption('colors', ['#D32F2F', '#1E40AF', '#16A34A', '#F59E0B', '#7C3AED', '#0891B2'])
-      .build();
-    fc.insertChart(chart);
+  // Insérer un graphique à barres (non bloquant si erreur)
+  try {
+    if (dataRows.length > 1) {
+      var chartRange = fc.getRange(3, 1, dataRows.length, header.length);
+      var chart = fc.newChart()
+        .setChartType(Charts.ChartType.COLUMN)
+        .addRange(chartRange)
+        .setPosition(4 + dataRows.length + 2, 1, 0, 0)
+        .setOption('title', 'Forecast mensuel — répartition par commercial')
+        .setOption('isStacked', true)
+        .setOption('legend', { position: 'right' })
+        .setOption('hAxis', { title: 'Mois' })
+        .setOption('vAxis', { title: 'CHF', format: '#,###' })
+        .setOption('height', 380)
+        .setOption('width', 900)
+        .setOption('colors', ['#D32F2F', '#1E40AF', '#16A34A', '#F59E0B', '#7C3AED', '#0891B2'])
+        .build();
+      fc.insertChart(chart);
+    }
+  } catch (chartErr) {
+    Logger.log('Chart forecast skipped: ' + chartErr);
   }
 
   // ============================================
@@ -2237,15 +2247,19 @@ function genererForecastControllerXlsx(filters) {
     detail.getRange(4, 7, detailRows.length, 3).setNumberFormat('#,##0 "CHF"');
     detail.getRange(4, 10, detailRows.length, 1).setNumberFormat('0.0%');
 
-    // Conditional formatting sur Marge
-    var margeRange = detail.getRange(4, 10, detailRows.length, 1);
-    var ruleVert = SpreadsheetApp.newConditionalFormatRule()
-      .whenNumberGreaterThan(0.30).setBackground('#DCFCE7').setFontColor('#16A34A').setRanges([margeRange]).build();
-    var ruleOrange = SpreadsheetApp.newConditionalFormatRule()
-      .whenNumberBetween(0.15, 0.30).setBackground('#FEF3C7').setFontColor('#F59E0B').setRanges([margeRange]).build();
-    var ruleRouge = SpreadsheetApp.newConditionalFormatRule()
-      .whenNumberLessThan(0.15).setBackground('#FEE2E2').setFontColor('#DC2626').setRanges([margeRange]).build();
-    detail.setConditionalFormatRules([ruleVert, ruleOrange, ruleRouge]);
+    // Conditional formatting sur Marge (non bloquant)
+    try {
+      var margeRange = detail.getRange(4, 10, detailRows.length, 1);
+      var ruleVert = SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberGreaterThan(0.30).setBackground('#DCFCE7').setFontColor('#16A34A').setRanges([margeRange]).build();
+      var ruleOrange = SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberBetween(0.15, 0.30).setBackground('#FEF3C7').setFontColor('#F59E0B').setRanges([margeRange]).build();
+      var ruleRouge = SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberLessThan(0.15).setBackground('#FEE2E2').setFontColor('#DC2626').setRanges([margeRange]).build();
+      detail.setConditionalFormatRules([ruleVert, ruleOrange, ruleRouge]);
+    } catch (cfErr) {
+      Logger.log('Conditional formatting détail skipped: ' + cfErr);
+    }
 
     // Bordures
     detail.getRange(3, 1, detailRows.length + 1, detailHeader.length)
@@ -2285,21 +2299,24 @@ function genererForecastControllerXlsx(filters) {
     perf.getRange(3, 1, perfRows.length + 1, perfHeader.length)
       .setBorder(true, true, true, true, true, true, '#E2E8F0', SpreadsheetApp.BorderStyle.SOLID);
 
-    // Camembert : répartition CA par commercial
-    var pieRange = perf.getRange(3, 1, perfRows.length + 1, 3); // commercial + affaires + CA
-    var pie = perf.newChart()
-      .setChartType(Charts.ChartType.PIE)
-      .addRange(perf.getRange(3, 1, perfRows.length + 1, 1))
-      .addRange(perf.getRange(3, 3, perfRows.length + 1, 1))
-      .setPosition(4 + perfRows.length + 2, 1, 0, 0)
-      .setOption('title', 'Répartition du CA par commercial')
-      .setOption('pieHole', 0.4)
-      .setOption('legend', { position: 'right' })
-      .setOption('height', 380)
-      .setOption('width', 600)
-      .setOption('colors', ['#D32F2F', '#1E40AF', '#16A34A', '#F59E0B', '#7C3AED', '#0891B2'])
-      .build();
-    perf.insertChart(pie);
+    // Camembert : répartition CA par commercial (non bloquant si erreur)
+    try {
+      var pie = perf.newChart()
+        .setChartType(Charts.ChartType.PIE)
+        .addRange(perf.getRange(3, 1, perfRows.length + 1, 1))
+        .addRange(perf.getRange(3, 3, perfRows.length + 1, 1))
+        .setPosition(4 + perfRows.length + 2, 1, 0, 0)
+        .setOption('title', 'Répartition du CA par commercial')
+        .setOption('pieHole', 0.4)
+        .setOption('legend', { position: 'right' })
+        .setOption('height', 380)
+        .setOption('width', 600)
+        .setOption('colors', ['#D32F2F', '#1E40AF', '#16A34A', '#F59E0B', '#7C3AED', '#0891B2'])
+        .build();
+      perf.insertChart(pie);
+    } catch (pieErr) {
+      Logger.log('Chart pie skipped: ' + pieErr);
+    }
   }
   [180, 90, 130, 130, 130, 110].forEach(function(w, i) { perf.setColumnWidth(i + 1, w); });
   perf.setFrozenRows(3);
