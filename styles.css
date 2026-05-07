@@ -1536,6 +1536,69 @@ select {
 .login-user-card .user-info { flex: 1; }
 .login-user-card .user-name { font-size: 13px; font-weight: 600; color: var(--ink); }
 .login-user-card .user-role { font-size: 11px; color: var(--ink-3); }
+.login-name .lock-icon {
+  margin-left: 4px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.login-password-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 8px;
+  position: relative;
+}
+.login-password-prompt .login-back-btn {
+  position: absolute;
+  left: 0; top: 0;
+  background: transparent;
+  border: none;
+  color: var(--ink-3);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+.login-password-prompt .login-back-btn:hover { background: var(--surface-2); color: var(--ink); }
+.login-password-prompt .login-avatar.large {
+  width: 64px; height: 64px;
+  font-size: 24px;
+  background: var(--red);
+  color: white;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-weight: 600;
+}
+.login-pwd-name { font-size: 16px; font-weight: 600; color: var(--ink); }
+.login-pwd-role { font-size: 12px; color: var(--ink-3); margin-top: -8px; }
+.login-pwd-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.login-pwd-form input[type="password"] {
+  padding: 12px 14px;
+  font-size: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.login-pwd-form input:focus { background: var(--surface); border-color: var(--ink-3); }
+.login-pwd-form .btn { padding: 12px; font-size: 14px; font-weight: 600; }
+.login-pwd-error {
+  font-size: 12px;
+  color: var(--red-ink);
+  text-align: center;
+  padding: 6px;
+  background: var(--red-soft);
+  border-radius: 4px;
+}
+.login-pwd-error.hidden { display: none; }
+
 .login-create-btn {
   width: 100%;
   padding: 10px;
@@ -1595,6 +1658,13 @@ select {
   margin-bottom: 8px;
 }
 .signature-current.hidden { display: none; }
+
+.profile-password-row {
+  display: flex; gap: 6px;
+  flex-wrap: wrap;
+}
+.profile-password-row input { flex: 1; min-width: 140px; }
+.profile-password-row .btn { white-space: nowrap; }
 .signature-current img { max-width: 80px; max-height: 40px; }
 .signature-ok-badge {
   font-size: 10px; font-weight: 600;
@@ -2271,6 +2341,69 @@ select {
   text-transform: uppercase;
   color: var(--ink-3);
   letter-spacing: 0.04em;
+}
+
+/* ---- CONTROLLER DASHBOARD ---- */
+.ctrl-filters {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.ctrl-filter-group {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.ctrl-filter-group label {
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-4);
+}
+.ctrl-filter-group input[type="month"], .ctrl-filter-group select {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ctrl-export-btn {
+  margin-left: auto;
+  padding: 10px 16px;
+  font-weight: 600;
+}
+/* Bars empilées : layout vertical avec segments */
+.ctrl-forecast-wrap {
+  position: relative;
+}
+#ctrlForecast .fc-bar { background: transparent; }
+#ctrlForecast .fc-bar-segment {
+  width: 100%;
+  display: block;
+  transition: height 220ms;
+  position: relative;
+  cursor: pointer;
+}
+#ctrlForecast .fc-bar-segment:first-child {
+  border-radius: 4px 4px 0 0;
+}
+.ctrl-forecast-legend {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.ctrl-forecast-legend .leg-item {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--ink-2);
+}
+.ctrl-forecast-legend .leg-dot {
+  width: 12px; height: 12px;
+  border-radius: 3px;
 }
 
 /* ---- AFFAIRES PANEL ---- */

@@ -59,6 +59,7 @@
                         <select id="regRole">
                             <option value="vendeur">Vendeur / Conseiller</option>
                             <option value="coordinateur">Coordinateur</option>
+                            <option value="controller">Controller financier</option>
                             <option value="admin">Administrateur</option>
                         </select>
                     </div>
@@ -114,6 +115,15 @@
                         <input type="text" id="profTitre" placeholder="Ex: Responsable canton de Vaud">
                     </div>
                     <div class="register-field">
+                        <label>Mot de passe</label>
+                        <div class="profile-password-row">
+                            <input type="password" id="profPwdOld" placeholder="Mot de passe actuel" autocomplete="current-password">
+                            <input type="password" id="profPwdNew" placeholder="Nouveau mot de passe (min 6 car.)" autocomplete="new-password">
+                            <button type="button" id="profPwdSave" class="btn btn-ghost btn-xs">Changer</button>
+                        </div>
+                        <p class="signature-hint" id="profPwdHint">Laisse vide si tu ne veux pas le changer.</p>
+                    </div>
+                    <div class="register-field">
                         <label>Signature</label>
                         <div id="profSignatureCurrent" class="signature-current hidden">
                             <img id="profSignatureImg" src="" alt="Signature actuelle">
@@ -131,6 +141,105 @@
             </div>
             <div class="settings-footer">
                 <button type="button" id="profileSave" class="btn btn-primary">Sauvegarder</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTROLLER DASHBOARD -->
+    <div id="controllerPanel" class="settings-overlay hidden">
+        <div class="settings-modal" style="max-width:1300px;width:97vw">
+            <div class="settings-header" style="background:linear-gradient(90deg, var(--ink) 0%, oklch(0.30 0.02 265) 100%);color:white;border-bottom:none">
+                <h3 style="color:white">📊 Forecast — Vue Controller Financier</h3>
+                <button type="button" id="controllerClose" class="settings-close-btn" style="color:white">&times;</button>
+            </div>
+            <div class="settings-body">
+                <!-- Filtres période + commerciaux -->
+                <div class="ctrl-filters">
+                    <div class="ctrl-filter-group">
+                        <label>Période</label>
+                        <div style="display:flex;gap:6px;align-items:center">
+                            <input type="month" id="ctrlStart">
+                            <span style="color:var(--ink-3)">→</span>
+                            <input type="month" id="ctrlEnd">
+                            <div class="forecast-presets" style="margin-left:6px">
+                                <button type="button" class="btn btn-ghost btn-xs" data-cpreset="3">3M</button>
+                                <button type="button" class="btn btn-ghost btn-xs" data-cpreset="6">6M</button>
+                                <button type="button" class="btn btn-ghost btn-xs active" data-cpreset="12">12M</button>
+                                <button type="button" class="btn btn-ghost btn-xs" data-cpreset="ytd">YTD</button>
+                                <button type="button" class="btn btn-ghost btn-xs" data-cpreset="all">Tout</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ctrl-filter-group">
+                        <label>Commercial</label>
+                        <select id="ctrlCommercial">
+                            <option value="">Tous</option>
+                        </select>
+                    </div>
+                    <div class="ctrl-filter-group">
+                        <label>Statut</label>
+                        <select id="ctrlStatut">
+                            <option value="">Tous</option>
+                            <option value="OK">Accepté</option>
+                            <option value="Réalisé">Réalisé</option>
+                            <option value="Brouillon">Brouillon</option>
+                            <option value="Refusé">Refusé</option>
+                        </select>
+                    </div>
+                    <button type="button" id="ctrlExportXlsx" class="btn btn-red ctrl-export-btn">
+                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v10m0 0 4-4m-4 4-4-4M4 17h12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        Télécharger Excel
+                    </button>
+                </div>
+
+                <!-- KPIs -->
+                <div class="affaires-kpis" id="ctrlKpis"></div>
+
+                <!-- Forecast bars -->
+                <h4 class="settings-section-title mt-6">Forecast par mois (empilé par commercial)</h4>
+                <div class="ctrl-forecast-wrap">
+                    <div class="affaires-forecast" id="ctrlForecast"></div>
+                    <div class="ctrl-forecast-legend" id="ctrlForecastLegend"></div>
+                </div>
+                <div class="forecast-summary" id="ctrlForecastSummary"></div>
+
+                <!-- Performance par commercial -->
+                <h4 class="settings-section-title mt-6">Performance par commercial</h4>
+                <div class="settings-table-wrap">
+                    <table class="affaires-table">
+                        <thead>
+                            <tr>
+                                <th>Commercial</th>
+                                <th class="num">Affaires</th>
+                                <th class="num">CA total</th>
+                                <th class="num">Coût total</th>
+                                <th class="num">Gain</th>
+                                <th class="num">Marge moyenne</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ctrlPerfTbody"></tbody>
+                    </table>
+                </div>
+
+                <!-- Détail des affaires -->
+                <h4 class="settings-section-title mt-6">Détail des affaires</h4>
+                <div class="settings-table-wrap" style="max-height:40vh">
+                    <table class="affaires-table">
+                        <thead>
+                            <tr>
+                                <th>Référence</th>
+                                <th>Client</th>
+                                <th>Commercial</th>
+                                <th>Statut</th>
+                                <th>Date</th>
+                                <th class="num">Coût</th>
+                                <th class="num">Facturé</th>
+                                <th class="num">Marge %</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ctrlDetailTbody"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -340,6 +449,9 @@
                 <span id="navUserName" class="mono" style="font-size:11px;color:var(--ink-3);margin-right:4px"></span>
                 <button type="button" id="profileBtn" class="icon-btn hidden" title="Mon Profil">
                     <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10" cy="7" r="3"/><path d="M3 17c1-3 4-5 7-5s6 2 7 5" stroke-linecap="round"/></svg>
+                </button>
+                <button type="button" id="controllerBtn" class="icon-btn hidden" title="Forecast Controller (vue cross-commerciaux)" style="background:var(--red);color:white">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17h14M5 13v4M9 9v8M13 11v6M17 5v12M3 5l5 4 4-3 5 3" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
                 <button type="button" id="affairesBtn" class="icon-btn" title="Tableau d'affaires &amp; forecast">
                     <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 17h14M5 13v4M9 9v8M13 11v6M17 5v12" stroke-linecap="round"/></svg>

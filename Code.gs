@@ -1373,7 +1373,34 @@ function doGet(e) {
 
     if (action === 'users_get') {
       var users = getUsers();
+      // Ajouter une info "hasPassword" sans révéler le hash
+      users.forEach(function(u) { u.hasPassword = hasUserPassword(u.id); });
       return jsonResponse({ status: 'success', data: users });
+    }
+
+    if (action === 'verify_password') {
+      var vUser = e.parameter.userId || '';
+      var vPwd = e.parameter.password || '';
+      var ok = verifyUserPassword(vUser, vPwd);
+      return jsonResponse({ status: ok ? 'success' : 'error', message: ok ? 'OK' : 'Mot de passe incorrect' });
+    }
+
+    if (action === 'set_password') {
+      var spUser = e.parameter.userId || '';
+      var spOld = e.parameter.oldPassword || '';
+      var spNew = e.parameter.newPassword || '';
+      // Si l'utilisateur a déjà un mot de passe : exiger l'ancien
+      if (hasUserPassword(spUser)) {
+        if (!verifyUserPassword(spUser, spOld)) {
+          return jsonResponse({ status: 'error', message: 'Mot de passe actuel incorrect' });
+        }
+      }
+      try {
+        setUserPassword(spUser, spNew);
+        return jsonResponse({ status: 'success' });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: err.toString() });
+      }
     }
 
     if (action === 'user_add') {
@@ -1529,6 +1556,42 @@ function doGet(e) {
       if (!auth.ok) return authError(auth);
       var ok = apiKeyUpdate(e.parameter.key || '', e.parameter.name || '', e.parameter.permission || '');
       return jsonResponse({ status: ok ? 'success' : 'error' });
+    }
+
+    // ---- Forecast contrôleur (cross-commerciaux) ----
+    if (action === 'forecast_global') {
+      try {
+        var fcUserId = e.parameter.user || '';
+        if (fcUserId) {
+          var u = getUserById(fcUserId);
+          if (!u || (u.role !== 'controller' && u.role !== 'admin')) {
+            return jsonResponse({ status: 'error', code: 403, message: 'Accès réservé au Controller / Admin' });
+          }
+        }
+        var data = listerAffairesGlobal();
+        var commerciaux = listerCommerciauxAvecDossiers();
+        return jsonResponse({ status: 'success', data: data, commerciaux: commerciaux });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur forecast: ' + err });
+      }
+    }
+
+    if (action === 'forecast_xlsx') {
+      try {
+        var fcUserId = e.parameter.user || '';
+        if (fcUserId) {
+          var u = getUserById(fcUserId);
+          if (!u || (u.role !== 'controller' && u.role !== 'admin')) {
+            return jsonResponse({ status: 'error', code: 403, message: 'Accès réservé au Controller / Admin' });
+          }
+        }
+        var filters = { start: e.parameter.start || '', end: e.parameter.end || '' };
+        var result = genererForecastControllerXlsx(filters);
+        if (!result) return jsonResponse({ status: 'error', message: 'Génération XLSX échouée' });
+        return jsonResponse({ status: 'success', data: result });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur XLSX: ' + err });
+      }
     }
 
     if (action === 'affaires_list') {
@@ -1764,6 +1827,516 @@ function deleteDossier(userId, ref) {
   }
   Logger.log('deleteDossier: ' + ref + ' -> ' + deletedCount + ' ligne(s) supprimée(s)');
   return deletedCount;
+}
+
+// ============================================
+// AUTHENTIFICATION (mot de passe)
+// ============================================
+// Hash : SHA-256 avec sel aléatoire. Stocké en colonne I du sheet Users.
+// Format : "<salt>$<hex>".
+// ============================================
+
+/** Calcule un hash sel + mot de passe. */
+function _hashPassword(password, salt) {
+  var raw = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    salt + ':' + password,
+    Utilities.Charset.UTF_8
+  );
+  var hex = raw.map(function(b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('');
+  return salt + '$' + hex;
+}
+
+/** Définit (ou met à jour) le mot de passe d'un utilisateur. */
+function setUserPassword(userId, password) {
+  if (!password || password.length < 6) throw new Error('Mot de passe minimum 6 caractères');
+  var ss = getSs();
+  if (!ss) return false;
+  var sheet = ss.getSheetByName(CONFIG.USERS_SHEET);
+  if (!sheet) return false;
+
+  // Vérifier qu'il y a une 9e colonne (PasswordHash) ; sinon l'ajouter
+  var headerRange = sheet.getRange(1, 1, 1, sheet.getLastColumn());
+  var headers = headerRange.getValues()[0];
+  if (headers.indexOf('PasswordHash') === -1) {
+    sheet.getRange(1, headers.length + 1).setValue('PasswordHash')
+      .setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
+  }
+
+  // Trouver la ligne user
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim().toUpperCase() === userId.toUpperCase()) {
+      var salt = Utilities.getUuid().replace(/-/g, '').substring(0, 16);
+      var hash = _hashPassword(password, salt);
+      // Colonne 9 (PasswordHash)
+      sheet.getRange(i + 1, 9).setValue(hash).setNumberFormat('@');
+      Logger.log('Password set for ' + userId);
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Vérifie un mot de passe. */
+function verifyUserPassword(userId, password) {
+  if (!userId || !password) return false;
+  var ss = getSs();
+  if (!ss) return false;
+  var sheet = ss.getSheetByName(CONFIG.USERS_SHEET);
+  if (!sheet) return false;
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim().toUpperCase() === userId.toUpperCase()) {
+      var stored = String(values[i][8] || '').trim();
+      if (!stored || stored.indexOf('$') === -1) return false;
+      var salt = stored.split('$')[0];
+      var computed = _hashPassword(password, salt);
+      // Comparaison "constant time"
+      if (computed.length !== stored.length) return false;
+      var diff = 0;
+      for (var c = 0; c < computed.length; c++) {
+        diff |= computed.charCodeAt(c) ^ stored.charCodeAt(c);
+      }
+      return diff === 0;
+    }
+  }
+  return false;
+}
+
+/** Indique si un utilisateur a un mot de passe défini. */
+function hasUserPassword(userId) {
+  if (!userId) return false;
+  var ss = getSs();
+  if (!ss) return false;
+  var sheet = ss.getSheetByName(CONFIG.USERS_SHEET);
+  if (!sheet) return false;
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim().toUpperCase() === userId.toUpperCase()) {
+      var stored = String(values[i][8] || '').trim();
+      return stored.indexOf('$') !== -1;
+    }
+  }
+  return false;
+}
+
+/**
+ * Crée le compte d'Anthony Marcotte (Controller financier) + mot de passe.
+ * À exécuter UNE FOIS depuis l'éditeur Apps Script.
+ * Mot de passe par défaut : Pelichet2026!  (à changer ensuite via Mon Profil)
+ */
+function setupAnthonyMarcotte() {
+  var existingUsers = getUsers();
+  var alreadyExists = existingUsers.some(function(u) {
+    return u.id === 'ANTHONY' || (u.prenom === 'Anthony' && u.nom.toUpperCase() === 'MARCOTTE');
+  });
+  if (!alreadyExists) {
+    addUser({
+      nom: 'Marcotte',
+      prenom: 'Anthony',
+      telephone: '',
+      email: 'anthony.marcotte@pelichet.ch',
+      role: 'controller',
+      titre: 'Controller Financier',
+      signatureBase64: ''
+    });
+    Logger.log('Compte ANTHONY créé');
+  } else {
+    Logger.log('Compte ANTHONY déjà existant — mise à jour mot de passe seulement');
+  }
+  // Définir / réinitialiser le mot de passe
+  var ok = setUserPassword('ANTHONY', 'Pelichet2026!');
+  Logger.log('Mot de passe défini : Pelichet2026!  (ok=' + ok + ')');
+  Logger.log('Anthony peut se connecter avec userId=ANTHONY et ce mot de passe.');
+  return { id: 'ANTHONY', defaultPassword: 'Pelichet2026!' };
+}
+
+/**
+ * Liste TOUS les utilisateurs ayant un onglet de suivi (parcourt tous les onglets `Suivi_Devis_*`).
+ * Utilisé par le contrôleur pour le forecast cross-commerciaux.
+ */
+function listerCommerciauxAvecDossiers() {
+  var ss = getSs();
+  if (!ss) return [];
+  var users = getUsers();
+  var sheets = ss.getSheets();
+  var prefix = CONFIG.SHEET_NAME + '_';
+  var result = [];
+  sheets.forEach(function(sh) {
+    var name = sh.getName();
+    if (name.indexOf(prefix) === 0) {
+      var userId = name.substring(prefix.length);
+      var userInfo = users.find(function(u) { return u.id === userId; });
+      result.push({
+        userId: userId,
+        prenom: userInfo ? userInfo.prenom : userId,
+        nom: userInfo ? userInfo.nom : '',
+        role: userInfo ? userInfo.role : '',
+        titre: userInfo ? userInfo.titre : '',
+        sheetName: name
+      });
+    }
+  });
+  return result;
+}
+
+/**
+ * Aggrégation cross-commerciaux : retourne toutes les affaires de tous les commerciaux.
+ * Réservé aux rôles 'controller' et 'admin'.
+ */
+function listerAffairesGlobal() {
+  var commerciaux = listerCommerciauxAvecDossiers();
+  var globalAffaires = [];
+  commerciaux.forEach(function(c) {
+    var affaires = listerAffaires(c.userId);
+    affaires.forEach(function(a) {
+      a.commercial = c.prenom + (c.nom ? ' ' + c.nom : '');
+      a.commercialId = c.userId;
+      globalAffaires.push(a);
+    });
+  });
+  return globalAffaires;
+}
+
+/**
+ * Génère le fichier Excel forecast contrôleur (.xlsx).
+ * Sheets : Synthèse (KPI), Forecast mensuel × commercial, Détail affaires, Marges.
+ * Mise en forme : couleurs, bordures, format monétaire, tri, lignes figées.
+ */
+function genererForecastControllerXlsx(filters) {
+  filters = filters || {};
+  var affaires = listerAffairesGlobal();
+
+  // Filtre période (mois début/fin format YYYY-MM)
+  if (filters.start || filters.end) {
+    affaires = affaires.filter(function(a) {
+      if (!a.mois) return false;
+      if (filters.start && a.mois < filters.start) return false;
+      if (filters.end && a.mois > filters.end) return false;
+      return true;
+    });
+  }
+
+  // 1) Créer un Spreadsheet temporaire
+  var fileName = 'Forecast_Pelichet_' + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd_HHmmss');
+  var ss = SpreadsheetApp.create('TEMP_' + fileName);
+  var firstSheet = ss.getActiveSheet();
+
+  // ============================================
+  // Sheet 1 : SYNTHÈSE
+  // ============================================
+  firstSheet.setName('Synthèse');
+  var st = firstSheet;
+
+  // Calculs globaux
+  var totalCA = affaires.reduce(function(s, a) { return s + (a.montantFacture || 0); }, 0);
+  var totalCout = affaires.reduce(function(s, a) { return s + (a.coutPourMarge || 0); }, 0);
+  var totalGain = totalCA - totalCout;
+  var margeMoyenne = totalCA > 0 ? (totalGain / totalCA * 100) : 0;
+  var nbAffaires = affaires.length;
+  var nbAcceptes = affaires.filter(function(a) { return /ok|accept/i.test(a.statut); }).length;
+  var nbRefuses = affaires.filter(function(a) { return /refus|annul/i.test(a.statut); }).length;
+  var nbRealises = affaires.filter(function(a) { return a.hasRealise; }).length;
+
+  // Header rouge Pelichet
+  st.getRange('A1').setValue('FORECAST PELICHET NLC SA');
+  st.getRange('A1:F1').merge().setBackground('#D32F2F').setFontColor('#FFFFFF')
+    .setFontFamily('Trebuchet MS').setFontSize(18).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  st.setRowHeight(1, 40);
+
+  st.getRange('A2').setValue('Tableau consolidé — Controller Financier');
+  st.getRange('A2:F2').merge().setBackground('#FAFAF7').setFontColor('#404040')
+    .setFontStyle('italic').setFontSize(11).setHorizontalAlignment('center');
+
+  st.getRange('A3').setValue('Période : ' + (filters.start || 'début') + ' → ' + (filters.end || 'maintenant') +
+    ' · Généré le ' + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd.MM.yyyy HH:mm'));
+  st.getRange('A3:F3').merge().setFontSize(10).setFontColor('#777777').setHorizontalAlignment('center');
+
+  // KPI cards (range 5..8)
+  var kpiRow = 5;
+  var kpis = [
+    { label: 'CHIFFRE D\'AFFAIRES', value: totalCA, fmt: '#,##0 "CHF"', color: '#1E293B' },
+    { label: 'COÛT TOTAL', value: totalCout, fmt: '#,##0 "CHF"', color: '#475569' },
+    { label: 'GAIN', value: totalGain, fmt: '#,##0 "CHF"', color: totalGain >= 0 ? '#16A34A' : '#DC2626' },
+    { label: 'MARGE MOYENNE', value: margeMoyenne / 100, fmt: '0.0%', color: margeMoyenne >= 30 ? '#16A34A' : margeMoyenne >= 15 ? '#F59E0B' : '#DC2626' }
+  ];
+  kpis.forEach(function(k, i) {
+    var col = i * 2 + 1; // A, C, E, G... mais on prend A, B / C, D...
+    var labelCell = st.getRange(kpiRow, col);
+    var valueCell = st.getRange(kpiRow + 1, col);
+    var range = st.getRange(kpiRow, col, 3, 1); // hauteur 3 lignes pour aspect carte
+    range.setBorder(true, true, true, true, false, false, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
+    range.setBackground('#FAFAF7');
+
+    labelCell.setValue(k.label).setFontSize(9).setFontWeight('bold')
+      .setFontColor('#94A3B8').setHorizontalAlignment('left').setVerticalAlignment('middle');
+    valueCell.setValue(k.value).setNumberFormat(k.fmt).setFontSize(18).setFontWeight('bold')
+      .setFontColor(k.color).setFontFamily('Trebuchet MS')
+      .setHorizontalAlignment('left').setVerticalAlignment('middle');
+  });
+  // Donner espace aux KPIs
+  for (var c = 1; c <= 8; c++) st.setColumnWidth(c, 130);
+  st.setRowHeight(kpiRow, 18);
+  st.setRowHeight(kpiRow + 1, 32);
+  st.setRowHeight(kpiRow + 2, 12);
+
+  // Sub KPIs : nombre d'affaires
+  st.getRange('A10').setValue('VOLUMES').setFontSize(11).setFontWeight('bold').setFontColor('#1E293B');
+  st.getRange('A10:F10').setBackground('#1E293B').setFontColor('#FFFFFF').setHorizontalAlignment('center').merge();
+  var subRows = [
+    ['Nombre d\'affaires', nbAffaires],
+    ['Acceptées', nbAcceptes],
+    ['Réalisées', nbRealises],
+    ['Refusées', nbRefuses]
+  ];
+  subRows.forEach(function(r, i) {
+    st.getRange(11 + i, 1).setValue(r[0]).setFontWeight('bold');
+    st.getRange(11 + i, 2).setValue(r[1]).setNumberFormat('#,##0').setHorizontalAlignment('right');
+  });
+  st.getRange('A11:B14').setBorder(true, true, true, true, true, true, '#E2E8F0', SpreadsheetApp.BorderStyle.SOLID);
+
+  // ============================================
+  // Sheet 2 : FORECAST MENSUEL
+  // ============================================
+  var fc = ss.insertSheet('Forecast mensuel');
+
+  // Calculer les mois représentés
+  var monthsSet = {};
+  affaires.forEach(function(a) { if (a.mois) monthsSet[a.mois] = true; });
+  var months = Object.keys(monthsSet).sort();
+
+  // Lister les commerciaux (issus des affaires)
+  var commerciaux = {};
+  affaires.forEach(function(a) {
+    if (a.commercialId) commerciaux[a.commercialId] = a.commercial;
+  });
+  var commerciauxList = Object.keys(commerciaux);
+
+  // Build matrice : ligne = mois, colonne = commercial
+  fc.getRange('A1').setValue('Forecast par mois × commercial (CHF)');
+  fc.getRange('A1:Z1').merge().setBackground('#1E293B').setFontColor('#FFFFFF')
+    .setFontFamily('Trebuchet MS').setFontSize(14).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  fc.setRowHeight(1, 32);
+
+  // Header : Mois | Commercial1 | Commercial2 | ... | Total
+  var header = ['Mois'].concat(commerciauxList.map(function(id) { return commerciaux[id]; })).concat(['TOTAL']);
+  fc.getRange(3, 1, 1, header.length).setValues([header]);
+  fc.getRange(3, 1, 1, header.length).setBackground('#FAFAF7').setFontWeight('bold')
+    .setFontColor('#475569').setBorder(true, true, true, true, true, true, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID);
+
+  // Lignes de données
+  var dataRows = months.map(function(mois) {
+    var row = [mois];
+    var rowTotal = 0;
+    commerciauxList.forEach(function(cid) {
+      var sum = affaires.filter(function(a) { return a.mois === mois && a.commercialId === cid; })
+        .reduce(function(s, a) { return s + (a.montantFacture || 0); }, 0);
+      row.push(sum);
+      rowTotal += sum;
+    });
+    row.push(rowTotal);
+    return row;
+  });
+
+  // Ligne TOTAL en bas
+  var totalRow = ['TOTAL'];
+  commerciauxList.forEach(function(cid) {
+    var sum = affaires.filter(function(a) { return a.commercialId === cid; })
+      .reduce(function(s, a) { return s + (a.montantFacture || 0); }, 0);
+    totalRow.push(sum);
+  });
+  totalRow.push(totalCA);
+  dataRows.push(totalRow);
+
+  if (dataRows.length > 0) {
+    fc.getRange(4, 1, dataRows.length, header.length).setValues(dataRows);
+    // Format numérique sur colonnes 2..N
+    fc.getRange(4, 2, dataRows.length, header.length - 1).setNumberFormat('#,##0 "CHF"');
+    // Highlight ligne TOTAL
+    var totalRowIdx = 4 + dataRows.length - 1;
+    fc.getRange(totalRowIdx, 1, 1, header.length).setFontWeight('bold').setBackground('#1E293B').setFontColor('#FFFFFF');
+    // Highlight colonne TOTAL
+    fc.getRange(4, header.length, dataRows.length, 1).setFontWeight('bold').setBackground('#FAFAF7');
+
+    // Conditional formatting : barres de couleur dans cellules
+    var dataRange = fc.getRange(4, 2, dataRows.length - 1, header.length - 2);
+    var rule = SpreadsheetApp.newConditionalFormatRule()
+      .setGradientMaxpointWithValue('#1E40AF', SpreadsheetApp.InterpolationType.NUMBER, '100000')
+      .setGradientMidpointWithValue('#93C5FD', SpreadsheetApp.InterpolationType.NUMBER, '20000')
+      .setGradientMinpointWithValue('#FFFFFF', SpreadsheetApp.InterpolationType.NUMBER, '0')
+      .setRanges([dataRange])
+      .build();
+    fc.setConditionalFormatRules([rule]);
+
+    // Bordures
+    fc.getRange(3, 1, dataRows.length + 1, header.length)
+      .setBorder(true, true, true, true, true, true, '#E2E8F0', SpreadsheetApp.BorderStyle.SOLID);
+  }
+
+  // Largeurs colonnes
+  fc.setColumnWidth(1, 110);
+  for (var i = 2; i <= header.length; i++) fc.setColumnWidth(i, 120);
+
+  // Figer header + colonne mois
+  fc.setFrozenRows(3);
+  fc.setFrozenColumns(1);
+
+  // Insérer un graphique à barres
+  if (dataRows.length > 1) {
+    var chartRange = fc.getRange(3, 1, dataRows.length, header.length);
+    var chart = fc.newChart()
+      .setChartType(Charts.ChartType.COLUMN)
+      .addRange(chartRange)
+      .setPosition(4 + dataRows.length + 2, 1, 0, 0)
+      .setOption('title', 'Forecast mensuel — répartition par commercial')
+      .setOption('isStacked', true)
+      .setOption('legend', { position: 'right' })
+      .setOption('hAxis', { title: 'Mois' })
+      .setOption('vAxis', { title: 'CHF', format: '#,###' })
+      .setOption('height', 380)
+      .setOption('width', 900)
+      .setOption('colors', ['#D32F2F', '#1E40AF', '#16A34A', '#F59E0B', '#7C3AED', '#0891B2'])
+      .build();
+    fc.insertChart(chart);
+  }
+
+  // ============================================
+  // Sheet 3 : DÉTAIL DES AFFAIRES
+  // ============================================
+  var detail = ss.insertSheet('Détail affaires');
+  detail.getRange('A1').setValue('Détail de toutes les affaires');
+  detail.getRange('A1:J1').merge().setBackground('#1E293B').setFontColor('#FFFFFF')
+    .setFontFamily('Trebuchet MS').setFontSize(14).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  detail.setRowHeight(1, 32);
+
+  var detailHeader = ['Référence', 'Client', 'Commercial', 'Statut', 'Date prévue', 'Mois', 'Coût total', 'Montant facturé', 'Gain', 'Marge %'];
+  detail.getRange(3, 1, 1, detailHeader.length).setValues([detailHeader])
+    .setBackground('#FAFAF7').setFontWeight('bold').setFontColor('#475569');
+
+  if (affaires.length > 0) {
+    var detailRows = affaires.map(function(a) {
+      return [
+        a.ref,
+        a.client,
+        a.commercial,
+        a.statut,
+        a.datePrevue,
+        a.mois,
+        a.coutPourMarge || 0,
+        a.montantFacture || 0,
+        a.gain || 0,
+        (a.margePct || 0) / 100
+      ];
+    });
+    detail.getRange(4, 1, detailRows.length, detailHeader.length).setValues(detailRows);
+    // Format numérique
+    detail.getRange(4, 7, detailRows.length, 3).setNumberFormat('#,##0 "CHF"');
+    detail.getRange(4, 10, detailRows.length, 1).setNumberFormat('0.0%');
+
+    // Conditional formatting sur Marge
+    var margeRange = detail.getRange(4, 10, detailRows.length, 1);
+    var ruleVert = SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberGreaterThan(0.30).setBackground('#DCFCE7').setFontColor('#16A34A').setRanges([margeRange]).build();
+    var ruleOrange = SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberBetween(0.15, 0.30).setBackground('#FEF3C7').setFontColor('#F59E0B').setRanges([margeRange]).build();
+    var ruleRouge = SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberLessThan(0.15).setBackground('#FEE2E2').setFontColor('#DC2626').setRanges([margeRange]).build();
+    detail.setConditionalFormatRules([ruleVert, ruleOrange, ruleRouge]);
+
+    // Bordures
+    detail.getRange(3, 1, detailRows.length + 1, detailHeader.length)
+      .setBorder(true, true, true, true, true, true, '#E2E8F0', SpreadsheetApp.BorderStyle.SOLID);
+  }
+  // Largeurs
+  [120, 180, 130, 90, 110, 80, 110, 130, 110, 90].forEach(function(w, i) { detail.setColumnWidth(i + 1, w); });
+  detail.setFrozenRows(3);
+
+  // ============================================
+  // Sheet 4 : PERFORMANCE PAR COMMERCIAL
+  // ============================================
+  var perf = ss.insertSheet('Performance commerciaux');
+  perf.getRange('A1').setValue('Performance par commercial');
+  perf.getRange('A1:F1').merge().setBackground('#1E293B').setFontColor('#FFFFFF')
+    .setFontFamily('Trebuchet MS').setFontSize(14).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  perf.setRowHeight(1, 32);
+
+  var perfHeader = ['Commercial', 'Affaires', 'CA total', 'Coût total', 'Gain', 'Marge moyenne'];
+  perf.getRange(3, 1, 1, perfHeader.length).setValues([perfHeader])
+    .setBackground('#FAFAF7').setFontWeight('bold').setFontColor('#475569');
+
+  var perfRows = commerciauxList.map(function(cid) {
+    var aff = affaires.filter(function(a) { return a.commercialId === cid; });
+    var ca = aff.reduce(function(s, a) { return s + (a.montantFacture || 0); }, 0);
+    var co = aff.reduce(function(s, a) { return s + (a.coutPourMarge || 0); }, 0);
+    var gain = ca - co;
+    var marge = ca > 0 ? gain / ca : 0;
+    return [commerciaux[cid], aff.length, ca, co, gain, marge];
+  });
+
+  if (perfRows.length > 0) {
+    perf.getRange(4, 1, perfRows.length, perfHeader.length).setValues(perfRows);
+    perf.getRange(4, 3, perfRows.length, 3).setNumberFormat('#,##0 "CHF"');
+    perf.getRange(4, 6, perfRows.length, 1).setNumberFormat('0.0%');
+    perf.getRange(3, 1, perfRows.length + 1, perfHeader.length)
+      .setBorder(true, true, true, true, true, true, '#E2E8F0', SpreadsheetApp.BorderStyle.SOLID);
+
+    // Camembert : répartition CA par commercial
+    var pieRange = perf.getRange(3, 1, perfRows.length + 1, 3); // commercial + affaires + CA
+    var pie = perf.newChart()
+      .setChartType(Charts.ChartType.PIE)
+      .addRange(perf.getRange(3, 1, perfRows.length + 1, 1))
+      .addRange(perf.getRange(3, 3, perfRows.length + 1, 1))
+      .setPosition(4 + perfRows.length + 2, 1, 0, 0)
+      .setOption('title', 'Répartition du CA par commercial')
+      .setOption('pieHole', 0.4)
+      .setOption('legend', { position: 'right' })
+      .setOption('height', 380)
+      .setOption('width', 600)
+      .setOption('colors', ['#D32F2F', '#1E40AF', '#16A34A', '#F59E0B', '#7C3AED', '#0891B2'])
+      .build();
+    perf.insertChart(pie);
+  }
+  [180, 90, 130, 130, 130, 110].forEach(function(w, i) { perf.setColumnWidth(i + 1, w); });
+  perf.setFrozenRows(3);
+
+  // Sauvegarde + flush
+  SpreadsheetApp.flush();
+
+  // 2) Exporter en XLSX
+  var ssId = ss.getId();
+  var xlsxUrl = 'https://docs.google.com/spreadsheets/d/' + ssId + '/export?format=xlsx';
+  var response = UrlFetchApp.fetch(xlsxUrl, {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true,
+    followRedirects: true
+  });
+  if (response.getResponseCode() !== 200) {
+    Logger.log('Forecast XLSX export failed: ' + response.getResponseCode());
+    DriveApp.getFileById(ssId).setTrashed(true);
+    return null;
+  }
+  var blob = response.getBlob();
+  blob.setContentType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  blob.setName(fileName + '.xlsx');
+
+  // 3) Sauvegarder dans le dossier racine
+  var folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+  var file = folder.createFile(blob);
+
+  // 4) Cleanup
+  try { DriveApp.getFileById(ssId).setTrashed(true); } catch (e) { /* ignore */ }
+
+  return {
+    fileId: file.getId(),
+    url: file.getUrl(),
+    b64: Utilities.base64Encode(blob.getBytes()),
+    name: fileName + '.xlsx'
+  };
 }
 
 /**

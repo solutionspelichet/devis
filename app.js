@@ -103,10 +103,10 @@ const UserManager = {
     if (!grid) return;
 
     grid.innerHTML = this._users.map(u => `
-      <button type="button" class="login-user-card" data-uid="${u.id}">
+      <button type="button" class="login-user-card" data-uid="${u.id}" data-haspwd="${u.hasPassword ? '1' : '0'}">
         <div class="login-avatar">${(u.prenom || u.nom || '?')[0].toUpperCase()}</div>
         <div class="login-info">
-          <div class="login-name">${u.prenom} ${u.nom}</div>
+          <div class="login-name">${u.prenom} ${u.nom}${u.hasPassword ? ' <span class="lock-icon" title="Compte protégé par mot de passe">🔒</span>' : ''}</div>
           <div class="login-role">${u.titre || u.role || 'vendeur'}</div>
         </div>
       </button>
@@ -121,16 +121,65 @@ const UserManager = {
       card.addEventListener('click', () => {
         const uid = card.dataset.uid;
         const user = this._users.find(u => u.id === uid);
-        if (user) {
-          this._currentUser = user;
-          localStorage.setItem('pelichet_current_user', uid);
-          this._applyUser();
-          document.getElementById('loginOverlay')?.classList.add('hidden');
-          Toast.success('Connecte : ' + user.prenom + ' ' + user.nom);
-          resolve(user);
+        if (!user) return;
+        if (card.dataset.haspwd === '1') {
+          this._showPasswordPrompt(user, resolve);
+        } else {
+          this._completeLogin(user, resolve);
         }
       });
     });
+  },
+
+  /** Affiche un prompt mot de passe inline pour un utilisateur protégé */
+  _showPasswordPrompt(user, resolve) {
+    const grid = document.getElementById('loginUsersGrid');
+    if (!grid) return;
+    grid.innerHTML = `
+      <div class="login-password-prompt">
+        <button type="button" class="login-back-btn">← Retour</button>
+        <div class="login-avatar large">${(user.prenom || '?')[0].toUpperCase()}</div>
+        <div class="login-pwd-name">${user.prenom} ${user.nom}</div>
+        <div class="login-pwd-role">${user.titre || user.role}</div>
+        <form id="loginPwdForm" class="login-pwd-form">
+          <input type="password" id="loginPwdInput" placeholder="Mot de passe" autofocus required>
+          <button type="submit" class="btn btn-red">Se connecter</button>
+          <div id="loginPwdError" class="login-pwd-error hidden"></div>
+        </form>
+      </div>
+    `;
+    document.querySelector('.login-back-btn')?.addEventListener('click', () => this._renderUserCards(resolve));
+    document.getElementById('loginPwdForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const pwd = document.getElementById('loginPwdInput').value;
+      const errEl = document.getElementById('loginPwdError');
+      errEl.classList.add('hidden');
+      try {
+        const url = `${CONFIG.SCRIPT_URL}?action=verify_password&userId=${encodeURIComponent(user.id)}&password=${encodeURIComponent(pwd)}`;
+        const resp = await fetch(url);
+        const result = await resp.json();
+        if (result.status === 'success') {
+          this._completeLogin(user, resolve);
+        } else {
+          errEl.textContent = result.message || 'Mot de passe incorrect';
+          errEl.classList.remove('hidden');
+          document.getElementById('loginPwdInput').value = '';
+          document.getElementById('loginPwdInput').focus();
+        }
+      } catch (err) {
+        errEl.textContent = 'Erreur connexion : ' + err.message;
+        errEl.classList.remove('hidden');
+      }
+    });
+  },
+
+  _completeLogin(user, resolve) {
+    this._currentUser = user;
+    localStorage.setItem('pelichet_current_user', user.id);
+    this._applyUser();
+    document.getElementById('loginOverlay')?.classList.add('hidden');
+    Toast.success('Connecté : ' + user.prenom + ' ' + user.nom);
+    if (resolve) resolve(user);
   },
 
   /** Convertit un fichier image en base64 */
@@ -279,6 +328,9 @@ const UserManager = {
     // Pre-remplir WhatsApp
     const waMob = document.getElementById('mobileSociete');
     if (waMob && tel) waMob.value = tel;
+
+    // Afficher / masquer le bouton Controller selon le rôle
+    if (typeof ControllerDashboard !== 'undefined') ControllerDashboard.updateVisibility();
   },
 
   /** Deconnexion */
@@ -1075,7 +1127,42 @@ const ProfilePanel = {
     document.getElementById('profileBtn')?.addEventListener('click', () => this.toggle());
     document.getElementById('profileClose')?.addEventListener('click', () => this.close());
     document.getElementById('profileSave')?.addEventListener('click', () => this.save());
+    document.getElementById('profPwdSave')?.addEventListener('click', () => this.changePassword());
     this._initSignatureUpload();
+  },
+
+  async changePassword() {
+    const oldPwd = document.getElementById('profPwdOld').value;
+    const newPwd = document.getElementById('profPwdNew').value;
+    if (!newPwd || newPwd.length < 6) {
+      Toast.warning('Nouveau mot de passe : minimum 6 caractères');
+      return;
+    }
+    const user = UserManager.getUser();
+    if (!user) return;
+    const btn = document.getElementById('profPwdSave');
+    if (btn) btn.disabled = true;
+    try {
+      const params = new URLSearchParams({
+        action: 'set_password',
+        userId: user.id,
+        oldPassword: oldPwd,
+        newPassword: newPwd
+      });
+      const resp = await fetch(`${CONFIG.SCRIPT_URL}?${params.toString()}`);
+      const result = await resp.json();
+      if (result.status === 'success') {
+        Toast.success('🔑 Mot de passe mis à jour');
+        document.getElementById('profPwdOld').value = '';
+        document.getElementById('profPwdNew').value = '';
+      } else {
+        Toast.error(result.message || 'Erreur');
+      }
+    } catch (err) {
+      Toast.error('Erreur : ' + err.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   },
 
   toggle() {
@@ -2194,6 +2281,325 @@ const RealiseManager = {
 
   _currentMarge() {
     return document.getElementById('rsMargeReel')?.textContent || '—';
+  }
+};
+
+// ============================================
+// CONTROLLER DASHBOARD (cross-commerciaux forecast)
+// ============================================
+const ControllerDashboard = {
+  _affaires: [],
+  _commerciaux: [],
+  _start: null,
+  _end: null,
+  // Palette pour empiler les commerciaux
+  PALETTE: ['#D32F2F', '#1E40AF', '#16A34A', '#F59E0B', '#7C3AED', '#0891B2', '#DB2777', '#65A30D'],
+
+  init() {
+    document.getElementById('controllerBtn')?.addEventListener('click', () => this.open());
+    document.getElementById('controllerClose')?.addEventListener('click', () => this.close());
+    document.getElementById('ctrlStart')?.addEventListener('change', (e) => { this._start = e.target.value || null; this._render(); });
+    document.getElementById('ctrlEnd')?.addEventListener('change', (e) => { this._end = e.target.value || null; this._render(); });
+    document.getElementById('ctrlCommercial')?.addEventListener('change', () => this._render());
+    document.getElementById('ctrlStatut')?.addEventListener('change', () => this._render());
+    document.getElementById('ctrlExportXlsx')?.addEventListener('click', () => this._exportXlsx());
+    document.querySelectorAll('[data-cpreset]').forEach(btn => {
+      btn.addEventListener('click', () => this._applyPreset(btn.dataset.cpreset));
+    });
+  },
+
+  /** Affiche le bouton si l'utilisateur est controller / admin */
+  updateVisibility() {
+    const u = UserManager.getCurrentUser?.() || (UserManager._users || []).find(x => x.id === UserManager.getUserId());
+    const role = (u?.role || '').toLowerCase();
+    const btn = document.getElementById('controllerBtn');
+    if (!btn) return;
+    if (role === 'controller' || role === 'admin') btn.classList.remove('hidden');
+    else btn.classList.add('hidden');
+  },
+
+  async open() {
+    document.getElementById('controllerPanel')?.classList.remove('hidden');
+    // Plage par défaut 12 mois à venir
+    if (!this._start) {
+      const today = new Date();
+      today.setDate(1);
+      const fmtMonth = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      this._start = fmtMonth(today);
+      this._end = fmtMonth(new Date(today.getFullYear(), today.getMonth() + 11, 1));
+      document.getElementById('ctrlStart').value = this._start;
+      document.getElementById('ctrlEnd').value = this._end;
+    }
+    document.getElementById('ctrlPerfTbody').innerHTML = '<tr><td colspan="6" class="affaires-empty">Chargement…</td></tr>';
+    document.getElementById('ctrlDetailTbody').innerHTML = '';
+    try {
+      const url = `${CONFIG.SCRIPT_URL}?action=forecast_global&user=${encodeURIComponent(UserManager.getUserId())}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+      if (result.status !== 'success') {
+        Toast.error(result.message || 'Accès refusé');
+        return;
+      }
+      this._affaires = result.data || [];
+      this._commerciaux = result.commerciaux || [];
+      // Peupler le filtre commercial
+      const sel = document.getElementById('ctrlCommercial');
+      sel.innerHTML = '<option value="">Tous</option>' + this._commerciaux.map(c =>
+        `<option value="${c.userId}">${c.prenom}${c.nom ? ' ' + c.nom : ''}</option>`
+      ).join('');
+      this._render();
+    } catch (err) {
+      Toast.error('Erreur connexion : ' + err.message);
+    }
+  },
+
+  close() { document.getElementById('controllerPanel')?.classList.add('hidden'); },
+
+  _applyPreset(preset) {
+    const today = new Date();
+    today.setDate(1);
+    const fmtMonth = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (['3', '6', '12'].includes(preset)) {
+      const n = parseInt(preset);
+      this._start = fmtMonth(today);
+      this._end = fmtMonth(new Date(today.getFullYear(), today.getMonth() + n - 1, 1));
+    } else if (preset === 'ytd') {
+      this._start = `${today.getFullYear()}-01`;
+      this._end = `${today.getFullYear()}-12`;
+    } else if (preset === 'all') {
+      const months = this._affaires.map(a => a.mois).filter(Boolean).sort();
+      this._start = months[0] || fmtMonth(today);
+      this._end = months[months.length - 1] || fmtMonth(today);
+    }
+    document.getElementById('ctrlStart').value = this._start || '';
+    document.getElementById('ctrlEnd').value = this._end || '';
+    document.querySelectorAll('[data-cpreset]').forEach(b => b.classList.toggle('active', b.dataset.cpreset === preset));
+    this._render();
+  },
+
+  _filtered() {
+    const com = document.getElementById('ctrlCommercial')?.value || '';
+    const stat = document.getElementById('ctrlStatut')?.value || '';
+    return this._affaires.filter(a => {
+      if (com && a.commercialId !== com) return false;
+      if (stat) {
+        const s = (a.statut || '').toLowerCase();
+        const f = stat.toLowerCase();
+        if (f === 'refusé' && !s.includes('refus') && !s.includes('annul')) return false;
+        else if (f === 'ok' && !s.includes('ok') && !s.includes('accept')) return false;
+        else if (f === 'réalisé' && !s.includes('réalis') && !s.includes('realis')) return false;
+        else if (f === 'brouillon' && !s.includes('brouillon')) return false;
+      }
+      return true;
+    });
+  },
+
+  _render() {
+    const fmt = (v) => Math.round(v || 0).toLocaleString('fr-CH');
+    const fmtPct = (v) => (v >= 0 ? '+' : '') + (v || 0).toFixed(1) + ' %';
+    const fmtCompact = (v) => {
+      v = Math.round(v || 0);
+      if (v === 0) return '—';
+      if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+      if (v >= 1000) return Math.round(v / 1000) + 'k';
+      return v.toString();
+    };
+
+    const filtered = this._filtered();
+
+    // KPIs
+    const totalCA = filtered.reduce((s, a) => s + (a.montantFacture || 0), 0);
+    const totalCout = filtered.reduce((s, a) => s + (a.coutPourMarge || 0), 0);
+    const totalGain = totalCA - totalCout;
+    const margeGlobale = totalCA > 0 ? (totalGain / totalCA * 100) : 0;
+    const nbAffaires = filtered.length;
+    const nbAcceptes = filtered.filter(a => /ok|accept/i.test(a.statut)).length;
+    const nbCommUnique = new Set(filtered.map(a => a.commercialId).filter(Boolean)).size;
+
+    document.getElementById('ctrlKpis').innerHTML = `
+      <div class="kpi-card">
+        <div class="kpi-label">Chiffre d'affaires</div>
+        <div class="kpi-value"><span class="cur">CHF</span>${fmt(totalCA)}</div>
+        <div class="kpi-sub">${nbAffaires} affaire${nbAffaires > 1 ? 's' : ''} · ${nbCommUnique} commercial${nbCommUnique > 1 ? 'aux' : ''}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Coût total</div>
+        <div class="kpi-value"><span class="cur">CHF</span>${fmt(totalCout)}</div>
+        <div class="kpi-sub">${filtered.filter(a => a.hasRealise).length} réalisé(s)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Gain</div>
+        <div class="kpi-value ${totalGain >= 0 ? '' : 'pct negative'}"><span class="cur">CHF</span>${fmt(totalGain)}</div>
+        <div class="kpi-sub">${totalGain >= 0 ? 'Bénéfice' : 'Perte'}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Marge moyenne</div>
+        <div class="kpi-value pct ${margeGlobale < 0 ? 'negative' : ''}">${fmtPct(margeGlobale)}</div>
+        <div class="kpi-sub">${nbAcceptes} acceptées</div>
+      </div>
+    `;
+
+    // Forecast empilé par commercial
+    const today = new Date();
+    today.setDate(1);
+    const parseMonth = (s) => {
+      if (!s) return null;
+      const m = s.match(/^(\d{4})-(\d{2})/);
+      return m ? new Date(parseInt(m[1]), parseInt(m[2]) - 1, 1) : null;
+    };
+    let dStart = parseMonth(this._start) || new Date(today);
+    let dEnd = parseMonth(this._end) || new Date(today.getFullYear(), today.getMonth() + 11, 1);
+    if (dEnd < dStart) [dStart, dEnd] = [dEnd, dStart];
+    const totalMonths = Math.min(60, (dEnd.getFullYear() - dStart.getFullYear()) * 12 + (dEnd.getMonth() - dStart.getMonth()) + 1);
+
+    // Construire la matrice : mois → { commercialId: total }
+    const months = [];
+    for (let i = 0; i < totalMonths; i++) {
+      const d = new Date(dStart.getFullYear(), dStart.getMonth() + i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const byCom = {};
+      filtered.filter(a => a.mois === key).forEach(a => {
+        const cid = a.commercialId || 'unknown';
+        byCom[cid] = (byCom[cid] || 0) + (a.montantFacture || 0);
+      });
+      const total = Object.values(byCom).reduce((s, v) => s + v, 0);
+      months.push({
+        key,
+        label: d.toLocaleDateString('fr-CH', { month: 'short' }) + ' ' + String(d.getFullYear()).slice(2),
+        byCom,
+        total
+      });
+    }
+    const maxMonth = Math.max(1, ...months.map(m => m.total));
+    const currentKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+
+    // Liste des commerciaux présents (pour la palette)
+    const comIds = Array.from(new Set(filtered.map(a => a.commercialId).filter(Boolean)));
+    const comColor = {};
+    comIds.forEach((cid, i) => { comColor[cid] = this.PALETTE[i % this.PALETTE.length]; });
+
+    const fc = document.getElementById('ctrlForecast');
+    fc.style.gridTemplateColumns = `repeat(${months.length}, minmax(60px, 1fr))`;
+    fc.innerHTML = months.map(m => {
+      const isCurrent = m.key === currentKey;
+      const isZero = m.total === 0;
+      // Construire les segments empilés
+      let segments = '';
+      let cumulHeightPct = 0;
+      comIds.forEach(cid => {
+        const v = m.byCom[cid] || 0;
+        if (v <= 0) return;
+        const pctOfMonth = (v / m.total) * 100;
+        const totalH = (m.total / maxMonth) * 100;
+        const segH = (pctOfMonth / 100) * totalH;
+        segments += `<div class="fc-bar-segment" style="height:${segH}%;background:${comColor[cid]}" title="${m.label} · ${(this._commerciaux.find(c=>c.userId===cid)?.prenom || cid)} : ${fmt(v)} CHF"></div>`;
+      });
+      return `
+        <div class="fc-month ${isCurrent ? 'current' : ''}" title="${m.label} : ${fmt(m.total)} CHF">
+          <div class="fc-amount ${isZero ? 'zero' : ''}">${fmtCompact(m.total)}</div>
+          <div class="fc-bar-wrap">${segments || '<div class="fc-bar" style="height:1px"></div>'}</div>
+          <div class="fc-label">${m.label}</div>
+        </div>
+      `;
+    }).join('');
+
+    // Légende
+    document.getElementById('ctrlForecastLegend').innerHTML = comIds.map(cid => {
+      const c = this._commerciaux.find(x => x.userId === cid);
+      const name = c ? c.prenom + (c.nom ? ' ' + c.nom : '') : cid;
+      return `<div class="leg-item"><span class="leg-dot" style="background:${comColor[cid]}"></span>${name}</div>`;
+    }).join('');
+
+    // Synthèse
+    const startLabel = dStart.toLocaleDateString('fr-CH', { month: 'short', year: 'numeric' });
+    const endLabel = dEnd.toLocaleDateString('fr-CH', { month: 'short', year: 'numeric' });
+    document.getElementById('ctrlForecastSummary').innerHTML = `
+      <span>Période :<strong>${startLabel} → ${endLabel}</strong></span>
+      <span>·</span>
+      <span>CA prévu :<strong>${fmt(totalCA)} CHF</strong></span>
+      <span>·</span>
+      <span>Affaires :<strong>${nbAffaires}</strong></span>
+    `;
+
+    // Performance par commercial
+    const perfRows = comIds.map(cid => {
+      const aff = filtered.filter(a => a.commercialId === cid);
+      const ca = aff.reduce((s, a) => s + (a.montantFacture || 0), 0);
+      const co = aff.reduce((s, a) => s + (a.coutPourMarge || 0), 0);
+      const c = this._commerciaux.find(x => x.userId === cid);
+      const name = c ? c.prenom + (c.nom ? ' ' + c.nom : '') : cid;
+      return { name, color: comColor[cid], nb: aff.length, ca, co, gain: ca - co, marge: ca > 0 ? ((ca - co) / ca * 100) : 0 };
+    }).sort((a, b) => b.ca - a.ca);
+
+    document.getElementById('ctrlPerfTbody').innerHTML = perfRows.length === 0
+      ? '<tr><td colspan="6" class="affaires-empty">Aucune donnée</td></tr>'
+      : perfRows.map(p => `
+        <tr>
+          <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:8px"></span>${p.name}</td>
+          <td class="num">${p.nb}</td>
+          <td class="num">${fmt(p.ca)} CHF</td>
+          <td class="num">${fmt(p.co)} CHF</td>
+          <td class="num ${p.gain >= 0 ? 'gain-pos' : 'gain-neg'}">${p.gain >= 0 ? '+' : ''}${fmt(p.gain)} CHF</td>
+          <td class="num ${p.marge >= 0 ? 'marge-pos' : 'marge-neg'}">${fmtPct(p.marge)}</td>
+        </tr>
+      `).join('');
+
+    // Détail
+    const detailTbody = document.getElementById('ctrlDetailTbody');
+    const fmtDate = (d) => {
+      if (!d) return '—';
+      const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? `${m[3]}.${m[2]}.${m[1]}` : d;
+    };
+    const sortedDetail = filtered.slice().sort((a, b) => (b.datePrevue || '').localeCompare(a.datePrevue || ''));
+    detailTbody.innerHTML = sortedDetail.length === 0
+      ? '<tr><td colspan="8" class="affaires-empty">Aucune affaire</td></tr>'
+      : sortedDetail.map(a => `
+        <tr>
+          <td class="ref-cell">${a.ref}</td>
+          <td>${a.client || '—'}</td>
+          <td>${a.commercial || '—'}</td>
+          <td>${a.statut || ''}</td>
+          <td>${fmtDate(a.datePrevue)}</td>
+          <td class="num">${fmt(a.coutPourMarge)} CHF</td>
+          <td class="num">${fmt(a.montantFacture)} CHF</td>
+          <td class="num ${a.margePct >= 0 ? 'marge-pos' : 'marge-neg'}">${fmtPct(a.margePct)}</td>
+        </tr>
+      `).join('');
+  },
+
+  async _exportXlsx() {
+    const btn = document.getElementById('ctrlExportXlsx');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Génération…'; }
+    try {
+      const params = new URLSearchParams({
+        action: 'forecast_xlsx',
+        user: UserManager.getUserId(),
+        start: this._start || '',
+        end: this._end || ''
+      });
+      const url = `${CONFIG.SCRIPT_URL}?${params.toString()}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+      if (result.status !== 'success' || !result.data?.b64) {
+        Toast.error(result.message || 'Génération échouée');
+        return;
+      }
+      // Download
+      FormSubmitter._downloadBase64File(
+        result.data.b64,
+        result.data.name,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+      Toast.success('📊 Forecast Excel téléchargé');
+    } catch (err) {
+      Toast.error('Erreur : ' + err.message);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v10m0 0 4-4m-4 4-4-4M4 17h12" stroke-linecap="round" stroke-linejoin="round"/></svg> Télécharger Excel`;
+      }
+    }
   }
 };
 
@@ -4257,6 +4663,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   DossierMenu.init();
   AffairesView.init();
   ApiKeysManager.init();
+  ControllerDashboard.init();
   CalendarView.init();
 
   // Logout
