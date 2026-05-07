@@ -331,6 +331,16 @@ const UserManager = {
 
     // Afficher / masquer le bouton Controller selon le rôle
     if (typeof ControllerDashboard !== 'undefined') ControllerDashboard.updateVisibility();
+
+    // Mode CONTROLLER : verrouille l'app sur la vue forecast uniquement
+    const isController = (u.role || '').toLowerCase() === 'controller';
+    document.body.classList.toggle('controller-mode', isController);
+    if (isController) {
+      // Ouvre directement le dashboard, pas de retour possible vers le devis
+      setTimeout(() => {
+        if (typeof ControllerDashboard !== 'undefined') ControllerDashboard.open();
+      }, 300);
+    }
   },
 
   /** Deconnexion */
@@ -2353,7 +2363,14 @@ const ControllerDashboard = {
     }
   },
 
-  close() { document.getElementById('controllerPanel')?.classList.add('hidden'); },
+  close() {
+    // En mode controller, refuser la fermeture (le dashboard est la SEULE vue)
+    if (document.body.classList.contains('controller-mode')) {
+      Toast.info('Tu es en mode Controller — utilise le bouton Déconnexion');
+      return;
+    }
+    document.getElementById('controllerPanel')?.classList.add('hidden');
+  },
 
   _applyPreset(preset) {
     const today = new Date();

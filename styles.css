@@ -2343,6 +2343,63 @@ select {
   letter-spacing: 0.04em;
 }
 
+/* ---- CONTROLLER MODE (accès restreint au dashboard forecast) ---- */
+body.controller-mode .sidebar,
+body.controller-mode .main,
+body.controller-mode .rightrail,
+body.controller-mode .mobile-bottom-bar,
+body.controller-mode #affairesBtn,
+body.controller-mode #settingsBtn,
+body.controller-mode #profileBtn {
+  display: none !important;
+}
+body.controller-mode .app-shell {
+  grid-template-columns: 1fr;
+  grid-template-rows: 52px;
+  grid-template-areas: "topbar";
+  height: 52px;
+}
+body.controller-mode .topbar {
+  border-bottom: 1px solid var(--border);
+}
+body.controller-mode .topbar-search { display: none; }
+body.controller-mode #controllerBtn { display: flex !important; }
+/* Le dashboard prend toute la hauteur, sans bouton fermer fonctionnel */
+body.controller-mode #controllerPanel {
+  position: fixed;
+  inset: 52px 0 0 0;
+  background: var(--bg);
+  padding: 0;
+}
+body.controller-mode #controllerPanel .settings-modal {
+  max-width: 100% !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  border: none !important;
+  margin: 0;
+}
+body.controller-mode #controllerPanel #controllerClose {
+  display: none;
+}
+/* Indication visuelle du mode controller */
+body.controller-mode .topbar::after {
+  content: 'CONTROLLER FINANCIER';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--red);
+  background: var(--red-soft);
+  padding: 4px 10px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
 /* ---- CONTROLLER DASHBOARD ---- */
 .ctrl-filters {
   display: flex;
