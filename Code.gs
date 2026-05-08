@@ -2399,41 +2399,30 @@ function genererForecastControllerXlsx(filters) {
   // Sauvegarde + flush
   SpreadsheetApp.flush();
 
-  // 2) Exporter en XLSX
+  // 2) Renommer + déplacer le Spreadsheet dans le dossier racine
   var ssId = ss.getId();
-  var xlsxUrl = 'https://docs.google.com/spreadsheets/d/' + ssId + '/export?format=xlsx';
-  var response = UrlFetchApp.fetch(xlsxUrl, {
-    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
-    muteHttpExceptions: true,
-    followRedirects: true
-  });
-  if (response.getResponseCode() !== 200) {
-    Logger.log('Forecast XLSX export failed: ' + response.getResponseCode());
-    DriveApp.getFileById(ssId).setTrashed(true);
-    return null;
-  }
-  var blob = response.getBlob();
-  blob.setContentType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  blob.setName(fileName + '.xlsx');
-
-  // 3) Sauvegarder dans le dossier racine
-  var folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
-  var file = folder.createFile(blob);
-
-  // Rendre le fichier accessible via lien (pour permettre le téléchargement direct par Anthony)
+  ss.rename(fileName);
   try {
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  } catch (e) { Logger.log('Sharing setup failed: ' + e); }
+    var ssFile = DriveApp.getFileById(ssId);
+    ssFile.moveTo(DriveApp.getFolderById(CONFIG.FOLDER_ID));
+    // Rendre accessible (lecture) pour permettre le téléchargement direct par Anthony
+    ssFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) {
+    Logger.log('Move/share failed (non bloquant): ' + e);
+  }
 
-  // 4) Cleanup
-  try { DriveApp.getFileById(ssId).setTrashed(true); } catch (e) { /* ignore */ }
+  // 3) Construire l'URL de téléchargement XLSX direct (Google convertit à la volée)
+  var downloadUrl = 'https://docs.google.com/spreadsheets/d/' + ssId + '/export?format=xlsx';
+  var viewUrl = ss.getUrl();
+
+  Logger.log('Forecast Spreadsheet créé: ' + viewUrl);
 
   return {
-    fileId: file.getId(),
-    url: file.getUrl(),
-    downloadUrl: 'https://drive.google.com/uc?export=download&id=' + file.getId(),
-    b64: Utilities.base64Encode(blob.getBytes()),
+    fileId: ssId,
+    url: viewUrl,
+    downloadUrl: downloadUrl,
     name: fileName + '.xlsx'
+    // Pas de b64 — le navigateur télécharge directement depuis Google Sheets
   };
 }
 
@@ -3160,8 +3149,11 @@ function generateICS(userId) {
     'METHOD:PUBLISH',
     'X-WR-CALNAME:Pelichet — ' + userId,
     'X-WR-TIMEZONE:Europe/Zurich',
-    'X-PUBLISHED-TTL:PT6H',
-    'REFRESH-INTERVAL;VALUE=DURATION:PT6H'
+    // Refresh suggéré : 1 heure (au lieu de 6h) — les clients qui le respectent
+    // (Apple Calendar, certaines versions Outlook) refresh plus rapidement.
+    // Outlook desktop ignore souvent et utilise sa propre config (3h par défaut).
+    'X-PUBLISHED-TTL:PT1H',
+    'REFRESH-INTERVAL;VALUE=DURATION:PT1H'
   ];
 
   Object.keys(groups).forEach(function(key) {

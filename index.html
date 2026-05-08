@@ -864,7 +864,25 @@
                         <li>Colle l'URL, donne-lui un nom (ex: "Missions Pelichet"), choisis une couleur</li>
                         <li>Clique sur <strong>Importer</strong></li>
                     </ol>
-                    <div class="csm-tip">⏱️ Outlook rafraîchit l'agenda toutes les ~3 h par défaut.</div>
+
+                    <div class="csm-tip">
+                        ⏱️ <strong>Important — délai de synchronisation</strong><br>
+                        Outlook ne télécharge le calendrier que toutes les <strong>3 heures par défaut</strong>. Pour voir tes nouveaux dossiers plus rapidement :
+                    </div>
+
+                    <h4 style="margin-top:14px">🔁 Forcer le refresh Outlook</h4>
+                    <ol>
+                        <li><strong>Outlook Web</strong> : ouvre le calendrier importé, clique les <strong>3 points</strong> à côté de son nom → <strong>Mettre à jour</strong></li>
+                        <li><strong>Outlook Desktop (Windows)</strong> : Envoyer/Recevoir → Mettre à jour le dossier <strong>(F9)</strong></li>
+                        <li><strong>Réduire le délai automatique</strong> (Outlook desktop) :
+                            <ul>
+                                <li>Fichier → Paramètres du compte → Calendriers Internet</li>
+                                <li>Sélectionne <em>"Pelichet"</em> → <strong>Propriétés</strong></li>
+                                <li><strong>Décoche</strong> "Mettre à jour cet abonnement..."</li>
+                                <li>Outlook prendra la valeur suggérée par le serveur (1 h)</li>
+                            </ul>
+                        </li>
+                    </ol>
                     <button type="button" class="btn btn-red btn-xs csm-action" id="csmOpenOutlook">Ouvrir Outlook Web</button>
                 </div>
 
