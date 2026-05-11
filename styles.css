@@ -1847,7 +1847,7 @@ select {
   border-radius: var(--radius-lg);
   box-shadow: 0 30px 60px -20px oklch(0.20 0.02 265 / 0.3);
   padding: 20px;
-  max-width: 460px;
+  max-width: 540px;
   width: calc(100% - 40px);
   max-height: calc(100vh - 80px);
   overflow-y: auto;
@@ -1932,6 +1932,125 @@ select {
   padding: 3px 8px;
   border-radius: 12px;
   color: var(--ink-2);
+}
+
+/* ---- Day-detail : cartes complètes pour "+N autres" ---- */
+.cal-day-cards {
+  display: flex; flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding-right: 4px;
+}
+.cal-day-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--ink-4);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  transition: border-color 120ms;
+}
+.cal-day-card:hover { border-color: var(--ink-3); }
+/* Couleurs par index (synchronisées avec les entries du calendrier) */
+.cal-day-card.color-0 { border-left-color: #D32F2F; }
+.cal-day-card.color-1 { border-left-color: #1E40AF; }
+.cal-day-card.color-2 { border-left-color: #16A34A; }
+.cal-day-card.color-3 { border-left-color: #F59E0B; }
+.cal-day-card.color-4 { border-left-color: #7C3AED; }
+.cal-day-card.color-5 { border-left-color: #0891B2; }
+
+.cal-day-card-head {
+  display: flex; align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.cal-day-card-ref {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+.cal-day-card-client {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-day-card-effectif {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--red-soft);
+  color: var(--red-ink);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.cal-day-card-titre {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cal-day-card-sections {
+  display: flex; flex-direction: column;
+  gap: 4px;
+}
+.cal-day-section {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 11px;
+  padding: 3px 0;
+}
+.cal-day-section-title {
+  font-weight: 600;
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+  min-width: 76px;
+  flex-shrink: 0;
+}
+.cal-day-section-title .badge {
+  display: inline-block;
+  background: var(--surface-3);
+  color: var(--ink-2);
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  margin-left: 2px;
+}
+.cal-day-section-items {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  flex: 1;
+}
+.cal-day-section-items .cal-detail-tag {
+  font-size: 10px;
+  padding: 2px 6px;
+}
+
+.cal-day-card-tache {
+  font-size: 11px;
+  color: var(--ink-2);
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: var(--surface);
+  border-left: 2px solid var(--ink-4);
+  border-radius: 0 4px 4px 0;
+  line-height: 1.4;
+  font-style: italic;
 }
 .cal-detail-tache {
   font-size: 12px;

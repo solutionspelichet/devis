@@ -1697,32 +1697,73 @@ const CalendarView = {
 
   _showDayDetail(date, entries, anchor) {
     const detail = document.getElementById('calendarDetail');
-    const dateFmt = new Date(date).toLocaleDateString('fr-CH', { weekday: 'long', day: 'numeric', month: 'long' });
+    const dateFmt = new Date(date).toLocaleDateString('fr-CH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-    const cards = entries.map((e, i) => `
-      <div style="padding:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;cursor:pointer"
-           onclick="CalendarView._showDetail(CalendarView._byDate['${date}'][${i}], this)">
-        <div style="font-weight:600;font-size:13px">${this._esc(e.client)}</div>
-        <div style="font-size:11px;color:var(--ink-3);margin-top:2px">${this._esc(e.titre)} · ${e.effectif}H · ${(e.vehicules || []).join(', ') || '—'}</div>
-      </div>
-    `).join('');
+    const list = (arr) => (arr || []).map(x => `<span class="cal-detail-tag">${this._esc(x)}</span>`).join('');
+    const sectionInline = (title, items, badge) => {
+      if (!items || items.length === 0) return '';
+      return `<div class="cal-day-section">
+        <span class="cal-day-section-title">${title}${badge !== undefined ? ` <span class="badge">${badge}</span>` : ''}</span>
+        <span class="cal-day-section-items">${list(items)}</span>
+      </div>`;
+    };
+
+    // Carte complète par mission (référence, client, ressources, instructions)
+    const cards = entries.map((e, i) => {
+      const ref = e.ref || '—';
+      const colorClass = `color-${(i % 6)}`;
+      return `
+        <div class="cal-day-card ${colorClass}" data-entry-idx="${i}">
+          <div class="cal-day-card-head">
+            <span class="cal-day-card-ref">${this._esc(ref)}</span>
+            <span class="cal-day-card-client">${this._esc(e.client || '—')}</span>
+            ${e.effectif ? `<span class="cal-day-card-effectif">${e.effectif} H</span>` : ''}
+          </div>
+          ${e.titre ? `<div class="cal-day-card-titre">${this._esc(e.titre)}</div>` : ''}
+          <div class="cal-day-card-sections">
+            ${sectionInline('Personnel', e.personnel, (e.personnel || []).length)}
+            ${sectionInline('Véhicules', e.vehicules, (e.vehicules || []).length)}
+            ${sectionInline('Engins', e.engins, (e.engins || []).length)}
+            ${sectionInline('Matériel', e.materiel, (e.materiel || []).length)}
+          </div>
+          ${e.tache ? `<div class="cal-day-card-tache">📝 ${this._esc(e.tache)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    // Synthèse totaux du jour
+    const totalEffectif = entries.reduce((s, e) => s + (e.effectif || 0), 0);
+    const allVehicules = entries.flatMap(e => e.vehicules || []);
+    const allEngins = entries.flatMap(e => e.engins || []);
 
     detail.innerHTML = `
       <button type="button" class="cal-detail-close" aria-label="Fermer">×</button>
       <div class="cal-detail-date">${dateFmt}</div>
-      <div class="cal-detail-client" style="margin-bottom:12px">${entries.length} mission${entries.length > 1 ? 's' : ''}</div>
-      ${cards}
+      <div class="cal-detail-client">${entries.length} mission${entries.length > 1 ? 's' : ''} · ${totalEffectif} H · ${allVehicules.length + allEngins.length} véhicule${(allVehicules.length + allEngins.length) > 1 ? 's' : ''}</div>
+      <div class="cal-day-cards">${cards}</div>
     `;
 
     detail.classList.remove('hidden');
     this._positionDetail(detail, anchor);
 
     detail.querySelector('.cal-detail-close').addEventListener('click', () => detail.classList.add('hidden'));
+
+    // Click sur une card → ouvrir le détail du dossier
+    detail.querySelectorAll('.cal-day-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(card.dataset.entryIdx);
+        const entry = entries[idx];
+        if (entry?.ref && typeof DossierLoader !== 'undefined') {
+          // Optionnel : charger le dossier au clic. Désactivé par défaut pour ne pas perturber.
+        }
+      });
+    });
   },
 
   _positionDetail(detail, anchor) {
     const rect = anchor.getBoundingClientRect();
-    const detailW = 460;
+    const detailW = 540;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
