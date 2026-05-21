@@ -2271,6 +2271,56 @@ select {
 .rs-delta.positive { color: oklch(0.50 0.13 155); }
 .rs-delta.negative { color: var(--red-ink); }
 
+/* ---- Download selection in confirmation modal ---- */
+.dl-section {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.dl-section-title {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 10px;
+}
+.dl-section-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+@media (max-width: 640px) { .dl-section-grid { grid-template-columns: 1fr; } }
+.dl-group {
+  display: flex; flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.dl-group-title {
+  font-size: 11px; font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.dl-check {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--ink-2);
+  cursor: pointer;
+  padding: 2px 0;
+}
+.dl-check input[type="checkbox"] {
+  accent-color: var(--red);
+  cursor: pointer;
+}
+.dl-shortcuts {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
 /* ---- SETTINGS TABS ---- */
 .settings-tabs {
   display: flex; gap: 2px;

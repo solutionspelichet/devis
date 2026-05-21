@@ -12,6 +12,7 @@ const CONFIG = {
   TEMPLATE_PELICHET_ID: '141tclld00jgVrxuQ4b4T738LDkk2A19j21mfmJTrDDk',
   TEMPLATE_AUTRE_ID: '1QWDp-ACk1dL7bXF2fq5VQRbPW4jxwXtUmq8hA1z4cD0',
   TEMPLATE_RESA_ID: '1U2hICEGuhzv9acMZ6MeeykIB41Lx3H0JhVEKL_8sABA',
+  TEMPLATE_BORDEREAU_ID: '1APJF5zhZ0S_h362yxkNLlj3blAFimk2ulvMs1nyz5MU',
   FOLDER_ID: '1MP1I55oDhisTnm4zFJmki1Wap3fUff6U',
   SIGNATURES_FOLDER_ID: '15EmN3RiLKjH5i43zae6BvRlA3LKniTBF',
   SIGNATURES_FOLDER_NAME: 'Signatures',
@@ -3804,6 +3805,32 @@ function doPost(e) {
       Logger.log('Erreur export DOCX devis: ' + e);
     }
 
+    // 6. BORDEREAU DE TRAVAIL (PDF + DOCX)
+    var bordStatus = 'skipped';
+    var bordError = '';
+    var bordFileId = null;
+    var bordPdfB64 = '', bordPdfName = '', bordDocxB64 = '', bordDocxName = '';
+    try {
+      bordFileId = genererBordereau(data, folder, ref, client);
+      if (bordFileId) {
+        bordStatus = 'ok';
+        var bordFile = DriveApp.getFileById(bordFileId);
+        var bordPdfBlob = bordFile.getAs('application/pdf');
+        bordPdfB64 = Utilities.base64Encode(bordPdfBlob.getBytes());
+        bordPdfName = bordFile.getName() + '.pdf';
+        var bordDocxBlob = exportDocAsDocx(bordFileId);
+        if (bordDocxBlob) {
+          bordDocxB64 = Utilities.base64Encode(bordDocxBlob.getBytes());
+          bordDocxName = bordFile.getName() + '.docx';
+        }
+        Logger.log('Bordereau genere: ' + ref);
+      }
+    } catch (err) {
+      bordStatus = 'error';
+      bordError = err.toString();
+      Logger.log('ERREUR Bordereau: ' + err);
+    }
+
     // Encoder le PDF devis en base64
     var pdfB64 = Utilities.base64Encode(pdfBlob.getBytes());
 
@@ -3817,6 +3844,8 @@ function doPost(e) {
       docUrl: copyDevis.getUrl(),
       resa: resaStatus,
       resaError: resaError,
+      bordereau: bordStatus,
+      bordereauError: bordError,
       pdfB64: pdfB64,
       pdfName: fileNameBase + '.pdf',
       docxB64: docxB64,
@@ -3824,7 +3853,11 @@ function doPost(e) {
       resaPdfB64: resaPdfB64,
       resaPdfName: resaPdfName,
       resaDocxB64: resaDocxB64,
-      resaDocxName: resaDocxName
+      resaDocxName: resaDocxName,
+      bordPdfB64: bordPdfB64,
+      bordPdfName: bordPdfName,
+      bordDocxB64: bordDocxB64,
+      bordDocxName: bordDocxName
     });
 
   } catch (error) {
@@ -3960,6 +3993,170 @@ function remplirTableauPrestations(body, postes) {
 // ============================================
 // GENERATION FICHE RESA
 // ============================================
+/**
+ * Génère le bordereau de travail (Word + PDF).
+ * Un seul document qui liste TOUTES les prestations du dossier.
+ * Retourne l'ID du Google Doc créé.
+ */
+function genererBordereau(data, folder, ref, client) {
+  if (!CONFIG.TEMPLATE_BORDEREAU_ID || CONFIG.TEMPLATE_BORDEREAU_ID.indexOf('PLACEHOLDER') === 0) {
+    Logger.log('Bordereau template ID non configuré, génération sautée');
+    return null;
+  }
+  var fileName = ref + ' BORDEREAU - ' + client.replace(/\s+/g, '_');
+  var copy = DriveApp.getFileById(CONFIG.TEMPLATE_BORDEREAU_ID).makeCopy(fileName, folder);
+  var bordFileId = copy.getId();
+  var doc = DocumentApp.openById(bordFileId);
+  var body = doc.getBody();
+
+  // Découper les adresses en 2 lignes (nom + adresse complète vs ville)
+  function splitAddress(addr) {
+    var lines = String(addr || '').split(/\n+/).map(function(l) { return l.trim(); }).filter(function(l) { return l; });
+    if (lines.length === 0) return { l1: '', l2: '' };
+    if (lines.length === 1) {
+      // Tenter split sur virgule
+      var parts = lines[0].split(',').map(function(p) { return p.trim(); });
+      if (parts.length >= 2) return { l1: parts[0], l2: parts.slice(1).join(', ') };
+      return { l1: lines[0], l2: '' };
+    }
+    return { l1: lines[0], l2: lines.slice(1).join(', ') };
+  }
+
+  var depart = splitAddress(safe(data.adresseDepart));
+  var arrivee = splitAddress(safe(data.adresseArrivee));
+  var contactStr = [safe(data.contact), safe(data.contactTel)].filter(function(s) { return s; }).join(' - ');
+
+  var replacements = {
+    'date': dateJour(),
+    'coordinateur': safe(data.coordinateur, 'WOTQUENNE LILOU').toUpperCase(),
+    'coordinateur_tel': safe(data.coordinateurTel, '022 827 36 97'),
+    'ref': ref,
+    'client': client,
+    'adresse_depart_l1': depart.l1,
+    'adresse_depart_l2': depart.l2,
+    'adresse_arrivee_l1': arrivee.l1,
+    'adresse_arrivee_l2': arrivee.l2,
+    'contact': contactStr
+  };
+
+  for (var key in replacements) {
+    var pattern = '\\{\\{' + key + '\\}\\}';
+    try { body.replaceText(pattern, replacements[key]); }
+    catch (e) { Logger.log('Bordereau replaceText failed for ' + key + ': ' + e); }
+  }
+
+  // ---- Remplir le placeholder {{prestations}} avec toutes les missions ----
+  var BORD_FONT = 'Calibri';
+  var FONT_SIZE_RDV = 12;
+  var FONT_SIZE_TITRE = 11;
+  var FONT_SIZE_TEXTE = 10;
+  var FONT_SIZE_MATERIEL = 9;
+  var COLOR_RDV = '#C00000';
+
+  function resetStyle(p, opts) {
+    var t = p.editAsText();
+    t.setFontFamily(BORD_FONT);
+    t.setFontSize(opts.size || FONT_SIZE_TEXTE);
+    t.setBold(opts.bold || false);
+    t.setItalic(opts.italic || false);
+    t.setUnderline(opts.underline || false);
+    t.setForegroundColor(opts.color || '#000000');
+  }
+
+  // Trouver le placeholder
+  var instRange = body.findText('\\{\\{prestations\\}\\}');
+  var paragraph = null;
+  var container = null;
+  var insertionIndex = -1;
+  if (instRange) {
+    paragraph = instRange.getElement().getParent().asParagraph();
+    container = paragraph.getParent();
+    insertionIndex = container.getChildIndex(paragraph);
+  } else {
+    // Fallback : itération paragraphes
+    var paras = body.getParagraphs();
+    for (var pi = 0; pi < paras.length; pi++) {
+      if (paras[pi].getText().indexOf('{{prestations}}') !== -1) {
+        paragraph = paras[pi];
+        container = paragraph.getParent();
+        insertionIndex = container.getChildIndex(paragraph);
+        break;
+      }
+    }
+  }
+
+  if (paragraph && container && insertionIndex >= 0) {
+    var allPostes = safeArray(data.postes);
+
+    allPostes.forEach(function(p) {
+      var titre = safe(p.titre, '').toUpperCase();
+      if (!titre) return;
+
+      var nbJoursVal = parseFloat(p.jours) || 1;
+      var joursFmt = nbJoursVal === 0.5 ? '1/2 jour' : (nbJoursVal + (nbJoursVal > 1 ? ' jours' : ' jour'));
+
+      // RDV
+      var rdvs = safeArray(p.rdvs).filter(function(r) { return r.date; });
+      var rdvLines = [];
+      if (rdvs.length === 0) {
+        rdvLines.push(Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd.MM.yyyy') + ' a 8H00');
+      } else {
+        rdvs.forEach(function(r) {
+          var d = (r.date instanceof Date) ? r.date : new Date(r.date);
+          var dateFmt = Utilities.formatDate(d, CONFIG.TIMEZONE, 'dd.MM.yyyy');
+          rdvLines.push(dateFmt + ' a ' + safe(r.heure, '8H00'));
+        });
+      }
+      var pRDV = container.insertParagraph(insertionIndex++, 'RDV : ' + rdvLines.join(' / ') + ' (' + joursFmt + ')');
+      resetStyle(pRDV, { bold: true, underline: true, size: FONT_SIZE_RDV, color: COLOR_RDV });
+
+      // Titre prestation
+      var pTitle = container.insertParagraph(insertionIndex++, titre);
+      resetStyle(pTitle, { bold: true, underline: true, size: FONT_SIZE_TITRE });
+
+      // Tâche / instructions
+      if (safe(p.tache)) {
+        var pTask = container.insertParagraph(insertionIndex++, safe(p.tache));
+        resetStyle(pTask, { size: FONT_SIZE_TEXTE });
+      }
+
+      // Matériel
+      var materielList = safeArray(p.materiel);
+      if (materielList.length > 0) {
+        var pEmpty = container.insertParagraph(insertionIndex++, '');
+        resetStyle(pEmpty, { size: FONT_SIZE_TEXTE });
+        var pMat = container.insertParagraph(insertionIndex++, 'Matériel : ' + materielList.join(', '));
+        resetStyle(pMat, { italic: true, size: FONT_SIZE_MATERIEL });
+      }
+
+      // Personnel et véhicules (résumé)
+      var personnelList = transformerPersonnel(safeArray(p.personnel));
+      if (personnelList.length > 0) {
+        var pPers = container.insertParagraph(insertionIndex++, 'Personnel : ' + personnelList.join(', '));
+        resetStyle(pPers, { italic: true, size: FONT_SIZE_MATERIEL });
+      }
+      var vehiculesList = safeArray(p.vehicules);
+      var enginsList = safeArray(p.engins);
+      var allVeh = vehiculesList.concat(enginsList);
+      if (allVeh.length > 0) {
+        var pVeh = container.insertParagraph(insertionIndex++, 'Véhicules : ' + allVeh.join(', '));
+        resetStyle(pVeh, { italic: true, size: FONT_SIZE_MATERIEL });
+      }
+
+      // Ligne vide de séparation
+      var pSep = container.insertParagraph(insertionIndex++, '');
+      resetStyle(pSep, { size: FONT_SIZE_TEXTE });
+    });
+
+    try { paragraph.removeFromParent(); } catch (e) { /* ignore */ }
+  } else {
+    Logger.log('Bordereau: placeholder {{prestations}} introuvable');
+  }
+
+  doc.saveAndClose();
+  return bordFileId;
+}
+
 function genererFicheResa(data, folder, ref, client) {
   const fileNameResa = ref + ' RESA - ' + client.replace(/\s+/g, '_');
   const copyResa = DriveApp.getFileById(CONFIG.TEMPLATE_RESA_ID).makeCopy(fileNameResa, folder);

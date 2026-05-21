@@ -4083,6 +4083,13 @@ const PosteManager = {
 // CONFIRMATION MODAL
 // ============================================
 const Modal = {
+  // Préférences mémorisées (cases pré-cochées)
+  _defaultDownloads: {
+    devis_pdf: true, devis_docx: false,
+    resa_pdf: true, resa_docx: false,
+    bord_pdf: true, bord_docx: false
+  },
+
   show(data, onConfirm) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -4098,8 +4105,22 @@ const Modal = {
     const ttc = ht + tva + rplp;
     const fmt = (v) => v.toLocaleString('fr-CH', { minimumFractionDigits: 2 }) + ' CHF';
 
+    // Charger les préférences depuis localStorage
+    let prefs = { ...this._defaultDownloads };
+    try {
+      const saved = JSON.parse(localStorage.getItem('pelichet_download_prefs') || '{}');
+      prefs = { ...prefs, ...saved };
+    } catch (e) { /* defaults */ }
+
+    const cb = (id, label, checked) => `
+      <label class="dl-check">
+        <input type="checkbox" data-dl="${id}" ${checked ? 'checked' : ''}>
+        <span>${label}</span>
+      </label>
+    `;
+
     overlay.innerHTML = `
-      <div class="modal">
+      <div class="modal" style="max-width:560px">
         <h3>Confirmer l'envoi du devis</h3>
         <div class="recap-item"><strong>Référence</strong>${data.ref}</div>
         <div class="recap-item"><strong>Client</strong>${data.client}</div>
@@ -4107,19 +4128,81 @@ const Modal = {
         <div class="recap-item"><strong>Arrivée</strong>${data.adresseArrivee}</div>
         <div class="recap-item"><strong>Postes (${postes.length})</strong>${postesRecap}</div>
         <div class="recap-item"><strong>Total TTC</strong>${fmt(ttc)}</div>
+
+        <div class="dl-section">
+          <div class="dl-section-title">📁 Documents à télécharger après génération</div>
+          <div class="dl-section-grid">
+            <div class="dl-group">
+              <div class="dl-group-title">Devis</div>
+              ${cb('devis_pdf', 'PDF', prefs.devis_pdf)}
+              ${cb('devis_docx', 'Word (.docx)', prefs.devis_docx)}
+            </div>
+            <div class="dl-group">
+              <div class="dl-group-title">RESA</div>
+              ${cb('resa_pdf', 'PDF', prefs.resa_pdf)}
+              ${cb('resa_docx', 'Word (.docx)', prefs.resa_docx)}
+            </div>
+            <div class="dl-group">
+              <div class="dl-group-title">Bordereau de travail</div>
+              ${cb('bord_pdf', 'PDF', prefs.bord_pdf)}
+              ${cb('bord_docx', 'Word (.docx)', prefs.bord_docx)}
+            </div>
+          </div>
+          <div class="dl-shortcuts">
+            <button type="button" class="btn btn-ghost btn-xs" data-dl-action="all">Tout cocher</button>
+            <button type="button" class="btn btn-ghost btn-xs" data-dl-action="none">Rien cocher</button>
+            <button type="button" class="btn btn-ghost btn-xs" data-dl-action="pdf">PDF uniquement</button>
+            <button type="button" class="btn btn-ghost btn-xs" data-dl-action="docx">Word uniquement</button>
+          </div>
+        </div>
+
         <div class="modal-actions">
           <button type="button" class="btn" style="background:var(--slate-200);color:var(--slate-700)" id="modalCancel">Annuler</button>
-          <button type="button" class="btn btn-primary" id="modalConfirm">Confirmer & Envoyer</button>
+          <button type="button" class="btn btn-ghost" id="modalSaveOnly" title="Enregistre dans le suivi sans générer ni télécharger les documents">💾 Enregistrer seulement</button>
+          <button type="button" class="btn btn-primary" id="modalConfirm">📥 Générer &amp; télécharger</button>
         </div>
       </div>
     `;
 
     document.body.appendChild(overlay);
-    overlay.querySelector('#modalCancel').addEventListener('click', () => overlay.remove());
-    overlay.querySelector('#modalConfirm').addEventListener('click', () => {
-      overlay.remove();
-      onConfirm();
+
+    // Gérer les checkbox shortcuts
+    const getCheckboxes = () => overlay.querySelectorAll('[data-dl]');
+    overlay.querySelectorAll('[data-dl-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const act = btn.dataset.dlAction;
+        getCheckboxes().forEach(c => {
+          const id = c.dataset.dl;
+          if (act === 'all') c.checked = true;
+          else if (act === 'none') c.checked = false;
+          else if (act === 'pdf') c.checked = id.endsWith('_pdf');
+          else if (act === 'docx') c.checked = id.endsWith('_docx');
+        });
+      });
     });
+
+    // Récupère les sélections + sauvegarde prefs
+    const getSelections = () => {
+      const sel = {};
+      getCheckboxes().forEach(c => { sel[c.dataset.dl] = c.checked; });
+      try { localStorage.setItem('pelichet_download_prefs', JSON.stringify(sel)); } catch (e) {}
+      return sel;
+    };
+
+    overlay.querySelector('#modalCancel').addEventListener('click', () => overlay.remove());
+
+    overlay.querySelector('#modalSaveOnly').addEventListener('click', () => {
+      overlay.remove();
+      // Marquer "noDownload" pour ne déclencher aucun téléchargement
+      onConfirm({ noDownload: true });
+    });
+
+    overlay.querySelector('#modalConfirm').addEventListener('click', () => {
+      const downloads = getSelections();
+      overlay.remove();
+      onConfirm({ downloads });
+    });
+
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   }
 };
@@ -4433,7 +4516,7 @@ const FormSubmitter = {
     data.postes = PosteManager.collectAll();
     data.userId = UserManager.getUserId();
 
-    Modal.show(data, () => this._doSubmit(data));
+    Modal.show(data, (options) => this._doSubmit(data, options || {}));
   },
 
   /** Sauvegarde sans génération de devis/RESA (brouillon dans le Spreadsheet) */
@@ -4483,15 +4566,16 @@ const FormSubmitter = {
     }
   },
 
-  async _doSubmit(data) {
+  async _doSubmit(data, options) {
+    options = options || {};
     this._submitting = true;
     const btn = document.getElementById('submitBtn');
     const btnText = document.getElementById('btnText');
     const loader = document.getElementById('loader');
 
-    btn.disabled = true;
-    btnText.textContent = 'Envoi en cours...';
-    loader.classList.remove('hidden');
+    if (btn) btn.disabled = true;
+    if (btnText) btnText.textContent = 'Envoi en cours...';
+    if (loader) loader.classList.remove('hidden');
 
     try {
       const response = await fetch(CONFIG.SCRIPT_URL, {
@@ -4502,31 +4586,41 @@ const FormSubmitter = {
 
       if (res.status === 'success') {
         Toast.success('Devis généré avec succès !');
-        if (res.resa === 'ok') {
-          Toast.success('Fiche RESA créée !');
-        } else if (res.resa === 'error') {
-          Toast.error('Erreur RESA : ' + (res.resaError || 'Inconnue'));
+        if (res.resa === 'ok') Toast.success('Fiche RESA créée !');
+        else if (res.resa === 'error') Toast.error('Erreur RESA : ' + (res.resaError || 'Inconnue'));
+
+        if (res.bordereau === 'ok') Toast.success('Bordereau de travail créé !');
+        else if (res.bordereau === 'error') Toast.error('Erreur bordereau : ' + (res.bordereauError || 'Inconnue'));
+
+        // Si "Enregistrer seulement" → pas de téléchargement
+        if (options.noDownload) {
+          Toast.info('💾 Documents générés sur Drive — aucun téléchargement demandé');
+        } else {
+          // Filtrer selon les choix de l'utilisateur (sinon tout télécharger)
+          const dl = options.downloads || {};
+          const allDownloads = [
+            { key: 'devis_pdf', b64: res.pdfB64, name: res.pdfName, mime: 'application/pdf' },
+            { key: 'devis_docx', b64: res.docxB64, name: res.docxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+            { key: 'resa_pdf', b64: res.resaPdfB64, name: res.resaPdfName, mime: 'application/pdf' },
+            { key: 'resa_docx', b64: res.resaDocxB64, name: res.resaDocxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+            { key: 'bord_pdf', b64: res.bordPdfB64, name: res.bordPdfName, mime: 'application/pdf' },
+            { key: 'bord_docx', b64: res.bordDocxB64, name: res.bordDocxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+          ];
+          // Si l'option contient une sélection, ne garder que les checked. Sinon, tout télécharger.
+          const hasSelection = Object.keys(dl).length > 0;
+          const downloads = allDownloads
+            .filter(d => d.b64 && d.name)
+            .filter(d => hasSelection ? dl[d.key] : true);
+
+          if (downloads.length === 0 && hasSelection) {
+            Toast.info('Aucun document sélectionné pour téléchargement');
+          } else {
+            // Déclencher chaque téléchargement espacé de 600 ms
+            downloads.forEach((d, i) => {
+              setTimeout(() => this._downloadBase64File(d.b64, d.name, d.mime), i * 600);
+            });
+          }
         }
-
-        // Téléchargements automatiques : PDF devis + DOCX devis + PDF RESA + DOCX RESA
-        const downloads = [
-          { b64: res.pdfB64, name: res.pdfName, mime: 'application/pdf' },
-          { b64: res.docxB64, name: res.docxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
-          { b64: res.resaPdfB64, name: res.resaPdfName, mime: 'application/pdf' },
-          { b64: res.resaDocxB64, name: res.resaDocxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
-        ].filter(d => d.b64 && d.name);
-
-        // Déclencher chaque téléchargement espacé de 600 ms (certains navigateurs bloquent les téléchargements simultanés)
-        downloads.forEach((d, i) => {
-          setTimeout(() => this._downloadBase64File(d.b64, d.name, d.mime), i * 600);
-        });
-
-        // WhatsApp désactivé temporairement
-        // const waNumber = (data.mobileSociete || '').replace(/\s+/g, '');
-        // if (waNumber) {
-        //   const waText = encodeURIComponent(`Documents ${data.ref}:\nPDF: ${res.pdfUrl}`);
-        //   setTimeout(() => window.open(`https://wa.me/${waNumber}?text=${waText}`, '_blank'), downloads.length * 600 + 500);
-        // }
       } else {
         Toast.error('Erreur serveur : ' + (res.message || 'Inconnue'));
       }
@@ -4534,9 +4628,9 @@ const FormSubmitter = {
       Toast.error('Erreur de connexion : ' + err.message);
     } finally {
       this._submitting = false;
-      btn.disabled = false;
-      btnText.textContent = 'Générer Devis + RESA';
-      loader.classList.add('hidden');
+      if (btn) btn.disabled = false;
+      if (btnText) btnText.textContent = 'Générer Devis + RESA';
+      if (loader) loader.classList.add('hidden');
     }
   },
 
