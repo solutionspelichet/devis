@@ -244,6 +244,58 @@
         </div>
     </div>
 
+    <!-- BULK DOWNLOAD MODAL -->
+    <div id="bulkDownloadModal" class="settings-overlay hidden">
+        <div class="settings-modal" style="max-width:560px">
+            <div class="settings-header">
+                <h3>📥 Téléchargement groupé</h3>
+                <button type="button" id="bulkCloseBtn" class="settings-close-btn">&times;</button>
+            </div>
+            <div class="settings-body">
+                <p style="font-size:13px;color:var(--ink-2);margin-bottom:16px">
+                    <span id="bulkSelectionInfo" style="font-weight:600">0 dossier sélectionné</span><br>
+                    Choisis les documents à inclure dans le ZIP — un sous-dossier par dossier sera créé.
+                </p>
+
+                <div class="dl-section" style="margin-top:0">
+                    <div class="dl-section-title">📁 Documents à inclure</div>
+                    <div class="dl-section-grid">
+                        <div class="dl-group">
+                            <div class="dl-group-title">Devis</div>
+                            <label class="dl-check"><input type="checkbox" data-bdl="devis_pdf" checked> <span>PDF</span></label>
+                            <label class="dl-check"><input type="checkbox" data-bdl="devis_docx"> <span>Word (.docx)</span></label>
+                        </div>
+                        <div class="dl-group">
+                            <div class="dl-group-title">RESA</div>
+                            <label class="dl-check"><input type="checkbox" data-bdl="resa_pdf" checked> <span>PDF</span></label>
+                            <label class="dl-check"><input type="checkbox" data-bdl="resa_docx"> <span>Word (.docx)</span></label>
+                        </div>
+                        <div class="dl-group">
+                            <div class="dl-group-title">Bordereau</div>
+                            <label class="dl-check"><input type="checkbox" data-bdl="bord_pdf"> <span>PDF</span></label>
+                            <label class="dl-check"><input type="checkbox" data-bdl="bord_docx"> <span>Word (.docx)</span></label>
+                        </div>
+                    </div>
+                    <div class="dl-shortcuts">
+                        <button type="button" class="btn btn-ghost btn-xs" data-bdl-action="all">Tout</button>
+                        <button type="button" class="btn btn-ghost btn-xs" data-bdl-action="none">Rien</button>
+                        <button type="button" class="btn btn-ghost btn-xs" data-bdl-action="pdf">PDF uniquement</button>
+                        <button type="button" class="btn btn-ghost btn-xs" data-bdl-action="docx">Word uniquement</button>
+                    </div>
+                </div>
+
+                <p style="font-size:11px;color:var(--ink-3);margin-top:12px">
+                    ⏱️ Selon le nombre de dossiers et de types choisis, la génération peut prendre de quelques secondes à plusieurs minutes.
+                </p>
+                <div id="bulkProgress" class="bulk-progress hidden"></div>
+            </div>
+            <div class="settings-footer">
+                <button type="button" id="bulkCancelBtn" class="btn btn-ghost">Annuler</button>
+                <button type="button" id="bulkGenerateBtn" class="btn btn-red">📥 Générer le ZIP</button>
+            </div>
+        </div>
+    </div>
+
     <!-- AFFAIRES PANEL -->
     <div id="affairesPanel" class="settings-overlay hidden">
         <div class="settings-modal" style="max-width:1200px;width:95vw">
@@ -470,7 +522,18 @@
         <aside class="sidebar">
             <div class="side-section-head">
                 <span class="eyebrow">Dossiers</span>
-                <button type="button" id="listBtn" class="btn btn-ghost btn-xs" title="Rafraîchir">↻</button>
+                <div style="display:flex;gap:4px">
+                    <button type="button" id="selectModeBtn" class="btn btn-ghost btn-xs" title="Mode sélection multiple">☑</button>
+                    <button type="button" id="listBtn" class="btn btn-ghost btn-xs" title="Rafraîchir">↻</button>
+                </div>
+            </div>
+            <div id="selectActionsBar" class="select-actions-bar hidden">
+                <span class="sel-count" id="selCount">0 sélectionné</span>
+                <div class="sel-shortcuts">
+                    <button type="button" id="selAll" class="btn btn-ghost btn-xs" title="Sélectionner tous les dossiers visibles">Tout</button>
+                    <button type="button" id="selNone" class="btn btn-ghost btn-xs" title="Décocher tout">Aucun</button>
+                    <button type="button" id="selDownload" class="btn btn-red btn-xs" title="Télécharger les documents sélectionnés">📥</button>
+                </div>
             </div>
             <div class="side-filter">
                 <input type="text" id="dossierFilter" placeholder="Filtrer par réf. ou client…">

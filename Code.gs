@@ -1597,6 +1597,26 @@ function doGet(e) {
       }
     }
 
+    if (action === 'bulk_download') {
+      try {
+        var bdUser = e.parameter.user || '';
+        if (!bdUser) return jsonResponse({ status: 'error', message: 'userId requis' });
+        var refsStr = e.parameter.refs || '';
+        var typesStr = e.parameter.types || '';
+        var refs = refsStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+        var types = typesStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+        if (refs.length === 0) return jsonResponse({ status: 'error', message: 'Aucune référence sélectionnée' });
+        if (types.length === 0) return jsonResponse({ status: 'error', message: 'Aucun type de document sélectionné' });
+        if (refs.length > 150) return jsonResponse({ status: 'error', message: 'Limite 150 dossiers par téléchargement' });
+
+        var result = bulkDownloadZip(bdUser, refs, types);
+        return jsonResponse({ status: 'success', data: result });
+      } catch (err) {
+        Logger.log('ERREUR bulk_download: ' + err);
+        return jsonResponse({ status: 'error', message: 'Erreur bulk: ' + err.toString() });
+      }
+    }
+
     if (action === 'affaires_list') {
       try {
         var afUserId = e.parameter.user || '';
@@ -3993,6 +4013,145 @@ function remplirTableauPrestations(body, postes) {
 // ============================================
 // GENERATION FICHE RESA
 // ============================================
+/**
+ * Crée un ZIP contenant les documents demandés pour un lot de dossiers.
+ * - refs : liste des références dossier
+ * - types : liste parmi devis_pdf / devis_docx / resa_pdf / resa_docx / bord_pdf / bord_docx
+ * Retourne { fileId, url, downloadUrl, name, count, errors }
+ */
+function bulkDownloadZip(userId, refs, types) {
+  var folder = getUserFolder(userId);
+  var blobs = [];
+  var errors = [];
+  var processed = 0;
+
+  // Pour trouver les docs : itérer par nom contenant la référence
+  refs.forEach(function(ref) {
+    try {
+      // Récupérer tous les fichiers/docs du dossier user qui contiennent la ref
+      var files = folder.searchFiles('title contains "' + ref + '"');
+      var devisDoc = null, resaDoc = null, bordDoc = null, devisPdf = null;
+
+      while (files.hasNext()) {
+        var f = files.next();
+        var name = f.getName();
+        var mime = f.getMimeType();
+
+        if (name.indexOf('BORDEREAU') !== -1) {
+          if (mime === MimeType.GOOGLE_DOCS) bordDoc = f;
+        } else if (name.indexOf('RESA') !== -1) {
+          if (mime === MimeType.GOOGLE_DOCS) resaDoc = f;
+        } else if (name.indexOf('Devis') === 0 || name.indexOf('DEVIS') === 0) {
+          if (mime === MimeType.GOOGLE_DOCS) devisDoc = f;
+          else if (mime === 'application/pdf') devisPdf = f;
+        }
+      }
+
+      // Devis PDF (utilise le fichier existant ou export à la volée)
+      if (types.indexOf('devis_pdf') !== -1) {
+        if (devisPdf) {
+          var b = devisPdf.getBlob();
+          b.setName(ref + '/' + devisPdf.getName());
+          blobs.push(b);
+        } else if (devisDoc) {
+          try {
+            var pb = devisDoc.getAs('application/pdf');
+            pb.setName(ref + '/' + devisDoc.getName() + '.pdf');
+            blobs.push(pb);
+          } catch (e) { errors.push(ref + ' devis PDF: ' + e); }
+        } else {
+          errors.push(ref + ' : devis introuvable');
+        }
+      }
+
+      // Devis DOCX
+      if (types.indexOf('devis_docx') !== -1 && devisDoc) {
+        var dx = exportDocAsDocx(devisDoc.getId());
+        if (dx) { dx.setName(ref + '/' + devisDoc.getName() + '.docx'); blobs.push(dx); }
+        else errors.push(ref + ' : devis DOCX échec');
+      }
+
+      // RESA PDF
+      if (types.indexOf('resa_pdf') !== -1) {
+        if (resaDoc) {
+          try {
+            var rp = resaDoc.getAs('application/pdf');
+            rp.setName(ref + '/' + resaDoc.getName() + '.pdf');
+            blobs.push(rp);
+          } catch (e) { errors.push(ref + ' RESA PDF: ' + e); }
+        } else {
+          errors.push(ref + ' : RESA introuvable');
+        }
+      }
+
+      // RESA DOCX
+      if (types.indexOf('resa_docx') !== -1 && resaDoc) {
+        var rdx = exportDocAsDocx(resaDoc.getId());
+        if (rdx) { rdx.setName(ref + '/' + resaDoc.getName() + '.docx'); blobs.push(rdx); }
+        else errors.push(ref + ' : RESA DOCX échec');
+      }
+
+      // Bordereau PDF
+      if (types.indexOf('bord_pdf') !== -1) {
+        if (bordDoc) {
+          try {
+            var bp = bordDoc.getAs('application/pdf');
+            bp.setName(ref + '/' + bordDoc.getName() + '.pdf');
+            blobs.push(bp);
+          } catch (e) { errors.push(ref + ' Bord PDF: ' + e); }
+        } else {
+          errors.push(ref + ' : bordereau introuvable');
+        }
+      }
+
+      // Bordereau DOCX
+      if (types.indexOf('bord_docx') !== -1 && bordDoc) {
+        var bdx = exportDocAsDocx(bordDoc.getId());
+        if (bdx) { bdx.setName(ref + '/' + bordDoc.getName() + '.docx'); blobs.push(bdx); }
+        else errors.push(ref + ' : Bord DOCX échec');
+      }
+
+      processed++;
+    } catch (e) {
+      errors.push(ref + ' : ' + e.toString());
+    }
+  });
+
+  if (blobs.length === 0) {
+    return { count: 0, errors: errors, message: 'Aucun document trouvé pour cette sélection' };
+  }
+
+  // Créer le ZIP
+  var zipName = 'Pelichet_Export_' + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd_HHmmss') + '.zip';
+  var zipBlob = Utilities.zip(blobs, zipName);
+
+  // Sauvegarder le ZIP dans un sous-dossier "Exports" du user
+  var exportsFolder;
+  var exports = folder.getFoldersByName('Exports');
+  if (exports.hasNext()) exportsFolder = exports.next();
+  else exportsFolder = folder.createFolder('Exports');
+
+  var zipFile = exportsFolder.createFile(zipBlob);
+
+  // Public link pour téléchargement direct
+  try {
+    zipFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) { Logger.log('Sharing ZIP failed: ' + e); }
+
+  Logger.log('Bulk ZIP créé: ' + zipFile.getUrl() + ' (' + blobs.length + ' fichiers, ' + processed + '/' + refs.length + ' dossiers)');
+
+  return {
+    fileId: zipFile.getId(),
+    url: zipFile.getUrl(),
+    downloadUrl: 'https://drive.google.com/uc?export=download&id=' + zipFile.getId(),
+    name: zipName,
+    count: blobs.length,
+    processed: processed,
+    totalRequested: refs.length,
+    errors: errors.slice(0, 20) // limiter pour ne pas surcharger la réponse
+  };
+}
+
 /**
  * Génère le bordereau de travail (Word + PDF).
  * Un seul document qui liste TOUTES les prestations du dossier.

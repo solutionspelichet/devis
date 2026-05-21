@@ -560,6 +560,99 @@ input:focus, textarea:focus, select:focus { outline: none; }
 }
 .dossier-item:hover { background: var(--surface-2); }
 .dossier-item.active { background: var(--surface-3); }
+/* Mode sélection multiple */
+.sidebar.select-mode .dossier-item {
+  padding-left: 34px;
+  position: relative;
+}
+.sidebar.select-mode .dossier-item::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border-2);
+  border-radius: 4px;
+  background: var(--surface);
+  transition: all 120ms;
+}
+.sidebar.select-mode .dossier-item.selected::before {
+  background: var(--red);
+  border-color: var(--red);
+  content: '✓';
+  color: white;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar.select-mode .dossier-menu-btn { display: none; }
+#selectModeBtn.active { background: var(--ink); color: var(--bg); }
+
+.select-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: oklch(0.18 0.02 265);
+  color: white;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.select-actions-bar.hidden { display: none; }
+.select-actions-bar .sel-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+}
+.select-actions-bar .sel-shortcuts { display: flex; gap: 4px; }
+.select-actions-bar .btn {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+.select-actions-bar .btn-ghost {
+  background: transparent;
+  color: white;
+  border-color: oklch(0.35 0.02 265);
+}
+.select-actions-bar .btn-ghost:hover {
+  background: oklch(0.30 0.02 265);
+  border-color: white;
+}
+
+.bulk-progress {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--blue-soft);
+  border-left: 3px solid var(--blue);
+  border-radius: 0 4px 4px 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.bulk-progress.hidden { display: none; }
+.bulk-progress .progress-bar {
+  height: 4px;
+  background: var(--surface);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.bulk-progress .progress-bar-fill {
+  height: 100%;
+  background: var(--blue);
+  width: 0%;
+  transition: width 400ms;
+  animation: progress-pulse 1.4s ease-in-out infinite;
+}
+@keyframes progress-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
 .dossier-item.active::before {
   content: ''; position: absolute;
   left: -8px; top: 8px; bottom: 8px;
