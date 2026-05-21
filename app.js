@@ -2856,39 +2856,60 @@ const BulkDownload = {
         types: types.join(',')
       });
       const url = `${CONFIG.SCRIPT_URL}?${params.toString()}`;
+      console.log('[Bulk] Fetching:', url);
       const resp = await fetch(url);
+      console.log('[Bulk] Response status:', resp.status);
       const result = await resp.json();
+      console.log('[Bulk] Result:', result);
 
       if (result.status !== 'success' || !result.data) {
-        Toast.error(result.message || 'Génération échouée');
+        Toast.error(result.message || 'Génération échouée — voir logs Apps Script');
         progress.classList.add('hidden');
         return;
       }
 
       const data = result.data;
+      console.log('[Bulk] Data:', data);
+
       if (!data.fileId || data.count === 0) {
-        Toast.warning(data.message || 'Aucun fichier trouvé');
+        Toast.warning(data.message || 'Aucun fichier trouvé pour cette sélection');
         progress.classList.add('hidden');
         return;
       }
 
-      // Téléchargement automatique via URL Drive
+      const driveUrl = data.url || `https://drive.google.com/file/d/${data.fileId}/view`;
       const downloadUrl = data.downloadUrl || `https://drive.google.com/uc?export=download&id=${data.fileId}`;
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = data.name || 'export.zip';
-      a.target = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => document.body.removeChild(a), 1000);
 
-      Toast.success(`📦 ZIP créé : ${data.count} fichier${data.count > 1 ? 's' : ''} (${data.processed}/${data.totalRequested} dossiers)`);
+      // Afficher un lien cliquable dans le progress pour fallback manuel
+      progress.innerHTML = `
+        <div style="font-weight:600;color:oklch(0.35 0.12 155)">✅ ZIP créé sur Drive</div>
+        <div style="font-size:11px;color:var(--ink-3);margin-top:4px">${data.count} fichier${data.count > 1 ? 's' : ''} · ${data.processed}/${data.totalRequested} dossier${data.totalRequested > 1 ? 's' : ''}</div>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+          <a href="${downloadUrl}" target="_blank" class="btn btn-red btn-xs">⬇ Télécharger le ZIP</a>
+          <a href="${driveUrl}" target="_blank" class="btn btn-ghost btn-xs">📁 Voir sur Drive</a>
+        </div>
+        ${data.errors && data.errors.length ? `<div style="font-size:10px;color:var(--ink-3);margin-top:8px">${data.errors.length} erreur${data.errors.length > 1 ? 's' : ''} (voir console)</div>` : ''}
+      `;
+
+      // Tentative de téléchargement automatique (peut être bloqué par certains navigateurs)
+      try {
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = data.name || 'export.zip';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { try { document.body.removeChild(a); } catch (e) {} }, 1500);
+      } catch (e) {
+        console.warn('[Bulk] Auto-download failed:', e);
+      }
+
+      Toast.success(`📦 ZIP prêt : ${data.count} fichier${data.count > 1 ? 's' : ''} — clic sur "Télécharger le ZIP" si rien ne s'est passé`);
       if (data.errors && data.errors.length > 0) {
         console.warn('[Bulk] Erreurs :', data.errors);
-        Toast.warning(`${data.errors.length} erreur${data.errors.length > 1 ? 's' : ''} (voir console)`);
       }
-      setTimeout(() => this.closeModal(), 1500);
     } catch (err) {
+      console.error('[Bulk] Erreur:', err);
       Toast.error('Erreur : ' + err.message);
       progress.classList.add('hidden');
     } finally {
