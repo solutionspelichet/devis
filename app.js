@@ -2711,6 +2711,193 @@ const ControllerDashboard = {
 };
 
 // ============================================
+// BULK DOWNLOAD (sélection multi-dossiers → ZIP)
+// ============================================
+const BulkDownload = {
+  _selected: new Set(),
+  _mode: false,
+
+  init() {
+    document.getElementById('selectModeBtn')?.addEventListener('click', () => this.toggleMode());
+    document.getElementById('selAll')?.addEventListener('click', () => this.selectAll());
+    document.getElementById('selNone')?.addEventListener('click', () => this.selectNone());
+    document.getElementById('selDownload')?.addEventListener('click', () => this.openModal());
+
+    // Modal
+    document.getElementById('bulkCloseBtn')?.addEventListener('click', () => this.closeModal());
+    document.getElementById('bulkCancelBtn')?.addEventListener('click', () => this.closeModal());
+    document.getElementById('bulkGenerateBtn')?.addEventListener('click', () => this.generate());
+
+    // Shortcuts checkboxes
+    document.querySelectorAll('[data-bdl-action]').forEach(btn => {
+      btn.addEventListener('click', () => this._applyShortcut(btn.dataset.bdlAction));
+    });
+  },
+
+  toggleMode() {
+    this._mode = !this._mode;
+    const sidebar = document.querySelector('.sidebar');
+    const bar = document.getElementById('selectActionsBar');
+    const btn = document.getElementById('selectModeBtn');
+    if (this._mode) {
+      sidebar?.classList.add('select-mode');
+      bar?.classList.remove('hidden');
+      btn?.classList.add('active');
+    } else {
+      sidebar?.classList.remove('select-mode');
+      bar?.classList.add('hidden');
+      btn?.classList.remove('active');
+      this._selected.clear();
+      this._updateUI();
+    }
+  },
+
+  toggleSelection(ref) {
+    if (this._selected.has(ref)) this._selected.delete(ref);
+    else this._selected.add(ref);
+    this._updateUI();
+  },
+
+  selectAll() {
+    // Tous les dossiers visibles (filtre actuel)
+    document.querySelectorAll('.dossier-item[data-ref]').forEach(item => {
+      this._selected.add(item.dataset.ref);
+    });
+    this._updateUI();
+  },
+
+  selectNone() {
+    this._selected.clear();
+    this._updateUI();
+  },
+
+  _updateUI() {
+    // Marquer visuellement les dossiers sélectionnés
+    document.querySelectorAll('.dossier-item[data-ref]').forEach(item => {
+      item.classList.toggle('selected', this._selected.has(item.dataset.ref));
+    });
+    // Compteur
+    const count = this._selected.size;
+    const el = document.getElementById('selCount');
+    if (el) el.textContent = count + ' sélectionné' + (count > 1 ? 's' : '');
+    // Activer/désactiver bouton download
+    const dlBtn = document.getElementById('selDownload');
+    if (dlBtn) dlBtn.disabled = count === 0;
+  },
+
+  /** Appelé par DossierList après chaque render pour reapply les sélections */
+  reapplySelection() {
+    if (this._mode) {
+      document.querySelectorAll('.dossier-item[data-ref]').forEach(item => {
+        item.classList.toggle('selected', this._selected.has(item.dataset.ref));
+        // Clic pour toggle
+        item.addEventListener('click', (e) => {
+          if (this._mode) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleSelection(item.dataset.ref);
+          }
+        }, true);
+      });
+    }
+  },
+
+  openModal() {
+    if (this._selected.size === 0) {
+      Toast.warning('Sélectionne au moins un dossier');
+      return;
+    }
+    if (this._selected.size > 150) {
+      Toast.error('Maximum 150 dossiers par téléchargement');
+      return;
+    }
+    const info = document.getElementById('bulkSelectionInfo');
+    if (info) info.textContent = `${this._selected.size} dossier${this._selected.size > 1 ? 's' : ''} sélectionné${this._selected.size > 1 ? 's' : ''}`;
+    document.getElementById('bulkProgress')?.classList.add('hidden');
+    document.getElementById('bulkDownloadModal')?.classList.remove('hidden');
+  },
+
+  closeModal() {
+    document.getElementById('bulkDownloadModal')?.classList.add('hidden');
+  },
+
+  _applyShortcut(act) {
+    document.querySelectorAll('[data-bdl]').forEach(cb => {
+      const id = cb.dataset.bdl;
+      if (act === 'all') cb.checked = true;
+      else if (act === 'none') cb.checked = false;
+      else if (act === 'pdf') cb.checked = id.endsWith('_pdf');
+      else if (act === 'docx') cb.checked = id.endsWith('_docx');
+    });
+  },
+
+  async generate() {
+    const types = [];
+    document.querySelectorAll('[data-bdl]:checked').forEach(cb => types.push(cb.dataset.bdl));
+    if (types.length === 0) { Toast.warning('Sélectionne au moins un type de document'); return; }
+
+    const refs = Array.from(this._selected);
+    const progress = document.getElementById('bulkProgress');
+    progress.classList.remove('hidden');
+    progress.innerHTML = `
+      <div>⏳ Génération du ZIP en cours…</div>
+      <div style="font-size:11px;color:var(--ink-3);margin-top:4px">${refs.length} dossier${refs.length > 1 ? 's' : ''} × ${types.length} type${types.length > 1 ? 's' : ''}</div>
+      <div class="progress-bar"><div class="progress-bar-fill" style="width:100%"></div></div>
+    `;
+
+    const btn = document.getElementById('bulkGenerateBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Génération…'; }
+
+    try {
+      const params = new URLSearchParams({
+        action: 'bulk_download',
+        user: UserManager.getUserId(),
+        refs: refs.join(','),
+        types: types.join(',')
+      });
+      const url = `${CONFIG.SCRIPT_URL}?${params.toString()}`;
+      const resp = await fetch(url);
+      const result = await resp.json();
+
+      if (result.status !== 'success' || !result.data) {
+        Toast.error(result.message || 'Génération échouée');
+        progress.classList.add('hidden');
+        return;
+      }
+
+      const data = result.data;
+      if (!data.fileId || data.count === 0) {
+        Toast.warning(data.message || 'Aucun fichier trouvé');
+        progress.classList.add('hidden');
+        return;
+      }
+
+      // Téléchargement automatique via URL Drive
+      const downloadUrl = data.downloadUrl || `https://drive.google.com/uc?export=download&id=${data.fileId}`;
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = data.name || 'export.zip';
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 1000);
+
+      Toast.success(`📦 ZIP créé : ${data.count} fichier${data.count > 1 ? 's' : ''} (${data.processed}/${data.totalRequested} dossiers)`);
+      if (data.errors && data.errors.length > 0) {
+        console.warn('[Bulk] Erreurs :', data.errors);
+        Toast.warning(`${data.errors.length} erreur${data.errors.length > 1 ? 's' : ''} (voir console)`);
+      }
+      setTimeout(() => this.closeModal(), 1500);
+    } catch (err) {
+      Toast.error('Erreur : ' + err.message);
+      progress.classList.add('hidden');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '📥 Générer le ZIP'; }
+    }
+  }
+};
+
+// ============================================
 // API KEYS MANAGER (settings panel)
 // ============================================
 const ApiKeysManager = {
@@ -4318,6 +4505,13 @@ const DossierList = {
 
     this._body.querySelectorAll('.dossier-item').forEach(row => {
       row.addEventListener('click', (e) => {
+        // Si mode sélection actif : toggle au lieu de charger
+        if (typeof BulkDownload !== 'undefined' && BulkDownload._mode) {
+          e.preventDefault();
+          e.stopPropagation();
+          BulkDownload.toggleSelection(row.dataset.ref);
+          return;
+        }
         // Si clic sur le menu, ne pas charger
         if (e.target.closest('.dossier-menu-btn')) return;
         const ref = row.dataset.ref;
@@ -4343,6 +4537,13 @@ const DossierList = {
         if (btn) DossierMenu.showAt(btn, e.clientX, e.clientY);
       });
     });
+
+    // Réappliquer les marques visuelles de sélection (si mode actif)
+    if (typeof BulkDownload !== 'undefined' && BulkDownload._mode) {
+      document.querySelectorAll('.dossier-item[data-ref]').forEach(item => {
+        item.classList.toggle('selected', BulkDownload._selected.has(item.dataset.ref));
+      });
+    }
   }
 };
 
@@ -4865,6 +5066,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   AffairesView.init();
   ApiKeysManager.init();
   ControllerDashboard.init();
+  BulkDownload.init();
   CalendarView.init();
 
   // Logout
