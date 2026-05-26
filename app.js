@@ -2440,13 +2440,16 @@ const ControllerDashboard = {
     const stat = document.getElementById('ctrlStatut')?.value || '';
     return this._affaires.filter(a => {
       if (com && a.commercialId !== com) return false;
+      const s = (a.statut || '').toLowerCase();
       if (stat) {
-        const s = (a.statut || '').toLowerCase();
         const f = stat.toLowerCase();
         if (f === 'refusé' && !s.includes('refus') && !s.includes('annul')) return false;
         else if (f === 'ok' && !s.includes('ok') && !s.includes('accept')) return false;
         else if (f === 'réalisé' && !s.includes('réalis') && !s.includes('realis')) return false;
         else if (f === 'brouillon' && !s.includes('brouillon')) return false;
+      } else {
+        // "Tous statuts" : on EXCLUT par défaut les refusés/annulés du forecast et du CA
+        if (s.includes('refus') || s.includes('annul')) return false;
       }
       return true;
     });
@@ -3173,13 +3176,16 @@ const AffairesView = {
     const statutFilter = (document.getElementById('affairesStatut')?.value || '').trim();
     return this._affaires.filter(a => {
       if (q && !((a.ref || '').toLowerCase().includes(q) || (a.client || '').toLowerCase().includes(q))) return false;
+      const s = (a.statut || '').toLowerCase();
       if (statutFilter) {
-        const s = (a.statut || '').toLowerCase();
         const f = statutFilter.toLowerCase();
         if (f === 'refusé' && !s.includes('refus') && !s.includes('annul')) return false;
         else if (f === 'ok' && !s.includes('ok') && !s.includes('accept')) return false;
         else if (f === 'réalisé' && !s.includes('réalis') && !s.includes('realis')) return false;
         else if (f === 'brouillon' && !s.includes('brouillon')) return false;
+      } else {
+        // "Tous statuts" : EXCLUT par défaut les refusés/annulés du CA
+        if (s.includes('refus') || s.includes('annul')) return false;
       }
       return true;
     });
