@@ -13,6 +13,7 @@ const CONFIG = {
   TEMPLATE_AUTRE_ID: '1QWDp-ACk1dL7bXF2fq5VQRbPW4jxwXtUmq8hA1z4cD0',
   TEMPLATE_RESA_ID: '1U2hICEGuhzv9acMZ6MeeykIB41Lx3H0JhVEKL_8sABA',
   TEMPLATE_BORDEREAU_ID: '1APJF5zhZ0S_h362yxkNLlj3blAFimk2ulvMs1nyz5MU',
+  LOGO_PELICHET_ID: '', // ID du fichier image logo Pelichet sur Drive (à renseigner)
   FOLDER_ID: '1MP1I55oDhisTnm4zFJmki1Wap3fUff6U',
   SIGNATURES_FOLDER_ID: '15EmN3RiLKjH5i43zae6BvRlA3LKniTBF',
   SIGNATURES_FOLDER_NAME: 'Signatures',
@@ -4047,6 +4048,62 @@ function bulkDownloadZip(userId, refs, types) {
         }
       }
 
+      // Toujours régénérer le bordereau (le format a évolué : pas de personnel/véhicule)
+      if (bordDoc && (types.indexOf('bord_pdf') !== -1 || types.indexOf('bord_docx') !== -1)) {
+        try { bordDoc.setTrashed(true); Logger.log('Vieux bordereau supprimé pour ' + ref); }
+        catch (e) { Logger.log('Suppression vieux bordereau échec: ' + e); }
+        bordDoc = null;
+      }
+
+      // Régénération à la volée si fichier manquant et type demandé
+      var needsBord = (types.indexOf('bord_pdf') !== -1 || types.indexOf('bord_docx') !== -1) && !bordDoc;
+      var needsResa = (types.indexOf('resa_pdf') !== -1 || types.indexOf('resa_docx') !== -1) && !resaDoc;
+      var needsDevis = ((types.indexOf('devis_pdf') !== -1 && !devisPdf && !devisDoc) ||
+                       (types.indexOf('devis_docx') !== -1 && !devisDoc));
+
+      if (needsBord || needsResa || needsDevis) {
+        // Charger les data du dossier depuis le sheet
+        var dossier = rechercherDossier(ref, userId);
+        if (dossier) {
+          var dClient = safe(dossier.client, 'CLIENT');
+
+          // Régénérer le bordereau
+          if (needsBord) {
+            try {
+              var newBordId = genererBordereau(dossier, folder, ref, dClient);
+              if (newBordId) {
+                bordDoc = DriveApp.getFileById(newBordId);
+                Logger.log('Bordereau régénéré pour ' + ref);
+              }
+            } catch (e) { errors.push(ref + ' : régén bordereau échec - ' + e); }
+          }
+
+          // Régénérer la RESA
+          if (needsResa) {
+            try {
+              var newResaId = genererFicheResa(dossier, folder, ref, dClient);
+              if (newResaId) {
+                resaDoc = DriveApp.getFileById(newResaId);
+                Logger.log('RESA régénérée pour ' + ref);
+              }
+            } catch (e) { errors.push(ref + ' : régén RESA échec - ' + e); }
+          }
+
+          // Régénérer le devis
+          if (needsDevis) {
+            try {
+              var newDevisId = genererDevisDoc(dossier, folder, ref, dClient);
+              if (newDevisId) {
+                devisDoc = DriveApp.getFileById(newDevisId);
+                Logger.log('Devis régénéré pour ' + ref);
+              }
+            } catch (e) { errors.push(ref + ' : régén devis échec - ' + e); }
+          }
+        } else {
+          errors.push(ref + ' : données du dossier introuvables');
+        }
+      }
+
       // Devis PDF (utilise le fichier existant ou export à la volée)
       if (types.indexOf('devis_pdf') !== -1) {
         if (devisPdf) {
@@ -4153,6 +4210,146 @@ function bulkDownloadZip(userId, refs, types) {
 }
 
 /**
+ * Récupère le blob du logo Pelichet depuis le template devis.
+ * Parcourt toutes les images du template, prend la première (logo en haut).
+ * Met en cache pour éviter la relecture à chaque génération.
+ */
+function getPelichetLogoBlob() {
+  try {
+    // Cache 6h
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get('pelichet_logo_b64');
+    if (cached) {
+      var bytes = Utilities.base64Decode(cached);
+      return Utilities.newBlob(bytes, 'image/png', 'pelichet_logo.png');
+    }
+
+    var templateDoc = DocumentApp.openById(CONFIG.TEMPLATE_PELICHET_ID);
+    var body = templateDoc.getBody();
+
+    // Méthode 1 : body.getImages() (positioned images)
+    var images = body.getImages();
+    if (images && images.length > 0) {
+      var blob = images[0].getBlob();
+      try { cache.put('pelichet_logo_b64', Utilities.base64Encode(blob.getBytes()), 21600); } catch (e) {}
+      return blob;
+    }
+
+    // Méthode 2 : parcourir les paragraphes pour les inline images
+    var nbChildren = body.getNumChildren();
+    for (var i = 0; i < nbChildren; i++) {
+      var element = body.getChild(i);
+      if (element.getType() === DocumentApp.ElementType.PARAGRAPH) {
+        var para = element.asParagraph();
+        for (var c = 0; c < para.getNumChildren(); c++) {
+          var child = para.getChild(c);
+          if (child.getType() === DocumentApp.ElementType.INLINE_IMAGE) {
+            var blob2 = child.asInlineImage().getBlob();
+            try { cache.put('pelichet_logo_b64', Utilities.base64Encode(blob2.getBytes()), 21600); } catch (e) {}
+            return blob2;
+          }
+        }
+      }
+      // Tables peuvent aussi contenir des images
+      if (element.getType() === DocumentApp.ElementType.TABLE) {
+        var table = element.asTable();
+        for (var r = 0; r < table.getNumRows(); r++) {
+          var row = table.getRow(r);
+          for (var col = 0; col < row.getNumCells(); col++) {
+            var cell = row.getCell(col);
+            for (var k = 0; k < cell.getNumChildren(); k++) {
+              var cellChild = cell.getChild(k);
+              if (cellChild.getType() === DocumentApp.ElementType.PARAGRAPH) {
+                var cellPara = cellChild.asParagraph();
+                for (var pc = 0; pc < cellPara.getNumChildren(); pc++) {
+                  var pcChild = cellPara.getChild(pc);
+                  if (pcChild.getType() === DocumentApp.ElementType.INLINE_IMAGE) {
+                    var blob3 = pcChild.asInlineImage().getBlob();
+                    try { cache.put('pelichet_logo_b64', Utilities.base64Encode(blob3.getBytes()), 21600); } catch (e) {}
+                    return blob3;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    Logger.log('Aucune image trouvée dans le template devis');
+    return null;
+  } catch (e) {
+    Logger.log('getPelichetLogoBlob error: ' + e);
+    return null;
+  }
+}
+
+/**
+ * Génère le Google Doc du devis à partir des données d'un dossier.
+ * Retourne l'ID du fichier créé.
+ * Réutilisable depuis doPost ET bulk_download (régénération).
+ */
+function genererDevisDoc(data, folder, ref, client) {
+  var estPelichet = data.typeSociete === 'Pelichet';
+  var montantHT = parseFloat(data.montantHT) || 0;
+  var postes = safeArray(data.postes);
+  var fileNameBase = 'Devis_' + ref + '_' + client.replace(/\s+/g, '_');
+  var templateId = estPelichet ? CONFIG.TEMPLATE_PELICHET_ID : CONFIG.TEMPLATE_AUTRE_ID;
+
+  var copyDevis = DriveApp.getFileById(templateId).makeCopy(fileNameBase, folder);
+  var docDevis = DocumentApp.openById(copyDevis.getId());
+  var bodyDevis = docDevis.getBody();
+
+  remplirTableauPrestations(bodyDevis, postes);
+
+  var tva = montantHT * CONFIG.TVA_RATE;
+  var rplp = montantHT * CONFIG.RPLP_RATE;
+  var totalTTC = montantHT + tva + rplp;
+
+  var userId = safe(data.userId);
+  var userInfo = userId ? getUserById(userId) : null;
+  var vendeurTitre = safe(data.vendeurTitre, userInfo ? userInfo.titre : '');
+
+  var replacements = {
+    '{{nom_societe}}': estPelichet ? 'PELICHET NLC SA' : safe(data.nomPrestataire, 'Société'),
+    '{{ref}}': ref,
+    '{{date}}': dateJour(),
+    '{{salutation}}': safe(data.genre, 'Monsieur'),
+    '{{vendeur}}': safe(data.vendeur, 'ARNAUD GUEDOU'),
+    '{{vendeur_titre}}': vendeurTitre,
+    '{{vendeur_tel}}': safe(data.vendeurTel, '+41 79 688 27 35'),
+    '{{client}}': client,
+    '{{adresse_client}}': safe(data.adresseClient),
+    '{{contact}}': safe(data.contact),
+    '{{date_prevue}}': calculerDatePrevue(data),
+    '{{adresse_depart}}': safe(data.adresseDepart),
+    '{{adresse_arrivee}}': safe(data.adresseArrivee),
+    '{{ht}}': fmt(montantHT),
+    '{{tva}}': fmt(tva),
+    '{{rplp}}': fmt(rplp),
+    '{{total}}': fmt(totalTTC)
+  };
+
+  for (var key in replacements) {
+    try {
+      bodyDevis.replaceText(key.replace(/[{}]/g, '\\$&'), replacements[key]);
+    } catch (e) { Logger.log('Devis replaceText failed for ' + key + ': ' + e); }
+  }
+
+  // Insérer signature si disponible
+  var signatureId = userInfo ? userInfo.signatureId : '';
+  if (signatureId) {
+    try { insererSignature(bodyDevis, signatureId); }
+    catch (sigErr) { Logger.log('Erreur insertion signature: ' + sigErr); }
+  } else {
+    bodyDevis.replaceText('\\{\\{signature\\}\\}', '');
+  }
+
+  docDevis.saveAndClose();
+  return copyDevis.getId();
+}
+
+/**
  * Génère le bordereau de travail (Word + PDF).
  * Un seul document qui liste TOUTES les prestations du dossier.
  * Retourne l'ID du Google Doc créé.
@@ -4167,6 +4364,27 @@ function genererBordereau(data, folder, ref, client) {
   var bordFileId = copy.getId();
   var doc = DocumentApp.openById(bordFileId);
   var body = doc.getBody();
+
+  // Insérer le logo Pelichet en haut du document (récupéré depuis le template devis)
+  try {
+    var logoBlob = getPelichetLogoBlob();
+    if (logoBlob) {
+      var logoPara = body.insertParagraph(0, '');
+      var logoImg = logoPara.appendInlineImage(logoBlob);
+      // Redimensionner (largeur 180 px, hauteur proportionnelle)
+      var origW = logoImg.getWidth();
+      var origH = logoImg.getHeight();
+      var maxW = 180;
+      if (origW > maxW) {
+        var ratio = maxW / origW;
+        logoImg.setWidth(maxW);
+        logoImg.setHeight(Math.round(origH * ratio));
+      }
+      logoPara.setAlignment(DocumentApp.HorizontalAlignment.LEFT);
+    }
+  } catch (logoErr) {
+    Logger.log('Insertion logo bordereau échec: ' + logoErr);
+  }
 
   // Découper les adresses en 2 lignes (nom + adresse complète vs ville)
   function splitAddress(addr) {
@@ -4185,8 +4403,30 @@ function genererBordereau(data, folder, ref, client) {
   var arrivee = splitAddress(safe(data.adresseArrivee));
   var contactStr = [safe(data.contact), safe(data.contactTel)].filter(function(s) { return s; }).join(' - ');
 
+  // Calcul de la plage de dates de la mission (du premier RDV au dernier jour ouvré)
+  var dateMissionStr = (function() {
+    var allDates = [];
+    safeArray(data.postes).forEach(function(p) {
+      var rdvs = safeArray(p.rdvs).filter(function(r) { return r.date; });
+      if (rdvs.length === 0) return;
+      var firstRdvDate = (rdvs[0].date instanceof Date) ? rdvs[0].date : new Date(rdvs[0].date);
+      if (isNaN(firstRdvDate.getTime())) return;
+      var normalized = new Date(firstRdvDate.getFullYear(), firstRdvDate.getMonth(), firstRdvDate.getDate(), 12, 0, 0);
+      var nbJoursVal = parseFloat(p.jours) || 1;
+      var joursOuvres = getJoursOuvres(normalized, Math.max(1, Math.ceil(nbJoursVal)));
+      allDates.push(joursOuvres[0]);
+      allDates.push(joursOuvres[joursOuvres.length - 1]);
+    });
+    if (allDates.length === 0) return dateJour();
+    allDates.sort(function(a, b) { return a - b; });
+    var premierFmt = Utilities.formatDate(allDates[0], CONFIG.TIMEZONE, 'dd.MM.yyyy');
+    var dernierFmt = Utilities.formatDate(allDates[allDates.length - 1], CONFIG.TIMEZONE, 'dd.MM.yyyy');
+    if (premierFmt === dernierFmt) return premierFmt;
+    return 'du ' + premierFmt + ' au ' + dernierFmt;
+  })();
+
   var replacements = {
-    'date': dateJour(),
+    'date': dateMissionStr,
     'coordinateur': safe(data.coordinateur, 'WOTQUENNE LILOU').toUpperCase(),
     'coordinateur_tel': safe(data.coordinateurTel, '022 827 36 97'),
     'ref': ref,
@@ -4247,6 +4487,20 @@ function genererBordereau(data, folder, ref, client) {
   if (paragraph && container && insertionIndex >= 0) {
     var allPostes = safeArray(data.postes);
 
+    // Calculer le nombre total de jours sur toutes les prestations
+    var totalJours = 0;
+    allPostes.forEach(function(p) {
+      if (safe(p.titre, '')) totalJours += parseFloat(p.jours) || 1;
+    });
+    if (totalJours > 0) {
+      var totalLabel = (totalJours === 0.5) ? '1/2 jour'
+        : (totalJours % 1 === 0 ? totalJours : totalJours.toFixed(1)) + (totalJours > 1 ? ' jours' : ' jour');
+      var pTotal = container.insertParagraph(insertionIndex++, 'DURÉE TOTALE : ' + totalLabel);
+      resetStyle(pTotal, { bold: true, size: FONT_SIZE_RDV, color: COLOR_RDV });
+      var pSepTotal = container.insertParagraph(insertionIndex++, '');
+      resetStyle(pSepTotal, { size: FONT_SIZE_TEXTE });
+    }
+
     allPostes.forEach(function(p) {
       var titre = safe(p.titre, '').toUpperCase();
       if (!titre) return;
@@ -4279,27 +4533,13 @@ function genererBordereau(data, folder, ref, client) {
         resetStyle(pTask, { size: FONT_SIZE_TEXTE });
       }
 
-      // Matériel
+      // Matériel uniquement (pas de personnel ni véhicules sur le bordereau)
       var materielList = safeArray(p.materiel);
       if (materielList.length > 0) {
         var pEmpty = container.insertParagraph(insertionIndex++, '');
         resetStyle(pEmpty, { size: FONT_SIZE_TEXTE });
         var pMat = container.insertParagraph(insertionIndex++, 'Matériel : ' + materielList.join(', '));
         resetStyle(pMat, { italic: true, size: FONT_SIZE_MATERIEL });
-      }
-
-      // Personnel et véhicules (résumé)
-      var personnelList = transformerPersonnel(safeArray(p.personnel));
-      if (personnelList.length > 0) {
-        var pPers = container.insertParagraph(insertionIndex++, 'Personnel : ' + personnelList.join(', '));
-        resetStyle(pPers, { italic: true, size: FONT_SIZE_MATERIEL });
-      }
-      var vehiculesList = safeArray(p.vehicules);
-      var enginsList = safeArray(p.engins);
-      var allVeh = vehiculesList.concat(enginsList);
-      if (allVeh.length > 0) {
-        var pVeh = container.insertParagraph(insertionIndex++, 'Véhicules : ' + allVeh.join(', '));
-        resetStyle(pVeh, { italic: true, size: FONT_SIZE_MATERIEL });
       }
 
       // Ligne vide de séparation
