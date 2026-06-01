@@ -663,12 +663,12 @@ input:focus, textarea:focus, select:focus { outline: none; }
   margin-top: 5px;
   background: var(--ink-4);
 }
-.dossier-dot.status-draft   { background: var(--amber); }
-.dossier-dot.status-sent    { background: var(--blue); }
-.dossier-dot.status-won     { background: var(--green); }
-.dossier-dot.status-ok      { background: var(--green); }
-.dossier-dot.status-archive { background: var(--ink-4); }
-.dossier-dot.status-refus { background: var(--red); }
+.dossier-dot.status-draft   { background: var(--amber); }   /* Brouillon — jaune */
+.dossier-dot.status-sent    { background: var(--blue); }    /* Envoyé — bleu */
+.dossier-dot.status-ok      { background: var(--blue); }    /* Accepté — bleu (mission à venir) */
+.dossier-dot.status-won     { background: var(--green); }   /* Réalisé — vert (mission terminée) */
+.dossier-dot.status-archive { background: var(--ink-4); }   /* Archivé — gris */
+.dossier-dot.status-refus   { background: var(--red); }     /* Refusé — rouge */
 
 /* Bouton menu contextuel sur dossier — toujours visible */
 .dossier-menu-btn {
@@ -739,10 +739,10 @@ input:focus, textarea:focus, select:focus { outline: none; }
   background: var(--ink-4);
   flex-shrink: 0;
 }
-.dossier-context-menu .dot.status-ok { background: var(--green); }
-.dossier-context-menu .dot.status-won { background: var(--blue); }
-.dossier-context-menu .dot.status-refus { background: var(--red); }
-.dossier-context-menu .dot.status-draft { background: var(--amber); }
+.dossier-context-menu .dot.status-ok { background: var(--blue); }    /* Accepté — bleu */
+.dossier-context-menu .dot.status-won { background: var(--green); }  /* Réalisé — vert */
+.dossier-context-menu .dot.status-refus { background: var(--red); }  /* Refusé — rouge */
+.dossier-context-menu .dot.status-draft { background: var(--amber); }/* Brouillon — jaune */
 .dossier-ref {
   font-family: var(--font-mono);
   font-size: 11px; font-weight: 600;

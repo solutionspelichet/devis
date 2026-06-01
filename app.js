@@ -4666,8 +4666,11 @@ const DossierMenu = {
         const res = await resp.json();
         if (res.status === 'success') {
           Toast.success(`✅ ${ref} → ${statut}`);
-          DossierList._loaded = false;
-          DossierList.fetch();
+          // Petit délai pour laisser Google Sheets persister avant de re-lire
+          setTimeout(() => {
+            DossierList._loaded = false;
+            DossierList.fetch();
+          }, 600);
         } else {
           Toast.error('Erreur : ' + (res.message || 'Statut non modifié'));
         }
