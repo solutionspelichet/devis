@@ -2339,6 +2339,8 @@ const RealiseManager = {
       if (res.status === 'success') {
         Toast.success(`📋 Réalisé sauvegardé · marge ${this._currentMarge()}`);
         window._currentDossierRealise = realise;
+        // Rafraîchir le right rail pour afficher la marge réelle
+        if (typeof RightRail !== 'undefined') RightRail.update();
 
         // Sauvegarde locale (localStorage) en backup
         try {
@@ -3622,25 +3624,37 @@ const RightRail = {
     const fmt0 = (v) => Math.round(v).toLocaleString('fr-CH');
 
     const htInput = document.querySelector('[name="montantHT"]');
-    const ht = parseFloat(htInput?.value) || this._sumPostes();
+    const htDevis = parseFloat(htInput?.value) || this._sumPostes();
+
+    // Si réalisé sauvegardé : utiliser le montant facturé réel comme HT et le coût réel manuel
+    const realise = window._currentDossierRealise;
+    const hasRealise = !!realise;
+    const htReal = (hasRealise && realise.montantFacture > 0) ? parseFloat(realise.montantFacture) : null;
+    const coutManuel = (hasRealise && realise.coutReelManuel != null && !isNaN(parseFloat(realise.coutReelManuel)))
+      ? parseFloat(realise.coutReelManuel) : null;
+
+    const ht = htReal != null ? htReal : htDevis;
     const tva = ht * (CONFIG.TVA_RATE || 0.081);
     const rplp = ht * (CONFIG.RPLP_RATE || 0.005);
     const ttc = ht + tva + rplp;
 
-    // Calcul coûts par catégorie et marge (si TarifManager disponible)
-    let coutTotal = 0;
+    // Calcul coûts estimés par catégorie depuis les chips (toujours utile pour la répartition)
+    let coutTotalEstime = 0;
     const catTotals = { personnel: 0, vehicules: 0, engins: 0, materiel: 0 };
     document.querySelectorAll('.poste-card').forEach(card => {
       try {
         const calc = TarifManager?.calculerPrixPoste?.(card);
         if (calc) {
-          coutTotal += calc.cout || 0;
+          coutTotalEstime += calc.cout || 0;
           (calc.details || []).forEach(d => {
             if (catTotals[d.type] !== undefined) catTotals[d.type] += d.prix || 0;
           });
         }
       } catch (e) { /* ignore */ }
     });
+
+    // Coût à utiliser pour la marge : manuel réel > calcul réel chips > estimé
+    const coutTotal = coutManuel != null ? coutManuel : coutTotalEstime;
 
     // Taux de marge (markup) : (HT - coût) / coût × 100
     const marge = coutTotal > 0 ? ((ht - coutTotal) / coutTotal * 100) : 0;
@@ -3655,15 +3669,22 @@ const RightRail = {
     const sub = document.getElementById('railTotalSub');
     if (sub) sub.textContent = `HT · ${postesCount} poste${postesCount > 1 ? 's' : ''} · ${fmt0(ttc)} TTC`;
 
-    // Marge
+    // Marge (avec indication si basée sur réalisé ou estimé)
     const margePct = document.getElementById('railMargePct');
-    if (margePct) margePct.textContent = coutTotal > 0 ? `${marge.toFixed(1)} %` : '—';
+    if (margePct) {
+      margePct.textContent = coutTotal > 0 ? `${marge.toFixed(1)} %` : '—';
+      margePct.title = hasRealise ? 'Marge réelle (depuis le réalisé)' : 'Marge estimée (depuis le devis)';
+    }
     const margeBar = document.getElementById('railMargeBar');
     if (margeBar) margeBar.style.width = `${Math.max(0, Math.min(100, marge * 2))}%`;
     const railCout = document.getElementById('railCout');
-    if (railCout) railCout.textContent = `Coût ${fmt(coutTotal)}`;
+    if (railCout) railCout.textContent = (hasRealise ? 'Coût réel ' : 'Coût ') + fmt(coutTotal);
     const railGain = document.getElementById('railGain');
-    if (railGain) railGain.textContent = `Gain ${fmt(gain)}`;
+    if (railGain) railGain.textContent = (hasRealise ? 'Gain réel ' : 'Gain ') + fmt(gain);
+
+    // Label marge dans le right rail (indique si réelle ou estimée)
+    const margeLabelEl = document.querySelector('#rightRail .rail-section:first-child div[style*="display:flex"] span:first-child');
+    if (margeLabelEl) margeLabelEl.textContent = hasRealise ? 'Marge réelle' : 'Marge';
 
     // Répartition par catégorie
     const catBreak = document.getElementById('railCatBreak');
@@ -4769,9 +4790,10 @@ const DossierLoader = {
       if (data.volumeEstime) form.querySelector('[name="volumeEstime"]').value = data.volumeEstime;
 
       PosteManager.loadPostes(data.postes);
-      // Mémoriser le réalisé existant pour restoration dans le modal
+      // Mémoriser le réalisé existant pour restoration dans le modal + right rail
       window._currentDossierRealise = data.realise || null;
       PriceCalc.updateBreakdown();
+      if (typeof RightRail !== 'undefined') RightRail.update();
       Toast.success('Dossier chargé !' + (data.realise ? ' (avec réalisé)' : ''));
     } catch (err) {
       Toast.error('Erreur de chargement : ' + err.message);
