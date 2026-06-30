@@ -985,6 +985,22 @@
 
                 <div id="realiseBody"></div>
 
+                <!-- Coût réel final (raccourci visible) -->
+                <div class="realise-cout-rapide">
+                    <div class="rcr-head">
+                        <span class="rcr-icon">✏️</span>
+                        <div>
+                            <div class="rcr-title">Coût réel final (rapide)</div>
+                            <div class="rcr-sub">Saisis directement le coût total réel si tu ne veux pas cocher chaque ressource</div>
+                        </div>
+                    </div>
+                    <div class="rcr-row">
+                        <span class="mono" style="font-size:13px;color:var(--ink-3)">CHF</span>
+                        <input type="number" id="rsCoutReelInputTop" step="0.01" placeholder="ex: 850.00" class="font-mono" style="font-size:20px;font-weight:700;flex:1;min-width:0">
+                        <button type="button" id="rsCoutReelAutoTop" class="btn btn-ghost btn-xs" title="Vider et reprendre le calcul auto depuis les chips">↻ Auto</button>
+                    </div>
+                </div>
+
                 <div class="realise-summary">
                     <h4 class="settings-section-title mt-6">Synthèse coût/marge</h4>
                     <div class="realise-summary-grid">
@@ -994,8 +1010,13 @@
                         </div>
                         <div class="rs-card">
                             <div class="rs-label">Coût réel</div>
-                            <div class="rs-value" id="rsCoutReel">0 CHF</div>
+                            <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+                                <span class="mono" style="font-size:11px;color:var(--ink-3)">CHF</span>
+                                <input type="number" id="rsCoutReelInput" step="0.01" placeholder="auto" class="font-mono" style="font-size:18px;font-weight:600;flex:1;min-width:0">
+                                <button type="button" id="rsCoutReelAuto" class="btn btn-ghost btn-xs" title="Calculer depuis les chips cochés">↻</button>
+                            </div>
                             <div class="rs-delta" id="rsCoutDelta"></div>
+                            <div id="rsCoutAutoHint" style="font-size:10px;color:var(--ink-4);margin-top:4px;font-style:italic"></div>
                         </div>
                         <div class="rs-card">
                             <div class="rs-label">Marge réelle</div>

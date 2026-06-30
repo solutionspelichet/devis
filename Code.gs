@@ -2057,7 +2057,8 @@ function genererForecastControllerXlsx(filters) {
   var totalCA = affaires.reduce(function(s, a) { return s + (a.montantFacture || 0); }, 0);
   var totalCout = affaires.reduce(function(s, a) { return s + (a.coutPourMarge || 0); }, 0);
   var totalGain = totalCA - totalCout;
-  var margeMoyenne = totalCA > 0 ? (totalGain / totalCA * 100) : 0;
+  // Taux de marge moyen (markup) : (CA - coût) / coût × 100
+  var margeMoyenne = totalCout > 0 ? (totalGain / totalCout * 100) : 0;
   var nbAffaires = affaires.length;
   var nbAcceptes = affaires.filter(function(a) { return /ok|accept/i.test(a.statut); }).length;
   var nbRefuses = affaires.filter(function(a) { return /refus|annul/i.test(a.statut); }).length;
@@ -2385,7 +2386,8 @@ function genererForecastControllerXlsx(filters) {
     var ca = aff.reduce(function(s, a) { return s + (a.montantFacture || 0); }, 0);
     var co = aff.reduce(function(s, a) { return s + (a.coutPourMarge || 0); }, 0);
     var gain = ca - co;
-    var marge = ca > 0 ? gain / ca : 0;
+    // Taux de marge (markup) : gain / coût
+    var marge = co > 0 ? gain / co : 0;
     return [commerciaux[cid], aff.length, ca, co, gain, marge];
   });
 
@@ -2491,7 +2493,8 @@ function listerAffaires(userId) {
 
     // Coût utilisé pour la marge : réel si défini, sinon estimé
     var coutPourMarge = coutReel > 0 ? coutReel : coutEstime;
-    var margePct = montantFacture > 0 && coutPourMarge > 0 ? ((montantFacture - coutPourMarge) / montantFacture * 100) : 0;
+    // Taux de marge (markup) : (CA - coût) / coût × 100
+    var margePct = coutPourMarge > 0 ? ((montantFacture - coutPourMarge) / coutPourMarge * 100) : 0;
     var gain = montantFacture - coutPourMarge;
 
     // Date prévue : première date des RDVs
@@ -2888,7 +2891,8 @@ function genererXlsxRealise(data) {
   var coutEstime = calculerCoutEstime(data);
   var coutReel = calculerCoutReel(data);
   var montantFacture = parseFloat(realise.montantFacture) || (parseFloat(data.montantHT) || 0);
-  var margePct = montantFacture > 0 ? ((montantFacture - coutReel) / montantFacture * 100) : 0;
+  // Taux de marge (markup) : (CA - coût) / coût × 100
+  var margePct = coutReel > 0 ? ((montantFacture - coutReel) / coutReel * 100) : 0;
   var deltaCout = coutReel - coutEstime;
 
   rows.push(['SYNTHÈSE', '', '', '', '', '']);
@@ -3010,9 +3014,17 @@ function calculerCoutEstime(data) {
   return total;
 }
 
-/** Calcule le coût réel total d'un dossier depuis data.realise */
+/** Calcule le coût réel total d'un dossier depuis data.realise
+ *  Si un coût manuel a été saisi, l'utilise prioritairement.
+ *  Sinon, calcule depuis les ressources cochées × tarifs.
+ */
 function calculerCoutReel(data) {
-  if (!data.realise || !data.realise.postes) return 0;
+  if (!data.realise) return 0;
+  // Priorité au coût manuel s'il a été saisi
+  if (data.realise.coutReelManuel != null && data.realise.coutReelManuel !== '' && !isNaN(parseFloat(data.realise.coutReelManuel))) {
+    return parseFloat(data.realise.coutReelManuel);
+  }
+  if (!data.realise.postes) return 0;
   var tarifs = getTarifs();
 
   function getCout(type, label) {
@@ -4210,78 +4222,100 @@ function bulkDownloadZip(userId, refs, types) {
 }
 
 /**
- * Récupère le blob du logo Pelichet depuis le template devis.
- * Parcourt toutes les images du template, prend la première (logo en haut).
- * Met en cache pour éviter la relecture à chaque génération.
+ * Récupère le blob du logo Pelichet depuis le template devis (ou RESA en fallback).
+ * Cherche dans : body inline, body positioned, header, footer, tables récursives.
  */
 function getPelichetLogoBlob() {
   try {
     // Cache 6h
     var cache = CacheService.getScriptCache();
-    var cached = cache.get('pelichet_logo_b64');
+    var cached = cache.get('pelichet_logo_b64_v2');
     if (cached) {
+      Logger.log('Logo récupéré depuis cache');
       var bytes = Utilities.base64Decode(cached);
       return Utilities.newBlob(bytes, 'image/png', 'pelichet_logo.png');
     }
 
-    var templateDoc = DocumentApp.openById(CONFIG.TEMPLATE_PELICHET_ID);
-    var body = templateDoc.getBody();
-
-    // Méthode 1 : body.getImages() (positioned images)
-    var images = body.getImages();
-    if (images && images.length > 0) {
-      var blob = images[0].getBlob();
-      try { cache.put('pelichet_logo_b64', Utilities.base64Encode(blob.getBytes()), 21600); } catch (e) {}
-      return blob;
+    // Helper : chercher la 1re image inline dans un section (body/header/footer/cell)
+    function findInline(section, label) {
+      try {
+        var result = section.findElement(DocumentApp.ElementType.INLINE_IMAGE);
+        if (result) {
+          Logger.log('Logo trouvé (inline) dans ' + label);
+          return result.getElement().asInlineImage().getBlob();
+        }
+      } catch (e) { Logger.log('findInline ' + label + ' error: ' + e); }
+      return null;
     }
 
-    // Méthode 2 : parcourir les paragraphes pour les inline images
-    var nbChildren = body.getNumChildren();
-    for (var i = 0; i < nbChildren; i++) {
-      var element = body.getChild(i);
-      if (element.getType() === DocumentApp.ElementType.PARAGRAPH) {
-        var para = element.asParagraph();
-        for (var c = 0; c < para.getNumChildren(); c++) {
-          var child = para.getChild(c);
-          if (child.getType() === DocumentApp.ElementType.INLINE_IMAGE) {
-            var blob2 = child.asInlineImage().getBlob();
-            try { cache.put('pelichet_logo_b64', Utilities.base64Encode(blob2.getBytes()), 21600); } catch (e) {}
-            return blob2;
+    // Helper : chercher dans positioned images
+    function findPositioned(section, label) {
+      try {
+        if (typeof section.getImages === 'function') {
+          var imgs = section.getImages();
+          if (imgs && imgs.length > 0) {
+            Logger.log('Logo trouvé (positioned) dans ' + label + ' (' + imgs.length + ' image(s))');
+            return imgs[0].getBlob();
           }
         }
-      }
-      // Tables peuvent aussi contenir des images
-      if (element.getType() === DocumentApp.ElementType.TABLE) {
-        var table = element.asTable();
-        for (var r = 0; r < table.getNumRows(); r++) {
-          var row = table.getRow(r);
-          for (var col = 0; col < row.getNumCells(); col++) {
-            var cell = row.getCell(col);
-            for (var k = 0; k < cell.getNumChildren(); k++) {
-              var cellChild = cell.getChild(k);
-              if (cellChild.getType() === DocumentApp.ElementType.PARAGRAPH) {
-                var cellPara = cellChild.asParagraph();
-                for (var pc = 0; pc < cellPara.getNumChildren(); pc++) {
-                  var pcChild = cellPara.getChild(pc);
-                  if (pcChild.getType() === DocumentApp.ElementType.INLINE_IMAGE) {
-                    var blob3 = pcChild.asInlineImage().getBlob();
-                    try { cache.put('pelichet_logo_b64', Utilities.base64Encode(blob3.getBytes()), 21600); } catch (e) {}
-                    return blob3;
-                  }
-                }
-              }
-            }
-          }
+      } catch (e) { Logger.log('findPositioned ' + label + ' error: ' + e); }
+      return null;
+    }
+
+    // Templates à essayer dans l'ordre
+    var templates = [
+      { id: CONFIG.TEMPLATE_PELICHET_ID, name: 'devis' },
+      { id: CONFIG.TEMPLATE_RESA_ID, name: 'RESA' }
+    ];
+
+    for (var t = 0; t < templates.length; t++) {
+      var tpl = templates[t];
+      if (!tpl.id) continue;
+      try {
+        Logger.log('Recherche logo dans template ' + tpl.name + ' (' + tpl.id + ')');
+        var doc = DocumentApp.openById(tpl.id);
+
+        // 1) Body inline
+        var blob = findInline(doc.getBody(), tpl.name + ' body inline');
+        if (blob) { cache.put('pelichet_logo_b64_v2', Utilities.base64Encode(blob.getBytes()), 21600); return blob; }
+
+        // 2) Body positioned
+        blob = findPositioned(doc.getBody(), tpl.name + ' body positioned');
+        if (blob) { cache.put('pelichet_logo_b64_v2', Utilities.base64Encode(blob.getBytes()), 21600); return blob; }
+
+        // 3) Header
+        var header = doc.getHeader();
+        if (header) {
+          blob = findInline(header, tpl.name + ' header inline');
+          if (blob) { cache.put('pelichet_logo_b64_v2', Utilities.base64Encode(blob.getBytes()), 21600); return blob; }
+          blob = findPositioned(header, tpl.name + ' header positioned');
+          if (blob) { cache.put('pelichet_logo_b64_v2', Utilities.base64Encode(blob.getBytes()), 21600); return blob; }
         }
+
+        // 4) Footer
+        var footer = doc.getFooter();
+        if (footer) {
+          blob = findInline(footer, tpl.name + ' footer inline');
+          if (blob) { cache.put('pelichet_logo_b64_v2', Utilities.base64Encode(blob.getBytes()), 21600); return blob; }
+        }
+      } catch (e) {
+        Logger.log('Template ' + tpl.name + ' inaccessible: ' + e);
       }
     }
 
-    Logger.log('Aucune image trouvée dans le template devis');
+    Logger.log('AUCUNE image trouvée dans les templates devis ni RESA');
     return null;
   } catch (e) {
-    Logger.log('getPelichetLogoBlob error: ' + e);
+    Logger.log('getPelichetLogoBlob ERREUR: ' + e);
     return null;
   }
+}
+
+/** Vide le cache du logo (à appeler si le logo change dans le template) */
+function clearLogoCache() {
+  try { CacheService.getScriptCache().remove('pelichet_logo_b64_v2'); } catch (e) {}
+  try { CacheService.getScriptCache().remove('pelichet_logo_b64'); } catch (e) {}
+  Logger.log('Cache logo vidé');
 }
 
 /**
@@ -4365,26 +4399,7 @@ function genererBordereau(data, folder, ref, client) {
   var doc = DocumentApp.openById(bordFileId);
   var body = doc.getBody();
 
-  // Insérer le logo Pelichet en haut du document (récupéré depuis le template devis)
-  try {
-    var logoBlob = getPelichetLogoBlob();
-    if (logoBlob) {
-      var logoPara = body.insertParagraph(0, '');
-      var logoImg = logoPara.appendInlineImage(logoBlob);
-      // Redimensionner (largeur 180 px, hauteur proportionnelle)
-      var origW = logoImg.getWidth();
-      var origH = logoImg.getHeight();
-      var maxW = 180;
-      if (origW > maxW) {
-        var ratio = maxW / origW;
-        logoImg.setWidth(maxW);
-        logoImg.setHeight(Math.round(origH * ratio));
-      }
-      logoPara.setAlignment(DocumentApp.HorizontalAlignment.LEFT);
-    }
-  } catch (logoErr) {
-    Logger.log('Insertion logo bordereau échec: ' + logoErr);
-  }
+  // Logo inséré manuellement dans le template Google Doc — pas d'insertion code-side
 
   // Découper les adresses en 2 lignes (nom + adresse complète vs ville)
   function splitAddress(addr) {

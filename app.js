@@ -948,6 +948,7 @@ const TarifManager = {
     }
     if (coutEngins > 0) {
       const marge = this.getMarge('engins');
+      // Taux de marge (markup) : prix = coût × (1 + marge/100)
       const prix = coutEngins * (1 + marge / 100);
       totalCout += coutEngins; totalPrix += prix;
       details.push({ type: 'engins', cout: coutEngins, marge, prix });
@@ -980,6 +981,7 @@ const TarifManager = {
 
       if (coutCat > 0) {
         const marge = this.getMarge(type);
+        // Taux de marge (markup) : prix = coût × (1 + marge/100)
         const prix = coutCat * (1 + marge / 100);
         totalCout += coutCat; totalPrix += prix;
         details.push({ type, cout: coutCat, marge, prix });
@@ -1874,6 +1876,28 @@ const RealiseManager = {
     document.getElementById('realiseSave')?.addEventListener('click', () => this.save());
     document.getElementById('realiseUseEstim')?.addEventListener('click', () => this._fillFromEstim());
     document.getElementById('realiseUseReel')?.addEventListener('click', () => this._fillFromReel());
+    // Inputs coût réel manuel (top + summary) — sync les deux et recompute
+    const syncCoutManuel = (src) => {
+      const top = document.getElementById('rsCoutReelInputTop');
+      const sum = document.getElementById('rsCoutReelInput');
+      const val = src.value;
+      if (top && top !== src) top.value = val;
+      if (sum && sum !== src) sum.value = val;
+      this._recompute();
+    };
+    ['rsCoutReelInput', 'rsCoutReelInputTop'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', (e) => syncCoutManuel(e.target));
+    });
+    // Boutons ↻ Auto : vider les deux inputs
+    ['rsCoutReelAuto', 'rsCoutReelAutoTop'].forEach(id => {
+      document.getElementById(id)?.addEventListener('click', () => {
+        ['rsCoutReelInput', 'rsCoutReelInputTop'].forEach(iid => {
+          const inp = document.getElementById(iid);
+          if (inp) inp.value = '';
+        });
+        this._recompute();
+      });
+    });
   },
 
   open() {
@@ -1895,6 +1919,13 @@ const RealiseManager = {
     const ht = parseFloat(document.querySelector('[name="montantHT"]')?.value) || 0;
     inputFact.value = (existing?.montantFacture ?? ht).toFixed(2);
     document.getElementById('realiseNotes').value = existing?.notes || '';
+
+    // Coût réel manuel (si déjà sauvegardé) — restaurer dans les 2 inputs
+    const coutVal = (existing?.coutReelManuel != null) ? existing.coutReelManuel : '';
+    ['rsCoutReelInput', 'rsCoutReelInputTop'].forEach(id => {
+      const inp = document.getElementById(id);
+      if (inp) inp.value = coutVal;
+    });
 
     this._modal.classList.remove('hidden');
     this._recompute();
@@ -2191,22 +2222,38 @@ const RealiseManager = {
 
     const fmt = (v) => v.toLocaleString('fr-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' CHF';
     document.getElementById('rsCoutEstim').textContent = fmt(coutEstim);
-    document.getElementById('rsCoutReel').textContent = fmt(coutReel);
 
-    // Delta coût
-    const deltaCout = coutReel - coutEstim;
+    // Coût réel : prend la valeur manuelle si renseignée (top ou summary, sync), sinon calcul auto
+    const coutInputTop = document.getElementById('rsCoutReelInputTop');
+    const coutInput = document.getElementById('rsCoutReelInput');
+    const rawVal = (coutInputTop?.value || coutInput?.value || '').trim();
+    const coutManuel = rawVal === '' ? NaN : parseFloat(rawVal);
+    const coutReelUtilise = !isNaN(coutManuel) && coutManuel >= 0 ? coutManuel : coutReel;
+    const hint = document.getElementById('rsCoutAutoHint');
+    if (hint) {
+      if (!isNaN(coutManuel) && coutManuel >= 0) {
+        hint.textContent = '✏️ Manuel · calcul auto = ' + fmt(coutReel);
+      } else if (coutReel > 0) {
+        hint.textContent = '🤖 Auto · ' + fmt(coutReel) + ' (depuis les ressources cochées)';
+      } else {
+        hint.textContent = 'Coche des ressources OU saisis directement le coût réel';
+      }
+    }
+
+    // Delta coût (basé sur la valeur utilisée)
+    const deltaCout = coutReelUtilise - coutEstim;
     const deltaCoutPct = coutEstim > 0 ? ((deltaCout / coutEstim) * 100).toFixed(1) : 0;
     const deltaEl = document.getElementById('rsCoutDelta');
     deltaEl.textContent = (deltaCout >= 0 ? '+' : '') + fmt(deltaCout) + ' (' + deltaCoutPct + '%)';
     deltaEl.className = 'rs-delta ' + (deltaCout > 0 ? 'negative' : 'positive');
 
-    // Marge réelle = (montantFacture - coutReel) / montantFacture
+    // Taux de marge réel = (montantFacture - coutReelUtilise) / coutReelUtilise
     const montantFact = parseFloat(document.getElementById('realiseMontantFacture')?.value) || 0;
     const margeEl = document.getElementById('rsMargeReel');
     const margeDeltaEl = document.getElementById('rsMargeDelta');
-    if (montantFact > 0 && coutReel > 0) {
-      const margePct = ((montantFact - coutReel) / montantFact * 100).toFixed(1);
-      const margeMontant = montantFact - coutReel;
+    if (montantFact > 0 && coutReelUtilise > 0) {
+      const margePct = ((montantFact - coutReelUtilise) / coutReelUtilise * 100).toFixed(1);
+      const margeMontant = montantFact - coutReelUtilise;
       margeEl.textContent = margePct + ' %';
       margeDeltaEl.textContent = (margeMontant >= 0 ? '+' : '') + fmt(margeMontant);
       margeDeltaEl.className = 'rs-delta ' + (margeMontant > 0 ? 'positive' : 'negative');
@@ -2257,9 +2304,12 @@ const RealiseManager = {
       });
       postes.push({ jours });
     });
+    var coutManuelRaw = (document.getElementById('rsCoutReelInputTop')?.value || document.getElementById('rsCoutReelInput')?.value || '').trim();
+    var coutManuelVal = coutManuelRaw === '' ? NaN : parseFloat(coutManuelRaw);
     return {
       postes,
       montantFacture: parseFloat(document.getElementById('realiseMontantFacture').value) || 0,
+      coutReelManuel: !isNaN(coutManuelVal) && coutManuelVal >= 0 ? coutManuelVal : null,
       notes: document.getElementById('realiseNotes').value || '',
       savedAt: new Date().toISOString()
     };
@@ -2472,7 +2522,8 @@ const ControllerDashboard = {
     const totalCA = filtered.reduce((s, a) => s + (a.montantFacture || 0), 0);
     const totalCout = filtered.reduce((s, a) => s + (a.coutPourMarge || 0), 0);
     const totalGain = totalCA - totalCout;
-    const margeGlobale = totalCA > 0 ? (totalGain / totalCA * 100) : 0;
+    // Taux de marge moyen (markup) : (CA - coût) / coût
+    const margeGlobale = totalCout > 0 ? (totalGain / totalCout * 100) : 0;
     const nbAffaires = filtered.length;
     const nbAcceptes = filtered.filter(a => /ok|accept/i.test(a.statut)).length;
     const nbCommUnique = new Set(filtered.map(a => a.commercialId).filter(Boolean)).size;
@@ -2589,7 +2640,7 @@ const ControllerDashboard = {
       const co = aff.reduce((s, a) => s + (a.coutPourMarge || 0), 0);
       const c = this._commerciaux.find(x => x.userId === cid);
       const name = c ? c.prenom + (c.nom ? ' ' + c.nom : '') : cid;
-      return { name, color: comColor[cid], nb: aff.length, ca, co, gain: ca - co, marge: ca > 0 ? ((ca - co) / ca * 100) : 0 };
+      return { name, color: comColor[cid], nb: aff.length, ca, co, gain: ca - co, marge: co > 0 ? ((ca - co) / co * 100) : 0 };
     }).sort((a, b) => b.ca - a.ca);
 
     document.getElementById('ctrlPerfTbody').innerHTML = perfRows.length === 0
@@ -3231,7 +3282,8 @@ const AffairesView = {
     const totalCA = filtered.reduce((s, a) => s + (a.montantFacture || 0), 0);
     const totalCout = filtered.reduce((s, a) => s + (a.coutPourMarge || 0), 0);
     const totalGain = totalCA - totalCout;
-    const margeGlobale = totalCA > 0 ? (totalGain / totalCA * 100) : 0;
+    // Taux de marge moyen (markup) : (CA - coût) / coût
+    const margeGlobale = totalCout > 0 ? (totalGain / totalCout * 100) : 0;
     const nbAffaires = filtered.length;
     const nbAcceptes = filtered.filter(a => /ok|accept/i.test(a.statut)).length;
     const nbRefuses = filtered.filter(a => /refus|annul/i.test(a.statut)).length;
@@ -3590,7 +3642,8 @@ const RightRail = {
       } catch (e) { /* ignore */ }
     });
 
-    const marge = ht > 0 && coutTotal > 0 ? ((ht - coutTotal) / ht * 100) : 0;
+    // Taux de marge (markup) : (HT - coût) / coût × 100
+    const marge = coutTotal > 0 ? ((ht - coutTotal) / coutTotal * 100) : 0;
     const gain = ht - coutTotal;
 
     // Gros chiffre HT
