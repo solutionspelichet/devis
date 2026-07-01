@@ -2706,33 +2706,52 @@ const ControllerDashboard = {
 
       const xlsxData = result.data || {};
 
-      // Méthode prioritaire : URL Drive directe (fichier rendu public ANYONE_WITH_LINK)
-      // Cela déclenche le téléchargement natif du navigateur (le plus fiable)
-      if (xlsxData.fileId || xlsxData.downloadUrl) {
-        const downloadUrl = xlsxData.downloadUrl || `https://drive.google.com/uc?export=download&id=${xlsxData.fileId}`;
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = xlsxData.name || 'Forecast.xlsx';
-        a.target = '_blank';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => document.body.removeChild(a), 1000);
-        Toast.success('📊 Téléchargement lancé : ' + (xlsxData.name || 'Forecast.xlsx'));
+      if (!xlsxData.fileId && !xlsxData.downloadUrl && !xlsxData.b64) {
+        Toast.error('Réponse serveur incomplète');
         return;
       }
 
-      // Fallback base64 (au cas où Drive serait inaccessible)
-      if (xlsxData.b64 && xlsxData.name) {
+      const viewUrl = xlsxData.url || (xlsxData.fileId ? `https://docs.google.com/spreadsheets/d/${xlsxData.fileId}/edit` : '');
+      const downloadUrl = xlsxData.downloadUrl || (xlsxData.fileId ? `https://docs.google.com/spreadsheets/d/${xlsxData.fileId}/export?format=xlsx` : '');
+
+      // Tentative téléchargement automatique
+      let autoTriggered = false;
+      if (downloadUrl) {
         try {
-          this._downloadFromB64(xlsxData.b64, xlsxData.name);
-          Toast.success('📊 Forecast Excel téléchargé');
-          return;
-        } catch (errB64) {
-          console.warn('[Forecast] Base64 download failed:', errB64);
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          a.download = xlsxData.name || 'Forecast.xlsx';
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { try { document.body.removeChild(a); } catch (e) {} }, 1500);
+          autoTriggered = true;
+        } catch (e) {
+          console.warn('[Forecast] Auto-download failed:', e);
         }
       }
 
-      Toast.error('Téléchargement impossible — aucune URL ni base64 reçus');
+      // Afficher une UI de fallback visible en tout état de cause
+      let statusPanel = document.getElementById('ctrlExportPanel');
+      if (!statusPanel) {
+        statusPanel = document.createElement('div');
+        statusPanel.id = 'ctrlExportPanel';
+        statusPanel.className = 'ctrl-export-panel';
+        document.querySelector('.ctrl-filters')?.after(statusPanel);
+      }
+      statusPanel.innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;background:var(--green-soft);border:1px solid oklch(0.55 0.13 155);border-radius:var(--radius-md);margin:12px 0">
+          <span style="font-size:18px">📊</span>
+          <div style="flex:1;min-width:200px">
+            <div style="font-weight:600;color:oklch(0.30 0.12 155)">Forecast Excel prêt</div>
+            <div style="font-size:11px;color:var(--ink-3);margin-top:2px">${xlsxData.name || 'Forecast.xlsx'} — ${autoTriggered ? 'téléchargement automatique lancé' : 'clique le bouton ci-dessous'}</div>
+          </div>
+          <a href="${downloadUrl}" target="_blank" class="btn btn-red btn-xs" download="${xlsxData.name || 'Forecast.xlsx'}">⬇ Télécharger</a>
+          ${viewUrl ? `<a href="${viewUrl}" target="_blank" class="btn btn-ghost btn-xs">📁 Voir sur Drive</a>` : ''}
+        </div>
+      `;
+
+      Toast.success('📊 Forecast Excel généré');
     } catch (err) {
       console.error('[Forecast] Erreur:', err);
       Toast.error('Erreur : ' + err.message);
