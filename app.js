@@ -2713,25 +2713,51 @@ const ControllerDashboard = {
 
       const viewUrl = xlsxData.url || (xlsxData.fileId ? `https://docs.google.com/spreadsheets/d/${xlsxData.fileId}/edit` : '');
       const downloadUrl = xlsxData.downloadUrl || (xlsxData.fileId ? `https://docs.google.com/spreadsheets/d/${xlsxData.fileId}/export?format=xlsx` : '');
+      const fileName = xlsxData.name || 'Forecast.xlsx';
 
-      // Tentative téléchargement automatique
+      // MÉTHODE PRIORITAIRE : téléchargement depuis le base64 (bulletproof, pas de dépendance à l'auth Google)
       let autoTriggered = false;
-      if (downloadUrl) {
+      let blobUrl = '';
+      if (xlsxData.b64 && xlsxData.b64.length > 100) {
+        try {
+          const binary = atob(xlsxData.b64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = fileName;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            try { document.body.removeChild(a); } catch (e) {}
+          }, 2000);
+          autoTriggered = true;
+          console.log('[Forecast] Téléchargement base64 déclenché');
+        } catch (e) {
+          console.warn('[Forecast] Base64 download failed:', e);
+        }
+      }
+
+      // Fallback : URL Drive directe
+      if (!autoTriggered && downloadUrl) {
         try {
           const a = document.createElement('a');
           a.href = downloadUrl;
-          a.download = xlsxData.name || 'Forecast.xlsx';
+          a.download = fileName;
           a.style.display = 'none';
           document.body.appendChild(a);
           a.click();
           setTimeout(() => { try { document.body.removeChild(a); } catch (e) {} }, 1500);
           autoTriggered = true;
         } catch (e) {
-          console.warn('[Forecast] Auto-download failed:', e);
+          console.warn('[Forecast] URL download failed:', e);
         }
       }
 
-      // Afficher une UI de fallback visible en tout état de cause
+      // UI de fallback toujours affichée avec un lien vers le blob si disponible
       let statusPanel = document.getElementById('ctrlExportPanel');
       if (!statusPanel) {
         statusPanel = document.createElement('div');
@@ -2739,14 +2765,15 @@ const ControllerDashboard = {
         statusPanel.className = 'ctrl-export-panel';
         document.querySelector('.ctrl-filters')?.after(statusPanel);
       }
+      const dlHref = blobUrl || downloadUrl;
       statusPanel.innerHTML = `
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;background:var(--green-soft);border:1px solid oklch(0.55 0.13 155);border-radius:var(--radius-md);margin:12px 0">
           <span style="font-size:18px">📊</span>
           <div style="flex:1;min-width:200px">
             <div style="font-weight:600;color:oklch(0.30 0.12 155)">Forecast Excel prêt</div>
-            <div style="font-size:11px;color:var(--ink-3);margin-top:2px">${xlsxData.name || 'Forecast.xlsx'} — ${autoTriggered ? 'téléchargement automatique lancé' : 'clique le bouton ci-dessous'}</div>
+            <div style="font-size:11px;color:var(--ink-3);margin-top:2px">${fileName} — ${autoTriggered ? 'téléchargement lancé' : 'clique le bouton ci-dessous'}</div>
           </div>
-          <a href="${downloadUrl}" target="_blank" class="btn btn-red btn-xs" download="${xlsxData.name || 'Forecast.xlsx'}">⬇ Télécharger</a>
+          <a href="${dlHref}" ${blobUrl ? '' : 'target="_blank"'} class="btn btn-red btn-xs" download="${fileName}">⬇ Télécharger</a>
           ${viewUrl ? `<a href="${viewUrl}" target="_blank" class="btn btn-ghost btn-xs">📁 Voir sur Drive</a>` : ''}
         </div>
       `;
