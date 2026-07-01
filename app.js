@@ -2683,6 +2683,7 @@ const ControllerDashboard = {
   },
 
   async _exportXlsx() {
+    Toast.info('🚀 Lancement export Excel…');
     const btn = document.getElementById('ctrlExportXlsx');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Génération…'; }
     try {
@@ -2694,13 +2695,17 @@ const ControllerDashboard = {
       });
       const url = `${CONFIG.SCRIPT_URL}?${params.toString()}`;
       console.log('[Forecast] Fetching XLSX:', url);
+      Toast.info('📡 Requête envoyée au serveur…');
       const resp = await fetch(url);
       console.log('[Forecast] Response status:', resp.status);
+      Toast.info(`📥 Réponse serveur : ${resp.status}`);
       const result = await resp.json();
       console.log('[Forecast] Result keys:', Object.keys(result.data || {}), 'b64 length:', result.data?.b64?.length);
+      Toast.info(`✅ JSON parsé · status: ${result.status} · b64: ${result.data?.b64?.length || 0} chars`);
 
       if (result.status !== 'success') {
-        Toast.error(result.message || 'Génération échouée — voir logs Apps Script');
+        Toast.error('❌ Erreur : ' + (result.message || 'Génération échouée — voir logs Apps Script'));
+        alert('Serveur : ' + JSON.stringify(result).substring(0, 300));
         return;
       }
 
