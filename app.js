@@ -2757,28 +2757,40 @@ const ControllerDashboard = {
         }
       }
 
-      // UI de fallback toujours affichée avec un lien vers le blob si disponible
+      // UI de fallback TRÈS visible avec diagnostic
       let statusPanel = document.getElementById('ctrlExportPanel');
       if (!statusPanel) {
         statusPanel = document.createElement('div');
         statusPanel.id = 'ctrlExportPanel';
-        statusPanel.className = 'ctrl-export-panel';
         document.querySelector('.ctrl-filters')?.after(statusPanel);
       }
       const dlHref = blobUrl || downloadUrl;
+      const b64OK = xlsxData.b64 && xlsxData.b64.length > 100;
+
       statusPanel.innerHTML = `
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;background:var(--green-soft);border:1px solid oklch(0.55 0.13 155);border-radius:var(--radius-md);margin:12px 0">
-          <span style="font-size:18px">📊</span>
-          <div style="flex:1;min-width:200px">
-            <div style="font-weight:600;color:oklch(0.30 0.12 155)">Forecast Excel prêt</div>
-            <div style="font-size:11px;color:var(--ink-3);margin-top:2px">${fileName} — ${autoTriggered ? 'téléchargement lancé' : 'clique le bouton ci-dessous'}</div>
+        <div style="padding:20px;background:linear-gradient(135deg, var(--green-soft) 0%, oklch(0.94 0.05 155) 100%);border:2px solid oklch(0.50 0.15 155);border-radius:var(--radius-md);margin:16px 0;box-shadow:0 4px 12px oklch(0.30 0.10 155 / 0.15)">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+            <span style="font-size:32px">📊</span>
+            <div style="flex:1">
+              <div style="font-size:16px;font-weight:700;color:oklch(0.28 0.14 155)">Forecast Excel prêt !</div>
+              <div style="font-size:12px;color:var(--ink-2);margin-top:2px">Fichier : <strong>${fileName}</strong></div>
+            </div>
           </div>
-          <a href="${dlHref}" ${blobUrl ? '' : 'target="_blank"'} class="btn btn-red btn-xs" download="${fileName}">⬇ Télécharger</a>
-          ${viewUrl ? `<a href="${viewUrl}" target="_blank" class="btn btn-ghost btn-xs">📁 Voir sur Drive</a>` : ''}
+
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+            ${blobUrl ? `<a href="${blobUrl}" download="${fileName}" class="btn btn-red" style="padding:10px 18px;font-weight:700;font-size:14px">⬇ Télécharger (recommandé)</a>` : ''}
+            ${downloadUrl ? `<a href="${downloadUrl}" target="_blank" class="btn btn-ghost" style="padding:10px 18px">🔗 Lien Drive</a>` : ''}
+            ${viewUrl ? `<a href="${viewUrl}" target="_blank" class="btn btn-ghost" style="padding:10px 18px">📁 Ouvrir sur Drive</a>` : ''}
+          </div>
+
+          <div style="font-size:10px;color:var(--ink-3);border-top:1px dashed oklch(0.50 0.15 155 / 0.3);padding-top:8px">
+            <div>🔧 Diagnostic : ${b64OK ? '✅ Base64 reçu (' + Math.round(xlsxData.b64.length / 1024) + ' Ko)' : '⚠️ Pas de base64'} · ${xlsxData.fileId ? '✅ Fichier Drive ID reçu' : '⚠️ Pas de fileId'} · ${autoTriggered ? '✅ Téléchargement auto tenté' : '⚠️ Téléchargement auto échoué'}</div>
+            <div style="margin-top:2px">Si aucun téléchargement ne s'est lancé, <strong>clique sur le gros bouton rouge ci-dessus</strong>. Il ouvrira le fichier directement.</div>
+          </div>
         </div>
       `;
 
-      Toast.success('📊 Forecast Excel généré');
+      Toast.success('📊 Forecast Excel prêt · Vois le panneau vert ci-dessus');
     } catch (err) {
       console.error('[Forecast] Erreur:', err);
       Toast.error('Erreur : ' + err.message);
