@@ -2757,40 +2757,45 @@ const ControllerDashboard = {
         }
       }
 
-      // UI de fallback TRÈS visible avec diagnostic
-      let statusPanel = document.getElementById('ctrlExportPanel');
-      if (!statusPanel) {
-        statusPanel = document.createElement('div');
-        statusPanel.id = 'ctrlExportPanel';
-        document.querySelector('.ctrl-filters')?.after(statusPanel);
-      }
-      const dlHref = blobUrl || downloadUrl;
+      // MODAL OVERLAY plein écran, impossible à manquer
+      let overlay = document.getElementById('ctrlExportOverlay');
+      if (overlay) overlay.remove();
+      overlay = document.createElement('div');
+      overlay.id = 'ctrlExportOverlay';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px';
+
       const b64OK = xlsxData.b64 && xlsxData.b64.length > 100;
 
-      statusPanel.innerHTML = `
-        <div style="padding:20px;background:linear-gradient(135deg, var(--green-soft) 0%, oklch(0.94 0.05 155) 100%);border:2px solid oklch(0.50 0.15 155);border-radius:var(--radius-md);margin:16px 0;box-shadow:0 4px 12px oklch(0.30 0.10 155 / 0.15)">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-            <span style="font-size:32px">📊</span>
-            <div style="flex:1">
-              <div style="font-size:16px;font-weight:700;color:oklch(0.28 0.14 155)">Forecast Excel prêt !</div>
-              <div style="font-size:12px;color:var(--ink-2);margin-top:2px">Fichier : <strong>${fileName}</strong></div>
-            </div>
+      overlay.innerHTML = `
+        <div style="max-width:520px;width:100%;background:white;border-radius:14px;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
+          <div style="text-align:center;margin-bottom:20px">
+            <div style="font-size:56px;margin-bottom:8px">📊</div>
+            <div style="font-size:22px;font-weight:700;color:#166534">Forecast Excel prêt !</div>
+            <div style="font-size:13px;color:#666;margin-top:6px">Fichier : <strong>${fileName}</strong></div>
           </div>
 
-          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">
-            ${blobUrl ? `<a href="${blobUrl}" download="${fileName}" class="btn btn-red" style="padding:10px 18px;font-weight:700;font-size:14px">⬇ Télécharger (recommandé)</a>` : ''}
-            ${downloadUrl ? `<a href="${downloadUrl}" target="_blank" class="btn btn-ghost" style="padding:10px 18px">🔗 Lien Drive</a>` : ''}
-            ${viewUrl ? `<a href="${viewUrl}" target="_blank" class="btn btn-ghost" style="padding:10px 18px">📁 Ouvrir sur Drive</a>` : ''}
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+            ${blobUrl ? `<a href="${blobUrl}" download="${fileName}" id="ctrlExportBigBtn" style="display:block;padding:16px;background:linear-gradient(135deg,#dc2626 0%,#991b1b 100%);color:white;text-align:center;font-weight:700;font-size:16px;border-radius:10px;text-decoration:none;box-shadow:0 4px 12px rgba(220,38,38,0.4)">⬇ TÉLÉCHARGER LE FICHIER</a>` : ''}
+            ${downloadUrl ? `<a href="${downloadUrl}" target="_blank" style="display:block;padding:12px;background:#f5f5f5;color:#333;text-align:center;font-weight:600;font-size:13px;border-radius:8px;text-decoration:none;border:1px solid #ddd">🔗 Alternative : téléchargement via Drive</a>` : ''}
+            ${viewUrl ? `<a href="${viewUrl}" target="_blank" style="display:block;padding:10px;background:transparent;color:#666;text-align:center;font-size:12px;text-decoration:underline">📁 Voir le fichier sur Google Drive</a>` : ''}
           </div>
 
-          <div style="font-size:10px;color:var(--ink-3);border-top:1px dashed oklch(0.50 0.15 155 / 0.3);padding-top:8px">
-            <div>🔧 Diagnostic : ${b64OK ? '✅ Base64 reçu (' + Math.round(xlsxData.b64.length / 1024) + ' Ko)' : '⚠️ Pas de base64'} · ${xlsxData.fileId ? '✅ Fichier Drive ID reçu' : '⚠️ Pas de fileId'} · ${autoTriggered ? '✅ Téléchargement auto tenté' : '⚠️ Téléchargement auto échoué'}</div>
-            <div style="margin-top:2px">Si aucun téléchargement ne s'est lancé, <strong>clique sur le gros bouton rouge ci-dessus</strong>. Il ouvrira le fichier directement.</div>
+          <div style="font-size:11px;color:#666;background:#f9f9f9;padding:10px 12px;border-radius:6px;margin-bottom:14px;border-left:3px solid #16a34a">
+            <div style="font-weight:600;margin-bottom:4px">🔧 État de la génération</div>
+            <div>Base64 : ${b64OK ? '✅ ' + Math.round(xlsxData.b64.length / 1024) + ' Ko reçus' : '⚠️ non reçu'}</div>
+            <div>Drive : ${xlsxData.fileId ? '✅ ID reçu' : '⚠️ pas d ID'}</div>
+            <div>Auto : ${autoTriggered ? '✅ tenté' : '⚠️ échoué'}</div>
           </div>
+
+          <button type="button" id="ctrlExportClose" style="display:block;width:100%;padding:10px;background:transparent;border:1px solid #ddd;border-radius:8px;font-size:13px;color:#666;cursor:pointer">Fermer</button>
         </div>
       `;
 
-      Toast.success('📊 Forecast Excel prêt · Vois le panneau vert ci-dessus');
+      document.body.appendChild(overlay);
+      document.getElementById('ctrlExportClose')?.addEventListener('click', () => overlay.remove());
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+      Toast.success('📊 Forecast Excel prêt · clique le gros bouton rouge');
     } catch (err) {
       console.error('[Forecast] Erreur:', err);
       Toast.error('Erreur : ' + err.message);
