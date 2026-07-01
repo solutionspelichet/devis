@@ -2490,6 +2490,8 @@ const ControllerDashboard = {
   _filtered() {
     const com = document.getElementById('ctrlCommercial')?.value || '';
     const stat = document.getElementById('ctrlStatut')?.value || '';
+    const start = this._start;
+    const end = this._end;
     return this._affaires.filter(a => {
       if (com && a.commercialId !== com) return false;
       const s = (a.statut || '').toLowerCase();
@@ -2502,6 +2504,12 @@ const ControllerDashboard = {
       } else {
         // "Tous statuts" : on EXCLUT par défaut les refusés/annulés du forecast et du CA
         if (s.includes('refus') || s.includes('annul')) return false;
+      }
+      // Filtre time frame (période sélectionnée)
+      if (start || end) {
+        if (!a.mois) return false;
+        if (start && a.mois < start) return false;
+        if (end && a.mois > end) return false;
       }
       return true;
     });
@@ -2683,7 +2691,6 @@ const ControllerDashboard = {
   },
 
   async _exportXlsx() {
-    Toast.info('🚀 Lancement export Excel…');
     const btn = document.getElementById('ctrlExportXlsx');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Génération…'; }
     try {
@@ -2695,17 +2702,14 @@ const ControllerDashboard = {
       });
       const url = `${CONFIG.SCRIPT_URL}?${params.toString()}`;
       console.log('[Forecast] Fetching XLSX:', url);
-      Toast.info('📡 Requête envoyée au serveur…');
       const resp = await fetch(url);
       console.log('[Forecast] Response status:', resp.status);
-      Toast.info(`📥 Réponse serveur : ${resp.status}`);
       const result = await resp.json();
       console.log('[Forecast] Result keys:', Object.keys(result.data || {}), 'b64 length:', result.data?.b64?.length);
-      Toast.info(`✅ JSON parsé · status: ${result.status} · b64: ${result.data?.b64?.length || 0} chars`);
 
       if (result.status !== 'success') {
-        Toast.error('❌ Erreur : ' + (result.message || 'Génération échouée — voir logs Apps Script'));
-        alert('Serveur : ' + JSON.stringify(result).substring(0, 300));
+        Toast.error('❌ Erreur serveur : ' + (result.message || 'Génération échouée'));
+        console.error('[Forecast] Server error:', result);
         return;
       }
 
@@ -3295,6 +3299,9 @@ const AffairesView = {
   _filtered() {
     const q = (document.getElementById('affairesSearch')?.value || '').toLowerCase().trim();
     const statutFilter = (document.getElementById('affairesStatut')?.value || '').trim();
+    // Filtre plage forecast : ne retenir que les affaires dont le mois tombe dans la plage
+    const start = this._forecastStart;
+    const end = this._forecastEnd;
     return this._affaires.filter(a => {
       if (q && !((a.ref || '').toLowerCase().includes(q) || (a.client || '').toLowerCase().includes(q))) return false;
       const s = (a.statut || '').toLowerCase();
@@ -3307,6 +3314,12 @@ const AffairesView = {
       } else {
         // "Tous statuts" : EXCLUT par défaut les refusés/annulés du CA
         if (s.includes('refus') || s.includes('annul')) return false;
+      }
+      // Filtre time frame : n'inclure que les affaires dont le mois est dans la plage
+      if (start || end) {
+        if (!a.mois) return false; // pas de mois → hors plage
+        if (start && a.mois < start) return false;
+        if (end && a.mois > end) return false;
       }
       return true;
     });
