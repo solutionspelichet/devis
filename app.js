@@ -2694,11 +2694,16 @@ const ControllerDashboard = {
     const btn = document.getElementById('ctrlExportXlsx');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Génération…'; }
     try {
+      // Envoyer tous les filtres actifs pour que l'Excel reflète l'UI
+      const commercial = document.getElementById('ctrlCommercial')?.value || '';
+      const statut = document.getElementById('ctrlStatut')?.value || '';
       const params = new URLSearchParams({
         action: 'forecast_xlsx',
         user: UserManager.getUserId(),
         start: this._start || '',
-        end: this._end || ''
+        end: this._end || '',
+        commercial,
+        statut
       });
       const url = `${CONFIG.SCRIPT_URL}?${params.toString()}`;
       console.log('[Forecast] Fetching XLSX:', url);
