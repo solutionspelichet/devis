@@ -4,7 +4,7 @@
  * Les appels Google Apps Script (SCRIPT_URL) passent toujours réseau (jamais cachés).
  */
 
-const CACHE_VERSION = 'pelichet-v3.0.0';
+const CACHE_VERSION = 'pelichet-v3.0.1';
 const APP_SHELL = [
   './',
   './index.html',
