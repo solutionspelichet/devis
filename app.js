@@ -4975,6 +4975,7 @@ const FormSubmitter = {
         body: JSON.stringify(data)
       });
       const res = await response.json();
+      console.log('[Submit] Réponse serveur:', res.status, res.message || '', 'pdfB64 len=', (res.pdfB64||'').length, 'resaPdfB64 len=', (res.resaPdfB64||'').length, 'bordPdfB64 len=', (res.bordPdfB64||'').length);
 
       if (res.status === 'success') {
         Toast.success('Devis généré avec succès !');
