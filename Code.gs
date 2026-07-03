@@ -1587,7 +1587,12 @@ function doGet(e) {
             return jsonResponse({ status: 'error', code: 403, message: 'Accès réservé au Controller / Admin' });
           }
         }
-        var filters = { start: e.parameter.start || '', end: e.parameter.end || '' };
+        var filters = {
+          start: e.parameter.start || '',
+          end: e.parameter.end || '',
+          commercial: e.parameter.commercial || '',
+          statut: e.parameter.statut || ''
+        };
         Logger.log('forecast_xlsx demandé par ' + fcUserId + ' filters=' + JSON.stringify(filters));
         var result = genererForecastControllerXlsx(filters);
         if (!result) return jsonResponse({ status: 'error', message: 'Génération XLSX échouée — voir logs Apps Script' });
@@ -1669,6 +1674,36 @@ function doGet(e) {
         return jsonResponse({ status: 'success', data: lignes });
       } catch (err) {
         return jsonResponse({ status: 'error', message: 'Ventilation: ' + err });
+      }
+    }
+
+    // --- Récupération à la demande d'un document généré (PDF/DOCX) en base64 ---
+    // Utilisé après génération devis+RESA+bordereau pour éviter une réponse POST
+    // trop volumineuse (qui provoque une redirection perdant le corps de la requête).
+    if (action === 'fetch_file_b64') {
+      try {
+        var ffDocId = e.parameter.docId || '';
+        var ffFormat = e.parameter.format || 'pdf';
+        var ffBaseName = e.parameter.baseName || 'document';
+        if (!ffDocId) return jsonResponse({ status: 'error', message: 'docId requis' });
+        var ffBlob;
+        var ffMime;
+        if (ffFormat === 'docx') {
+          ffBlob = exportDocAsDocx(ffDocId);
+          ffMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        } else {
+          ffBlob = DriveApp.getFileById(ffDocId).getAs('application/pdf');
+          ffMime = 'application/pdf';
+        }
+        if (!ffBlob) return jsonResponse({ status: 'error', message: 'Export impossible pour ' + ffFormat });
+        return jsonResponse({
+          status: 'success',
+          b64: Utilities.base64Encode(ffBlob.getBytes()),
+          name: ffBaseName + '.' + ffFormat,
+          mime: ffMime
+        });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur fetch_file_b64: ' + err });
       }
     }
 
@@ -2042,6 +2077,30 @@ function genererForecastControllerXlsx(filters) {
     });
   }
 
+  // Filtre commercial
+  if (filters.commercial) {
+    affaires = affaires.filter(function(a) { return a.commercialId === filters.commercial; });
+  }
+
+  // Filtre statut
+  if (filters.statut) {
+    var f = String(filters.statut).toLowerCase();
+    affaires = affaires.filter(function(a) {
+      var s = String(a.statut || '').toLowerCase();
+      if (f === 'refusé') return s.indexOf('refus') !== -1 || s.indexOf('annul') !== -1;
+      if (f === 'ok') return s.indexOf('ok') !== -1 || s.indexOf('accept') !== -1;
+      if (f === 'réalisé') return s.indexOf('réalis') !== -1 || s.indexOf('realis') !== -1;
+      if (f === 'brouillon') return s.indexOf('brouillon') !== -1;
+      return true;
+    });
+  } else {
+    // Par défaut : exclure les refusés/annulés
+    affaires = affaires.filter(function(a) {
+      var s = String(a.statut || '').toLowerCase();
+      return s.indexOf('refus') === -1 && s.indexOf('annul') === -1;
+    });
+  }
+
   // 1) Créer un Spreadsheet temporaire
   var fileName = 'Forecast_Pelichet_' + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd_HHmmss');
   var ss = SpreadsheetApp.create('TEMP_' + fileName);
@@ -2209,9 +2268,9 @@ function genererForecastControllerXlsx(filters) {
   fc.setColumnWidth(1, 110);
   for (var i = 2; i <= header.length; i++) fc.setColumnWidth(i, 120);
 
-  // Figer header + colonne mois
-  fc.setFrozenRows(3);
-  fc.setFrozenColumns(1);
+  // Figer header (les colonnes ne peuvent pas être figées à cause du merge A1:Z1)
+  try { fc.setFrozenRows(3); } catch (e) { Logger.log('setFrozenRows fc failed: ' + e); }
+  // setFrozenColumns désactivé — incompatible avec la cellule fusionnée A1:Z1
 
   // Insérer un graphique à barres (non bloquant si erreur)
   try {
@@ -2309,7 +2368,7 @@ function genererForecastControllerXlsx(filters) {
 
   // Largeurs colonnes
   [120, 200, 130, 90, 110, 130].forEach(function(w, i) { dpm.setColumnWidth(i + 1, w); });
-  dpm.setFrozenRows(2);
+  try { dpm.setFrozenRows(2); } catch (e) { Logger.log('setFrozenRows dpm failed: ' + e); }
 
   // ============================================
   // Sheet 4 : DÉTAIL DES AFFAIRES
@@ -2365,7 +2424,7 @@ function genererForecastControllerXlsx(filters) {
   }
   // Largeurs
   [120, 180, 130, 90, 110, 80, 110, 130, 110, 90].forEach(function(w, i) { detail.setColumnWidth(i + 1, w); });
-  detail.setFrozenRows(3);
+  try { detail.setFrozenRows(3); } catch (e) { Logger.log('setFrozenRows detail failed: ' + e); }
 
   // ============================================
   // Sheet 4 : PERFORMANCE PAR COMMERCIAL
@@ -2418,35 +2477,75 @@ function genererForecastControllerXlsx(filters) {
     }
   }
   [180, 90, 130, 130, 130, 110].forEach(function(w, i) { perf.setColumnWidth(i + 1, w); });
-  perf.setFrozenRows(3);
+  try { perf.setFrozenRows(3); } catch (e) { Logger.log('setFrozenRows perf failed: ' + e); }
 
   // Sauvegarde + flush
   SpreadsheetApp.flush();
 
-  // 2) Renommer + déplacer le Spreadsheet dans le dossier racine
+  // 2) Récupérer le Spreadsheet temporaire ID
   var ssId = ss.getId();
-  ss.rename(fileName);
+  ss.rename(fileName + '_temp');
+
+  // 3) Exporter en XLSX via l'API Sheets export
+  var xlsxBlob = null;
+  var b64 = '';
   try {
-    var ssFile = DriveApp.getFileById(ssId);
-    ssFile.moveTo(DriveApp.getFolderById(CONFIG.FOLDER_ID));
-    // Rendre accessible (lecture) pour permettre le téléchargement direct par Anthony
-    ssFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  } catch (e) {
-    Logger.log('Move/share failed (non bloquant): ' + e);
+    var xlsxExportUrl = 'https://docs.google.com/spreadsheets/d/' + ssId + '/export?format=xlsx';
+    var response = UrlFetchApp.fetch(xlsxExportUrl, {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+      followRedirects: true
+    });
+    if (response.getResponseCode() === 200) {
+      xlsxBlob = response.getBlob();
+      xlsxBlob.setContentType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      xlsxBlob.setName(fileName + '.xlsx');
+      b64 = Utilities.base64Encode(xlsxBlob.getBytes());
+      Logger.log('Forecast XLSX exporté (' + b64.length + ' chars base64)');
+    } else {
+      Logger.log('Export XLSX HTTP ' + response.getResponseCode() + ': ' + response.getContentText().substring(0, 500));
+    }
+  } catch (exportErr) {
+    Logger.log('Export XLSX échec: ' + exportErr);
   }
 
-  // 3) Construire l'URL de téléchargement XLSX direct (Google convertit à la volée)
-  var downloadUrl = 'https://docs.google.com/spreadsheets/d/' + ssId + '/export?format=xlsx';
-  var viewUrl = ss.getUrl();
+  // 4) Créer un VRAI fichier .xlsx sur Drive (pas un Google Spreadsheet)
+  var xlsxFileId = ssId;
+  var xlsxViewUrl = ss.getUrl();
+  var xlsxDownloadUrl = '';
 
-  Logger.log('Forecast Spreadsheet créé: ' + viewUrl);
+  if (xlsxBlob) {
+    try {
+      var folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+      var xlsxFile = folder.createFile(xlsxBlob);
+      xlsxFile.setName(fileName + '.xlsx');
+      // Rendre accessible via lien public
+      try {
+        xlsxFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (e) { Logger.log('Sharing xlsx failed: ' + e); }
+      xlsxFileId = xlsxFile.getId();
+      xlsxViewUrl = xlsxFile.getUrl();
+      xlsxDownloadUrl = 'https://drive.google.com/uc?export=download&id=' + xlsxFileId;
+      Logger.log('XLSX file saved on Drive: ' + xlsxViewUrl);
+      // Trash temp Spreadsheet
+      try { DriveApp.getFileById(ssId).setTrashed(true); } catch (e) { /* ignore */ }
+    } catch (saveErr) {
+      Logger.log('Save XLSX to Drive failed: ' + saveErr);
+      // Fallback : garder le Spreadsheet Google
+      xlsxDownloadUrl = 'https://docs.google.com/spreadsheets/d/' + ssId + '/export?format=xlsx';
+    }
+  } else {
+    xlsxDownloadUrl = 'https://docs.google.com/spreadsheets/d/' + ssId + '/export?format=xlsx';
+  }
+
+  Logger.log('Forecast final URL: ' + xlsxDownloadUrl);
 
   return {
-    fileId: ssId,
-    url: viewUrl,
-    downloadUrl: downloadUrl,
-    name: fileName + '.xlsx'
-    // Pas de b64 — le navigateur télécharge directement depuis Google Sheets
+    fileId: xlsxFileId,
+    url: xlsxViewUrl,
+    downloadUrl: xlsxDownloadUrl,
+    name: fileName + '.xlsx',
+    b64: b64
   };
 }
 
@@ -3788,9 +3887,11 @@ function doPost(e) {
     var resaStatus = 'skipped';
     var resaError = '';
     var resaFileId = null;
+    var resaBaseName = '';
     try {
       resaFileId = genererFicheResa(data, folder, ref, client);
       resaStatus = 'ok';
+      resaBaseName = DriveApp.getFileById(resaFileId).getName();
       Logger.log('Fiche RESA generee: ' + ref);
     } catch (err) {
       resaStatus = 'error';
@@ -3802,60 +3903,16 @@ function doPost(e) {
     const pdfBlob = copyDevis.getAs('application/pdf');
     const pdfFile = folder.createFile(pdfBlob).setName(fileNameBase + '.pdf');
 
-    // 4. PDF RESA + DOCX RESA
-    var resaPdfB64 = '';
-    var resaPdfName = '';
-    var resaDocxB64 = '';
-    var resaDocxName = '';
-    if (resaFileId) {
-      try {
-        var resaFile = DriveApp.getFileById(resaFileId);
-        var resaPdfBlob = resaFile.getAs('application/pdf');
-        resaPdfB64 = Utilities.base64Encode(resaPdfBlob.getBytes());
-        resaPdfName = resaFile.getName() + '.pdf';
-
-        // Export DOCX via API Drive
-        var resaDocxBlob = exportDocAsDocx(resaFileId);
-        if (resaDocxBlob) {
-          resaDocxB64 = Utilities.base64Encode(resaDocxBlob.getBytes());
-          resaDocxName = resaFile.getName() + '.docx';
-        }
-      } catch (e) {
-        Logger.log('Erreur export RESA: ' + e);
-      }
-    }
-
-    // 5. DOCX DEVIS
-    var docxB64 = '';
-    var docxName = '';
-    try {
-      var devisDocxBlob = exportDocAsDocx(copyDevis.getId());
-      if (devisDocxBlob) {
-        docxB64 = Utilities.base64Encode(devisDocxBlob.getBytes());
-        docxName = fileNameBase + '.docx';
-      }
-    } catch (e) {
-      Logger.log('Erreur export DOCX devis: ' + e);
-    }
-
-    // 6. BORDEREAU DE TRAVAIL (PDF + DOCX)
+    // 4. BORDEREAU DE TRAVAIL (juste la génération — export PDF/DOCX à la demande)
     var bordStatus = 'skipped';
     var bordError = '';
     var bordFileId = null;
-    var bordPdfB64 = '', bordPdfName = '', bordDocxB64 = '', bordDocxName = '';
+    var bordBaseName = '';
     try {
       bordFileId = genererBordereau(data, folder, ref, client);
       if (bordFileId) {
         bordStatus = 'ok';
-        var bordFile = DriveApp.getFileById(bordFileId);
-        var bordPdfBlob = bordFile.getAs('application/pdf');
-        bordPdfB64 = Utilities.base64Encode(bordPdfBlob.getBytes());
-        bordPdfName = bordFile.getName() + '.pdf';
-        var bordDocxBlob = exportDocAsDocx(bordFileId);
-        if (bordDocxBlob) {
-          bordDocxB64 = Utilities.base64Encode(bordDocxBlob.getBytes());
-          bordDocxName = bordFile.getName() + '.docx';
-        }
+        bordBaseName = DriveApp.getFileById(bordFileId).getName();
         Logger.log('Bordereau genere: ' + ref);
       }
     } catch (err) {
@@ -3864,13 +3921,13 @@ function doPost(e) {
       Logger.log('ERREUR Bordereau: ' + err);
     }
 
-    // Encoder le PDF devis en base64
-    var pdfB64 = Utilities.base64Encode(pdfBlob.getBytes());
-
     archiver(ref, estPelichet, client, data, montantHT, pdfFile);
 
     Logger.log('Devis terminé: ' + ref + ' -> ' + pdfFile.getUrl());
 
+    // Réponse volontairement légère (pas de base64 inline) : les PDF/DOCX
+    // sont récupérés à la demande via l'action GET fetch_file_b64, pour
+    // éviter qu'une réponse POST trop volumineuse ne soit tronquée/redirigée.
     return jsonResponse({
       status: 'success',
       pdfUrl: pdfFile.getUrl(),
@@ -3879,18 +3936,11 @@ function doPost(e) {
       resaError: resaError,
       bordereau: bordStatus,
       bordereauError: bordError,
-      pdfB64: pdfB64,
-      pdfName: fileNameBase + '.pdf',
-      docxB64: docxB64,
-      docxName: docxName,
-      resaPdfB64: resaPdfB64,
-      resaPdfName: resaPdfName,
-      resaDocxB64: resaDocxB64,
-      resaDocxName: resaDocxName,
-      bordPdfB64: bordPdfB64,
-      bordPdfName: bordPdfName,
-      bordDocxB64: bordDocxB64,
-      bordDocxName: bordDocxName
+      files: {
+        devis: { docId: copyDevis.getId(), baseName: fileNameBase },
+        resa: resaFileId ? { docId: resaFileId, baseName: resaBaseName } : null,
+        bordereau: bordFileId ? { docId: bordFileId, baseName: bordBaseName } : null
+      }
     });
 
   } catch (error) {

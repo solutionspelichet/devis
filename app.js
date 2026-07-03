@@ -4975,7 +4975,7 @@ const FormSubmitter = {
         body: JSON.stringify(data)
       });
       const res = await response.json();
-      console.log('[Submit] Réponse serveur:', res.status, res.message || '', 'pdfB64 len=', (res.pdfB64||'').length, 'resaPdfB64 len=', (res.resaPdfB64||'').length, 'bordPdfB64 len=', (res.bordPdfB64||'').length);
+      console.log('[Submit] Réponse serveur:', res.status, res.message || '', 'files=', JSON.stringify(res.files || {}));
 
       if (res.status === 'success') {
         Toast.success('Devis généré avec succès !');
@@ -4991,24 +4991,43 @@ const FormSubmitter = {
         } else {
           // Filtrer selon les choix de l'utilisateur (sinon tout télécharger)
           const dl = options.downloads || {};
+          const files = res.files || {};
           const allDownloads = [
-            { key: 'devis_pdf', label: 'Devis PDF', b64: res.pdfB64, name: res.pdfName, mime: 'application/pdf' },
-            { key: 'devis_docx', label: 'Devis Word', b64: res.docxB64, name: res.docxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
-            { key: 'resa_pdf', label: 'RESA PDF', b64: res.resaPdfB64, name: res.resaPdfName, mime: 'application/pdf' },
-            { key: 'resa_docx', label: 'RESA Word', b64: res.resaDocxB64, name: res.resaDocxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
-            { key: 'bord_pdf', label: 'Bordereau PDF', b64: res.bordPdfB64, name: res.bordPdfName, mime: 'application/pdf' },
-            { key: 'bord_docx', label: 'Bordereau Word', b64: res.bordDocxB64, name: res.bordDocxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+            { key: 'devis_pdf', label: 'Devis PDF', doc: files.devis, format: 'pdf', mime: 'application/pdf' },
+            { key: 'devis_docx', label: 'Devis Word', doc: files.devis, format: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+            { key: 'resa_pdf', label: 'RESA PDF', doc: files.resa, format: 'pdf', mime: 'application/pdf' },
+            { key: 'resa_docx', label: 'RESA Word', doc: files.resa, format: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+            { key: 'bord_pdf', label: 'Bordereau PDF', doc: files.bordereau, format: 'pdf', mime: 'application/pdf' },
+            { key: 'bord_docx', label: 'Bordereau Word', doc: files.bordereau, format: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
           ];
           const hasSelection = Object.keys(dl).length > 0;
           const downloads = allDownloads
-            .filter(d => d.b64 && d.name)
+            .filter(d => d.doc && d.doc.docId)
             .filter(d => hasSelection ? dl[d.key] : true);
 
-          if (downloads.length === 0 && hasSelection) {
-            Toast.info('Aucun document sélectionné pour téléchargement');
+          if (downloads.length === 0) {
+            Toast.info(hasSelection ? 'Aucun document sélectionné pour téléchargement' : 'Aucun document disponible pour téléchargement');
           } else {
-            // Créer les blob URLs et tenter téléchargement auto
-            const downloadItems = downloads.map(d => {
+            Toast.info('⏳ Préparation des fichiers…');
+            // Récupérer chaque fichier en base64 via GET (fiable, contrairement au POST volumineux)
+            const fetched = await Promise.all(downloads.map(async (d) => {
+              try {
+                const url = `${CONFIG.SCRIPT_URL}?action=fetch_file_b64&docId=${encodeURIComponent(d.doc.docId)}&format=${d.format}&baseName=${encodeURIComponent(d.doc.baseName)}`;
+                const r = await fetch(url);
+                const j = await r.json();
+                if (j.status !== 'success') {
+                  console.warn('[Submit] fetch_file_b64 error for', d.label, j.message);
+                  return null;
+                }
+                return { ...d, b64: j.b64, name: j.name };
+              } catch (e) {
+                console.warn('[Submit] fetch_file_b64 failed for', d.label, e);
+                return null;
+              }
+            }));
+
+            // Créer les blob URLs à partir des fichiers récupérés
+            const downloadItems = fetched.filter(Boolean).map(d => {
               let blobUrl = '';
               try {
                 const bin = atob(d.b64);
@@ -5018,6 +5037,11 @@ const FormSubmitter = {
               } catch (e) { console.error('[Submit] blob creation failed:', e); }
               return { ...d, blobUrl };
             }).filter(d => d.blobUrl);
+
+            if (downloadItems.length === 0) {
+              Toast.error('Impossible de récupérer les documents générés — réessaie ou vérifie le dossier Drive');
+              return;
+            }
 
             // Tentative téléchargement auto (espacé de 600ms)
             downloadItems.forEach((d, i) => {
