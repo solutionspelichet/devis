@@ -4991,14 +4991,13 @@ const FormSubmitter = {
           // Filtrer selon les choix de l'utilisateur (sinon tout télécharger)
           const dl = options.downloads || {};
           const allDownloads = [
-            { key: 'devis_pdf', b64: res.pdfB64, name: res.pdfName, mime: 'application/pdf' },
-            { key: 'devis_docx', b64: res.docxB64, name: res.docxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
-            { key: 'resa_pdf', b64: res.resaPdfB64, name: res.resaPdfName, mime: 'application/pdf' },
-            { key: 'resa_docx', b64: res.resaDocxB64, name: res.resaDocxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
-            { key: 'bord_pdf', b64: res.bordPdfB64, name: res.bordPdfName, mime: 'application/pdf' },
-            { key: 'bord_docx', b64: res.bordDocxB64, name: res.bordDocxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+            { key: 'devis_pdf', label: 'Devis PDF', b64: res.pdfB64, name: res.pdfName, mime: 'application/pdf' },
+            { key: 'devis_docx', label: 'Devis Word', b64: res.docxB64, name: res.docxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+            { key: 'resa_pdf', label: 'RESA PDF', b64: res.resaPdfB64, name: res.resaPdfName, mime: 'application/pdf' },
+            { key: 'resa_docx', label: 'RESA Word', b64: res.resaDocxB64, name: res.resaDocxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+            { key: 'bord_pdf', label: 'Bordereau PDF', b64: res.bordPdfB64, name: res.bordPdfName, mime: 'application/pdf' },
+            { key: 'bord_docx', label: 'Bordereau Word', b64: res.bordDocxB64, name: res.bordDocxName, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
           ];
-          // Si l'option contient une sélection, ne garder que les checked. Sinon, tout télécharger.
           const hasSelection = Object.keys(dl).length > 0;
           const downloads = allDownloads
             .filter(d => d.b64 && d.name)
@@ -5007,9 +5006,70 @@ const FormSubmitter = {
           if (downloads.length === 0 && hasSelection) {
             Toast.info('Aucun document sélectionné pour téléchargement');
           } else {
-            // Déclencher chaque téléchargement espacé de 600 ms
-            downloads.forEach((d, i) => {
-              setTimeout(() => this._downloadBase64File(d.b64, d.name, d.mime), i * 600);
+            // Créer les blob URLs et tenter téléchargement auto
+            const downloadItems = downloads.map(d => {
+              let blobUrl = '';
+              try {
+                const bin = atob(d.b64);
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                blobUrl = URL.createObjectURL(new Blob([bytes], { type: d.mime }));
+              } catch (e) { console.error('[Submit] blob creation failed:', e); }
+              return { ...d, blobUrl };
+            }).filter(d => d.blobUrl);
+
+            // Tentative téléchargement auto (espacé de 600ms)
+            downloadItems.forEach((d, i) => {
+              setTimeout(() => {
+                try {
+                  const a = document.createElement('a');
+                  a.href = d.blobUrl;
+                  a.download = d.name;
+                  a.style.display = 'none';
+                  document.body.appendChild(a);
+                  a.click();
+                  setTimeout(() => { try { document.body.removeChild(a); } catch (e) {} }, 1500);
+                } catch (e) { console.warn('[Submit] auto-download failed for', d.name, e); }
+              }, i * 600);
+            });
+
+            // Panel modal avec boutons manuels toujours visibles
+            const existing = document.getElementById('submitDownloadOverlay');
+            if (existing) existing.remove();
+            const overlay = document.createElement('div');
+            overlay.id = 'submitDownloadOverlay';
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px';
+
+            const buttons = downloadItems.map(d => `
+              <a href="${d.blobUrl}" download="${d.name}" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:linear-gradient(135deg,#dc2626,#991b1b);color:white;text-decoration:none;border-radius:8px;font-weight:600;font-size:13px;box-shadow:0 2px 8px rgba(220,38,38,0.3)">
+                <span>⬇</span><span style="flex:1">${d.label}</span><span style="font-size:10px;opacity:0.8">${Math.round(d.b64.length / 1400)} Ko</span>
+              </a>
+            `).join('');
+
+            overlay.innerHTML = `
+              <div style="max-width:520px;width:100%;background:white;border-radius:14px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.4);max-height:90vh;overflow-y:auto">
+                <div style="text-align:center;margin-bottom:16px">
+                  <div style="font-size:44px;margin-bottom:4px">✅</div>
+                  <div style="font-size:20px;font-weight:700;color:#166534">Devis généré !</div>
+                  <div style="font-size:12px;color:#666;margin-top:4px">${downloadItems.length} document${downloadItems.length > 1 ? 's' : ''} prêt${downloadItems.length > 1 ? 's' : ''} au téléchargement</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">${buttons}</div>
+                <div style="font-size:10px;color:#666;background:#f9f9f9;padding:8px 12px;border-radius:6px;margin-bottom:12px">
+                  Le téléchargement automatique a été tenté. Si aucun fichier n'est arrivé, <strong>clique sur chaque bouton rouge ci-dessus</strong>.
+                </div>
+                <button type="button" id="submitDownloadClose" style="display:block;width:100%;padding:10px;background:transparent;border:1px solid #ddd;border-radius:8px;font-size:13px;color:#666;cursor:pointer">Fermer</button>
+              </div>
+            `;
+            document.body.appendChild(overlay);
+            document.getElementById('submitDownloadClose')?.addEventListener('click', () => {
+              downloadItems.forEach(d => { try { URL.revokeObjectURL(d.blobUrl); } catch (e) {} });
+              overlay.remove();
+            });
+            overlay.addEventListener('click', (e) => {
+              if (e.target === overlay) {
+                downloadItems.forEach(d => { try { URL.revokeObjectURL(d.blobUrl); } catch (e) {} });
+                overlay.remove();
+              }
             });
           }
         }
