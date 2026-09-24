@@ -822,10 +822,24 @@ const CardScanner = {
     const file = document.getElementById('cardFile');
     if (!btn || !file) return;
     btn.addEventListener('click', () => { if (!this._busy) file.click(); });
+    // Précharge le moteur dès que l'utilisateur approche le bouton (gagne ~30 s au 1er scan)
+    ['mouseenter', 'touchstart', 'focus'].forEach(ev =>
+      btn.addEventListener(ev, () => { this._getWorker().catch(() => {}); }, { once: true, passive: true }));
     file.addEventListener('change', () => {
       if (file.files && file.files[0]) this._process(file.files[0]);
       file.value = '';
     });
+  },
+
+  /** Un seul worker OCR, créé une fois puis réutilisé (langues mises en cache par le navigateur) */
+  _getWorker() {
+    if (!this._workerPromise) {
+      this._workerPromise = (async () => {
+        await this._loadTesseract();
+        return Tesseract.createWorker('fra+eng', 1, { logger: m => { if (this._onProgress) this._onProgress(m); } });
+      })().catch(err => { this._workerPromise = null; throw err; });
+    }
+    return this._workerPromise;
   },
 
   async _loadTesseract() {
@@ -865,13 +879,17 @@ const CardScanner = {
     btn.disabled = true;
     try {
       btn.textContent = '⏳ Préparation…';
-      await this._loadTesseract();
+      const first = !this._workerPromise;
+      if (first) Toast.info('Premier scan : téléchargement du moteur de lecture (~15 Mo), patiente 30 à 60 s. Les suivants seront rapides.');
+      this._onProgress = (m) => {
+        const pct = Math.round((m.progress || 0) * 100);
+        if (/core/.test(m.status)) btn.textContent = '⏳ Moteur…';
+        else if (/language|traineddata/.test(m.status)) btn.textContent = `⏳ Langues ${pct}%`;
+        else if (/recognizing/.test(m.status)) btn.textContent = `⏳ Lecture ${pct}%`;
+      };
+      const worker = await this._getWorker();
       const img = await this._downscale(file);
-      const result = await Tesseract.recognize(img, 'fra+eng', {
-        logger: m => {
-          if (m.status === 'recognizing text') btn.textContent = `⏳ Lecture ${Math.round((m.progress || 0) * 100)}%`;
-        }
-      });
+      const result = await worker.recognize(img);
       const text = (result.data && result.data.text) || '';
       if (!text.trim()) { Toast.error('Aucun texte lu — réessaie avec une photo plus nette et bien éclairée'); return; }
       this._review(this.parse(text), text);
