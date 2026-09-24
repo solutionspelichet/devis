@@ -1585,7 +1585,46 @@ const ProfilePanel = {
     this._panel.classList.add('hidden');
   },
 
+  /** Liste des comptes avec bouton de suppression */
+  renderAccounts() {
+    const box = document.getElementById('profAccounts');
+    if (!box) return;
+    const me = UserManager.getUserId();
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    box.innerHTML = (UserManager._users || []).map(u => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px">${esc(u.prenom)} ${esc(u.nom)}${u.id === me ? ' <span style="font-weight:400;opacity:.6">(toi)</span>' : ''}</div>
+          <div style="font-size:11px;opacity:.65">${esc(u.titre || u.role)}</div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-xs" data-del-user="${esc(u.id)}" style="color:var(--red)" title="Supprimer ce compte">🗑 Supprimer</button>
+      </div>`).join('');
+    box.querySelectorAll('[data-del-user]').forEach(b => b.addEventListener('click', () => this.deleteAccount(b.dataset.delUser)));
+  },
+
+  async deleteAccount(id) {
+    const target = (UserManager._users || []).find(u => u.id === id);
+    if (!target) return;
+    const self = id === UserManager.getUserId();
+    const name = `${target.prenom} ${target.nom}`.trim();
+    if (!confirm(`Supprimer le compte de ${name} ?\n\n` +
+        `Le compte disparaît de l'écran de connexion. Ses dossiers et son répertoire Drive sont conservés.` +
+        (self ? '\n\n⚠ C\'est TON compte : tu seras déconnecté.' : ''))) return;
+    try {
+      const p = new URLSearchParams({ action: 'user_delete', user: UserManager.getUserId(), target: id });
+      const j = await (await fetch(`${CONFIG.SCRIPT_URL}?${p.toString()}`)).json();
+      if (j.status !== 'success') throw new Error(j.message || 'Erreur serveur');
+      Toast.success(`Compte supprimé : ${name}`);
+      await UserManager.fetchUsers();
+      if (self) { this.close(); UserManager.logout(); }
+      else this.renderAccounts();
+    } catch (err) {
+      Toast.error('Suppression impossible : ' + err.message);
+    }
+  },
+
   render() {
+    this.renderAccounts();
     const u = UserManager.getUser();
     if (!u) return;
 

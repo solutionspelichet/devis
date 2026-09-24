@@ -690,6 +690,34 @@ function getUsers() {
 }
 
 /**
+ * Supprime un compte : retire la ligne de l'onglet Users (le compte disparaît de l'écran de connexion).
+ * Les dossiers (onglet Suivi_Devis_<ID>) et le répertoire Drive sont CONSERVÉS.
+ * Refuse de supprimer le dernier compte restant.
+ */
+function deleteUser(targetId) {
+  var ss = getSs();
+  if (!ss) throw new Error('Classeur introuvable');
+  var sheet = ss.getSheetByName(CONFIG.USERS_SHEET);
+  if (!sheet) throw new Error('Onglet Users introuvable');
+  var values = sheet.getDataRange().getValues();
+  var rows = [];
+  var target = String(targetId || '').trim().toUpperCase();
+  var targetRow = -1;
+  for (var i = 1; i < values.length; i++) {
+    var id = String(values[i][0] || '').trim();
+    if (!id) continue;
+    rows.push(i);
+    if (id.toUpperCase() === target) targetRow = i;
+  }
+  if (targetRow === -1) throw new Error('Compte introuvable');
+  if (rows.length <= 1) throw new Error('Impossible de supprimer le dernier compte');
+  var label = String(values[targetRow][2] || '') + ' ' + String(values[targetRow][1] || '');
+  sheet.deleteRow(targetRow + 1);
+  Logger.log('Compte supprimé: ' + target + ' (' + label.trim() + ') — dossiers et Drive conservés');
+  return { id: target, label: label.trim() };
+}
+
+/**
  * Retourne un utilisateur par son ID
  */
 function getUserById(userId) {
@@ -778,6 +806,9 @@ function addUser(userData) {
         break;
       }
     }
+    // Un compte supprimé garde son onglet de suivi : on ne réutilise pas son identifiant
+    // (sinon le nouveau compte hériterait des dossiers de l'ancien)
+    if (!duplicate && ss.getSheetByName(getUserSheetName(candidateId))) duplicate = true;
     if (!duplicate) break;
     attempts++;
     candidateId = id + attempts;
@@ -1450,6 +1481,19 @@ function doGet(e) {
         return jsonResponse({ status: 'success', data: listTemplates(tplUser) });
       } catch (err) {
         return jsonResponse({ status: 'error', message: 'Erreur modèles: ' + err });
+      }
+    }
+
+    if (action === 'user_delete') {
+      try {
+        var delBy = e.parameter.user || '';       // utilisateur connecté qui demande la suppression
+        var delTarget = e.parameter.target || '';
+        if (!delBy || !getUserById(delBy)) return jsonResponse({ status: 'error', message: 'Utilisateur inconnu' });
+        if (!delTarget) return jsonResponse({ status: 'error', message: 'Compte à supprimer requis' });
+        var delRes = deleteUser(delTarget);
+        return jsonResponse({ status: 'success', deleted: delRes.id, label: delRes.label, data: getUsers() });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: String(err.message || err) });
       }
     }
 
