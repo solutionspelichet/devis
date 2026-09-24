@@ -622,14 +622,23 @@
                             </select>
                         </div>
                         <div>
-                            <label class="field-label">Société cliente</label>
-                            <input type="text" name="client" class="font-bold" placeholder="Rechercher Zefix / registre…">
+                            <label class="field-label" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                                <span>Société cliente</span>
+                                <button type="button" id="cardScanBtn" class="btn btn-ghost btn-xs" title="Scanner une carte de visite pour remplir les champs client">📇 Scanner une carte</button>
+                            </label>
+                            <input type="text" name="client" class="font-bold" placeholder="Nom du client (base clients + registre)…" autocomplete="off">
                             <div class="error-msg">Nom du client requis</div>
+                            <div id="clientStatus" class="client-status"></div>
+                            <input type="file" id="cardFile" accept="image/*" hidden>
                         </div>
                         <div class="col-span-2">
                             <label class="field-label">Adresse de facturation</label>
                             <textarea id="adresseFacturation" name="adresseClient" rows="2" class="text-sm"></textarea>
                             <div class="error-msg">Adresse de facturation requise</div>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="field-label">Email client <span style="font-weight:400;opacity:.6">(optionnel)</span></label>
+                            <input type="email" name="clientEmail" class="text-sm" placeholder="prenom.nom@societe.ch">
                         </div>
                     </div>
                 </div>

@@ -670,6 +670,7 @@ const CompanySearch = {
     wrapper.appendChild(this._dropdown);
 
     // Événements
+    document.querySelector('[name="genre"]')?.addEventListener('change', (e) => { e.target.dataset.touched = '1'; });
     this._input.addEventListener('input', () => this._onInput());
     this._input.addEventListener('focus', () => { if (this._dropdown.children.length > 0) this._dropdown.classList.remove('hidden'); });
     document.addEventListener('click', (e) => {
@@ -677,30 +678,100 @@ const CompanySearch = {
     });
   },
 
+  _norm(s) {
+    return String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]/g, '');
+  },
+
+  _setStatus(kind, text) {
+    const el = document.getElementById('clientStatus');
+    if (!el) return;
+    el.className = 'client-status' + (kind ? ' ' + kind : '');
+    el.textContent = text || '';
+  },
+
   _onInput() {
     clearTimeout(this._timer);
     const q = this._input.value.trim();
-    if (q.length < 3) { this._dropdown.classList.add('hidden'); return; }
-    this._timer = setTimeout(() => this._search(q), 600);
+    if (q.length < 3) { this._dropdown.classList.add('hidden'); this._setStatus('', ''); return; }
+    this._timer = setTimeout(() => this._search(q), 500);
   },
 
   async _search(query) {
-    try {
-      const url = `${CONFIG.SCRIPT_URL}?action=company_search&q=${encodeURIComponent(query)}`;
-      const resp = await fetch(url);
-      const data = await resp.json();
-      if (data.status === 'success' && data.results?.length > 0) {
-        this._showResults(data.results);
-      } else {
-        this._dropdown.classList.add('hidden');
-      }
-    } catch (e) {
-      console.log('Company search error:', e);
+    const uid = encodeURIComponent(UserManager.getUserId());
+    const getJson = (url) => fetch(url).then(r => r.json()).catch(() => null);
+    // Base clients (prioritaire) + registre du commerce en parallèle
+    const [reg, cli] = await Promise.all([
+      getJson(`${CONFIG.SCRIPT_URL}?action=company_search&q=${encodeURIComponent(query)}`),
+      getJson(`${CONFIG.SCRIPT_URL}?action=client_search&user=${uid}&q=${encodeURIComponent(query)}`)
+    ]);
+    if (this._input.value.trim() !== query) return; // saisie modifiée entre-temps
+    const clients = (cli && cli.status === 'success') ? (cli.results || []) : [];
+    const results = (reg && reg.status === 'success') ? (reg.results || []) : [];
+
+    // Statut : client connu / nouveau
+    const exact = clients.find(c => this._norm(c.societe) === this._norm(query));
+    if (exact) {
+      this._fillClient(exact, false);   // remplit seulement les champs encore vides
+      this._setStatus('known', '✓ Client existant — champs remplis automatiquement');
+    } else {
+      this._setStatus('new', '🆕 Nouveau client — il sera enregistré à la génération du devis');
+    }
+
+    if (clients.length || results.length) this._showResults(results, clients);
+    else this._dropdown.classList.add('hidden');
+  },
+
+  /** Remplit le formulaire depuis un client de la base. overwrite=false → uniquement les champs vides. */
+  _fillClient(c, overwrite) {
+    const set = (sel, val) => {
+      const el = document.querySelector(sel);
+      if (!el || !val) return;
+      if (!overwrite && String(el.value || '').trim()) return;
+      el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    if (overwrite && c.societe) this._input.value = c.societe;
+    set('[name="adresseClient"]', c.adresse);
+    set('[name="contact"]', c.contact);
+    set('[name="contactTel"]', c.telephone);
+    set('[name="clientEmail"]', c.email);
+    const genre = document.querySelector('[name="genre"]');
+    if (genre && c.genre && (overwrite || !genre.dataset.touched) && [...genre.options].some(o => o.value === c.genre)) {
+      genre.value = c.genre;
     }
   },
 
-  _showResults(results) {
+  _selectClient(c) {
+    this._fillClient(c, true);
+    this._setStatus('known', '✓ Client existant — champs remplis automatiquement');
+    this._dropdown.classList.add('hidden');
+    Toast.success('Client retrouvé : ' + c.societe);
+  },
+
+  _showResults(results, clients = []) {
     this._dropdown.innerHTML = '';
+    if (clients.length) {
+      const h = document.createElement('div');
+      h.className = 'company-group-title';
+      h.textContent = 'Vos clients';
+      this._dropdown.appendChild(h);
+      clients.forEach(c => {
+        const item = document.createElement('div');
+        item.className = 'company-result is-client';
+        const sub = [c.adresse ? c.adresse.replace(/\n+/g, ', ') : '', c.contact].filter(Boolean).join(' · ');
+        item.innerHTML = `
+          <div class="company-result-name">${this._esc(c.societe)}</div>
+          ${sub ? `<div class="company-result-addr">${this._esc(sub)}</div>` : ''}`;
+        item.addEventListener('click', () => this._selectClient(c));
+        this._dropdown.appendChild(item);
+      });
+    }
+    if (results.length && clients.length) {
+      const h = document.createElement('div');
+      h.className = 'company-group-title';
+      h.textContent = 'Registre du commerce';
+      this._dropdown.appendChild(h);
+    }
     results.forEach(r => {
       const cityLine = [r.zip, r.city].filter(Boolean).join(' ');
       const addrParts = [r.street, cityLine].filter(Boolean);
@@ -737,6 +808,183 @@ const CompanySearch = {
     const d = document.createElement('div');
     d.textContent = str;
     return d.innerHTML;
+  }
+};
+
+// ============================================
+// SCAN DE CARTE DE VISITE (OCR dans le navigateur — Tesseract.js)
+// ============================================
+const CardScanner = {
+  _busy: false,
+
+  init() {
+    const btn = document.getElementById('cardScanBtn');
+    const file = document.getElementById('cardFile');
+    if (!btn || !file) return;
+    btn.addEventListener('click', () => { if (!this._busy) file.click(); });
+    file.addEventListener('change', () => {
+      if (file.files && file.files[0]) this._process(file.files[0]);
+      file.value = '';
+    });
+  },
+
+  async _loadTesseract() {
+    if (window.Tesseract) return;
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Moteur de lecture indisponible (vérifie la connexion)'));
+      document.head.appendChild(s);
+    });
+  },
+
+  /** Réduit les grosses photos (téléphone) : plus rapide, OCR aussi bon */
+  _downscale(file, maxSide = 1800) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const ratio = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * ratio);
+        c.height = Math.round(img.height * ratio);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob(b => resolve(b || file), 'image/jpeg', 0.92);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  },
+
+  async _process(file) {
+    const btn = document.getElementById('cardScanBtn');
+    const label = btn.textContent;
+    this._busy = true;
+    btn.disabled = true;
+    try {
+      btn.textContent = '⏳ Préparation…';
+      await this._loadTesseract();
+      const img = await this._downscale(file);
+      const result = await Tesseract.recognize(img, 'fra+eng', {
+        logger: m => {
+          if (m.status === 'recognizing text') btn.textContent = `⏳ Lecture ${Math.round((m.progress || 0) * 100)}%`;
+        }
+      });
+      const text = (result.data && result.data.text) || '';
+      if (!text.trim()) { Toast.error('Aucun texte lu — réessaie avec une photo plus nette et bien éclairée'); return; }
+      this._review(this.parse(text), text);
+    } catch (err) {
+      Toast.error('Scan impossible : ' + err.message);
+    } finally {
+      this._busy = false;
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  },
+
+  /** Extraction heuristique (cartes suisses/françaises). Toujours à vérifier par l'utilisateur. */
+  parse(text) {
+    const lines = text.split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(l => l.length > 1);
+    const out = { societe: '', contact: '', telephone: '', email: '', adresse: '' };
+
+    // Email
+    for (const l of lines) {
+      const m = l.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/);
+      if (m) { out.email = m[0].toLowerCase(); break; }
+    }
+
+    // Téléphone : on privilégie un mobile, sinon le premier numéro trouvé
+    const phones = [];
+    lines.forEach(l => {
+      if (/@|www\.|https?:/i.test(l) && !/(tel|t\.|mob|phone|direct)/i.test(l)) return;
+      const re = /(?:\+|00)?\d[\d ().\/-]{7,}\d/g;
+      let m;
+      while ((m = re.exec(l))) {
+        const digits = m[0].replace(/[^\d+]/g, '');
+        if (digits.replace(/\D/g, '').length < 9 || digits.replace(/\D/g, '').length > 13) continue;
+        // évite les codes postaux+n° collés : exige un séparateur ou un préfixe international
+        phones.push({ raw: m[0].replace(/^\s+|[\s.-]+$/g, ''), mobile: /(mob|natel|cell|portable)/i.test(l) || /^(\+?41|0041|0)\s?7[5-9]/.test(digits) });
+      }
+    });
+    const pick = phones.find(p => p.mobile) || phones[0];
+    if (pick) out.telephone = pick.raw.replace(/^00/, '+');
+
+    // Adresse : ligne "NPA Ville" (4 chiffres CH, 5 chiffres FR) + rue juste avant
+    const streetRe = /\b(rue|route|rte|avenue|av\.?|chemin|ch\.?|place|quai|boulevard|bd|impasse|allée|passage|case postale|strasse|weg|platz)\b/i;
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^(?:CH[- ]?|F[- ]?)?(\d{4,5})\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’\-]*(?: [A-Za-zÀ-ÿ'’\-]+)*)(?: \d{1,2})?$/) ||
+                lines[i].match(/(?:^|,\s*)(?:CH[- ]?|F[- ]?)?(\d{4,5})\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’\-]*(?: [A-Za-zÀ-ÿ'’\-]+)*)(?: \d{1,2})?$/);
+      if (!m) continue;
+      const cityLine = `${m[1]} ${m[2].trim()}`;
+      let street = '';
+      const before = lines[i].replace(m[0], '').replace(/[,\s]+$/, '');
+      if (before && /\d|\b/.test(before) && streetRe.test(before)) street = before;
+      else if (i > 0 && (streetRe.test(lines[i - 1]) || /\d/.test(lines[i - 1])) && !/@|www\./i.test(lines[i - 1])) street = lines[i - 1];
+      out.adresse = [street, cityLine].filter(Boolean).join('\n');
+      break;
+    }
+
+    // Société : forme juridique, sinon première ligne en majuscules sans chiffres
+    const legal = /\b(SA|S\.A\.|Sàrl|Sarl|S\.à r\.l\.|AG|GmbH|Ltd|SNC|SAS|SARL|Group|Groupe|Fondation|Association|Holding)\b/;
+    const isNoise = l => /@|www\.|https?:|\d{4}/.test(l);
+    out.societe = lines.find(l => legal.test(l) && !isNoise(l)) ||
+                  lines.find(l => l === l.toUpperCase() && /[A-Z]{3,}/.test(l) && !/\d/.test(l) && l.length < 40 && !isNoise(l)) || '';
+
+    // Contact : 2–3 mots capitalisés, sans chiffres ni titre de fonction
+    const title = /(directeur|directrice|responsable|manager|chef|head|ceo|cfo|coo|ing[ée]nieur|assistant|charg[ée]|conseiller|commercial|sales|technicien|gérant|président|fondateur)/i;
+    out.contact = lines.find(l => {
+      if (l === out.societe || l === l.toUpperCase() || isNoise(l) || title.test(l) || /\d/.test(l) || streetRe.test(l) || legal.test(l)) return false;
+      const w = l.split(' ');
+      return w.length >= 2 && w.length <= 4 && w.every(x => /^[A-ZÀ-Ý][A-Za-zÀ-ÿ'’\-.]*$/.test(x));
+    }) || '';
+    return out;
+  },
+
+  _review(p, rawText) {
+    document.getElementById('cardReviewOverlay')?.remove();
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const overlay = document.createElement('div');
+    overlay.id = 'cardReviewOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+    const inp = 'width:100%;padding:8px 10px;border:1px solid #d4d4d4;border-radius:8px;font-size:14px;box-sizing:border-box';
+    const lab = 'display:block;font-size:11px;font-weight:600;color:#555;margin:10px 0 3px;text-transform:uppercase;letter-spacing:.04em';
+    overlay.innerHTML = `
+      <div style="max-width:460px;width:100%;background:#fff;border-radius:14px;padding:22px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+        <div style="font-size:18px;font-weight:700">📇 Carte de visite lue</div>
+        <div style="font-size:12px;color:#777;margin-top:2px">Vérifie et corrige avant de remplir le formulaire.</div>
+        <label style="${lab}">Société</label><input id="cs_societe" style="${inp}" value="${esc(p.societe)}">
+        <label style="${lab}">Contact</label><input id="cs_contact" style="${inp}" value="${esc(p.contact)}">
+        <label style="${lab}">Téléphone</label><input id="cs_tel" style="${inp}" value="${esc(p.telephone)}">
+        <label style="${lab}">Email</label><input id="cs_email" style="${inp}" value="${esc(p.email)}">
+        <label style="${lab}">Adresse</label><textarea id="cs_adr" rows="2" style="${inp}">${esc(p.adresse)}</textarea>
+        <details style="margin-top:10px;font-size:11px;color:#777"><summary style="cursor:pointer">Texte brut lu (pour copier-coller)</summary><pre style="white-space:pre-wrap;user-select:text;margin:6px 0 0">${esc(rawText)}</pre></details>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button type="button" id="cs_cancel" style="flex:1;padding:10px;border:1px solid #ddd;background:transparent;border-radius:8px;cursor:pointer">Annuler</button>
+          <button type="button" id="cs_ok" style="flex:2;padding:10px;border:0;background:#dc2626;color:#fff;font-weight:600;border-radius:8px;cursor:pointer">Remplir &amp; enregistrer le client</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const v = id => overlay.querySelector('#' + id).value.trim();
+    overlay.querySelector('#cs_cancel').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#cs_ok').addEventListener('click', async () => {
+      const c = { societe: v('cs_societe'), contact: v('cs_contact'), telephone: v('cs_tel'), email: v('cs_email'), adresse: v('cs_adr') };
+      if (!c.societe) { Toast.error('Le nom de la société est requis'); return; }
+      overlay.remove();
+      CompanySearch._input.value = c.societe;
+      CompanySearch._fillClient(c, true);
+      try {
+        const url = `${CONFIG.SCRIPT_URL}?action=client_save&user=${encodeURIComponent(UserManager.getUserId())}&data=${encodeURIComponent(JSON.stringify(c))}`;
+        const j = await (await fetch(url)).json();
+        if (j.status !== 'success') throw new Error(j.message || 'Erreur serveur');
+        CompanySearch._setStatus('known', j.client.created ? '✓ Nouveau client créé dans la base' : '✓ Client existant — fiche mise à jour');
+        Toast.success(j.client.created ? 'Client créé : ' + c.societe : 'Fiche client mise à jour');
+      } catch (err) {
+        Toast.warning('Formulaire rempli, mais client non enregistré : ' + err.message);
+      }
+    });
   }
 };
 
@@ -4933,6 +5181,7 @@ const DossierLoader = {
       if (data.adresseClient) form.querySelector('[name="adresseClient"]').value = data.adresseClient;
       if (data.adresseDepart) form.querySelector('[name="adresseDepart"]').value = data.adresseDepart;
       if (data.adresseArrivee) form.querySelector('[name="adresseArrivee"]').value = data.adresseArrivee;
+      if (data.clientEmail) { const ce = form.querySelector('[name="clientEmail"]'); if (ce) ce.value = data.clientEmail; }
       if (data.contact) form.querySelector('[name="contact"]').value = data.contact;
       if (data.contactTel) form.querySelector('[name="contactTel"]').value = data.contactTel;
       if (data.montantHT) form.querySelector('[name="montantHT"]').value = data.montantHT;
@@ -5397,6 +5646,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   SettingsPanel.init();
   ProfilePanel.init();
   CompanySearch.init();
+  CardScanner.init();
   KmCalculator.init();
   RightRail.init();
   MobileShell.init();

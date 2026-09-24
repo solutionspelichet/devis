@@ -1165,6 +1165,11 @@ select {
 }
 .poste-remove:hover { color: var(--red); background: var(--red-soft); }
 .poste-card { position: relative; padding-top: 0; }
+.client-status { font-size: 11px; margin-top: 4px; min-height: 0; }
+.client-status.known { color: #166534; font-weight: 600; }
+.client-status.new { color: #b45309; font-weight: 600; }
+.company-group-title { padding: 6px 12px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-4, #888); background: rgba(0,0,0,.03); }
+.company-result.is-client .company-result-name::before { content: "★ "; color: #166534; }
 /* Bouton supprimer bien visible : pastille dans le coin haut-droit, hors du champ prix */
 .poste-card > .poste-remove {
   right: -10px; top: -10px;

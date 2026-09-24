@@ -1421,6 +1421,22 @@ function doGet(e) {
       }
     }
 
+    if (action === 'client_search' || action === 'client_save') {
+      try {
+        var clUser = e.parameter.user || '';
+        if (!clUser || !getUserById(clUser)) return jsonResponse({ status: 'error', message: 'Utilisateur inconnu' });
+        if (action === 'client_search') {
+          return jsonResponse({ status: 'success', results: searchClients(e.parameter.q || '') });
+        }
+        var clData = JSON.parse(e.parameter.data || '{}');
+        var saved = upsertClient(clData, clUser);
+        if (!saved) return jsonResponse({ status: 'error', message: 'Nom de société requis' });
+        return jsonResponse({ status: 'success', client: saved });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur clients: ' + err });
+      }
+    }
+
     if (action === 'template_list' || action === 'template_customize' || action === 'template_reset') {
       try {
         var tplUser = e.parameter.user || '';
@@ -3263,6 +3279,95 @@ function getUserFolder(userId) {
 }
 
 // ============================================
+// BASE CLIENTS (partagée entre tous les commerciaux)
+// ============================================
+var CLIENTS_SHEET_NAME = 'Clients';
+var CLIENTS_HEADERS = ['ID', 'Societe', 'Genre', 'Adresse', 'Contact', 'Telephone', 'Email', 'CreePar', 'CreeLe', 'MajLe'];
+
+function normClient(s) {
+  return String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]/g, '');
+}
+
+function getClientsSheet() {
+  var ss = getSs();
+  if (!ss) return null;
+  var sheet = ss.getSheetByName(CLIENTS_SHEET_NAME);
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(CLIENTS_SHEET_NAME);
+  sheet.appendRow(CLIENTS_HEADERS);
+  sheet.getRange(1, 1, 1, CLIENTS_HEADERS.length).setFontWeight('bold').setBackground('#D32F2F').setFontColor('#FFFFFF');
+  sheet.setFrozenRows(1);
+  // Texte brut pour éviter #ERROR! sur les numéros +41...
+  sheet.getRange(2, 6, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+  sheet.setColumnWidth(2, 220);
+  sheet.setColumnWidth(4, 280);
+  return sheet;
+}
+
+function clientFromRow(r) {
+  return {
+    id: String(r[0] || ''), societe: String(r[1] || ''), genre: String(r[2] || ''),
+    adresse: String(r[3] || ''), contact: String(r[4] || ''),
+    telephone: String(r[5] || ''), email: String(r[6] || '')
+  };
+}
+
+/** Recherche par nom de société ou de contact (sans accents/casse/espaces). Max 8 résultats. */
+function searchClients(q) {
+  var nq = normClient(q);
+  if (nq.length < 2) return [];
+  var sheet = getClientsSheet();
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, CLIENTS_HEADERS.length).getValues();
+  var starts = [], contains = [];
+  values.forEach(function(r) {
+    var ns = normClient(r[1]);
+    if (!ns) return;
+    if (ns.indexOf(nq) === 0) starts.push(clientFromRow(r));
+    else if (ns.indexOf(nq) !== -1 || normClient(r[4]).indexOf(nq) !== -1) contains.push(clientFromRow(r));
+  });
+  return starts.concat(contains).slice(0, 8);
+}
+
+/** Crée le client s'il n'existe pas (même nom normalisé), sinon complète/met à jour ses champs non vides. */
+function upsertClient(c, userId) {
+  var societe = String(c.societe || '').trim();
+  if (!societe) return null;
+  var sheet = getClientsSheet();
+  if (!sheet) return null;
+  var now = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd.MM.yyyy HH:mm');
+  var fields = {
+    genre: String(c.genre || '').trim(), adresse: String(c.adresse || '').trim(),
+    contact: String(c.contact || '').trim(), telephone: String(c.telephone || '').trim(),
+    email: String(c.email || '').trim()
+  };
+  var target = normClient(societe);
+  var last = sheet.getLastRow();
+  if (last >= 2) {
+    var values = sheet.getRange(2, 1, last - 1, CLIENTS_HEADERS.length).getValues();
+    for (var i = 0; i < values.length; i++) {
+      if (normClient(values[i][1]) !== target) continue;
+      var row = values[i];
+      if (fields.genre) row[2] = fields.genre;
+      if (fields.adresse) row[3] = fields.adresse;
+      if (fields.contact) row[4] = fields.contact;
+      if (fields.telephone) row[5] = fields.telephone;
+      if (fields.email) row[6] = fields.email;
+      row[9] = now;
+      sheet.getRange(i + 2, 1, 1, CLIENTS_HEADERS.length).setValues([row]);
+      var res = clientFromRow(row); res.created = false;
+      return res;
+    }
+  }
+  var newRow = ['CL' + new Date().getTime(), societe, fields.genre, fields.adresse, fields.contact,
+                fields.telephone, fields.email, String(userId || ''), now, now];
+  sheet.getRange(last + 1, 6).setNumberFormat('@');
+  sheet.getRange(last + 1, 1, 1, CLIENTS_HEADERS.length).setValues([newRow]);
+  var created = clientFromRow(newRow); created.created = true;
+  return created;
+}
+
+// ============================================
 // MODÈLES (TEMPLATES) PERSONNALISABLES PAR UTILISATEUR
 // ============================================
 // Un utilisateur peut "personnaliser" un modèle : on copie le modèle par défaut
@@ -4022,6 +4127,14 @@ function doPost(e) {
     }
 
     archiver(ref, estPelichet, client, data, montantHT, pdfFile);
+
+    // Enregistrer / mettre à jour le client dans la base clients partagée
+    try {
+      upsertClient({
+        societe: client, genre: data.genre, adresse: data.adresseClient,
+        contact: data.contact, telephone: data.contactTel, email: data.clientEmail
+      }, userId);
+    } catch (cErr) { Logger.log('upsertClient: ' + cErr); }
 
     Logger.log('Devis terminé: ' + ref + ' -> ' + pdfFile.getUrl());
 
