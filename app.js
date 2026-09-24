@@ -853,23 +853,61 @@ const CardScanner = {
     });
   },
 
-  /** Réduit les grosses photos (téléphone) : plus rapide, OCR aussi bon */
-  _downscale(file, maxSide = 1800) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        const ratio = Math.min(1, maxSide / Math.max(img.width, img.height));
-        const c = document.createElement('canvas');
-        c.width = Math.round(img.width * ratio);
-        c.height = Math.round(img.height * ratio);
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url);
-        c.toBlob(b => resolve(b || file), 'image/jpeg', 0.92);
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
-      img.src = url;
-    });
+  /** Photo → canvas redressé selon l'EXIF du téléphone et réduit (plus rapide, OCR aussi bon) */
+  async _toCanvas(file, maxSide = 1800) {
+    let src;
+    try {
+      src = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch (e) {
+      src = await new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image illisible')); };
+        img.src = url;
+      });
+    }
+    const w = src.width, h = src.height;
+    const ratio = Math.min(1, maxSide / Math.max(w, h));
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * ratio);
+    c.height = Math.round(h * ratio);
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(src, 0, 0, c.width, c.height);
+    return c;
+  },
+
+  /** Copie du canvas tournée de 90/180/270° (sens horaire) */
+  _rotated(canvas, deg) {
+    const swap = deg === 90 || deg === 270;
+    const c = document.createElement('canvas');
+    c.width = swap ? canvas.height : canvas.width;
+    c.height = swap ? canvas.width : canvas.height;
+    const g = c.getContext('2d');
+    g.translate(c.width / 2, c.height / 2);
+    g.rotate(deg * Math.PI / 180);
+    g.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+    return c;
+  },
+
+  /** Lit la carte dans le bon sens : essaie 0°, puis 90°/270°/180° si le résultat est mauvais, garde le meilleur */
+  async _readBestOrientation(worker, canvas, btn) {
+    let best = null;
+    for (const angle of [0, 90, 270, 180]) {
+      if (angle) btn.textContent = `⏳ Test rotation ${angle}°…`;
+      const r = await worker.recognize(angle ? this._rotated(canvas, angle) : canvas);
+      const text = (r.data && r.data.text) || '';
+      const p = this.parse(text);
+      const conf = r.data ? (r.data.confidence || 0) : 0;
+      const found = (p.email ? 1 : 0) + (p.telephone ? 1 : 0) + (p.adresse ? 1 : 0);
+      const score = conf + found * 15 + (p.societe ? 5 : 0) + (p.contact ? 5 : 0);
+      if (!best || score > best.score) best = { text, score, angle, conf, found };
+      // Bonne lecture dès le 1er essai (ou après une rotation) : inutile d'aller plus loin
+      if (conf >= 70 && found >= 2) break;
+    }
+    return best;
   },
 
   async _process(file) {
@@ -888,9 +926,9 @@ const CardScanner = {
         else if (/recognizing/.test(m.status)) btn.textContent = `⏳ Lecture ${pct}%`;
       };
       const worker = await this._getWorker();
-      const img = await this._downscale(file);
-      const result = await worker.recognize(img);
-      const text = (result.data && result.data.text) || '';
+      const canvas = await this._toCanvas(file);
+      const best = await this._readBestOrientation(worker, canvas, btn);
+      const text = best ? best.text : '';
       if (!text.trim()) { Toast.error('Aucun texte lu — réessaie avec une photo plus nette et bien éclairée'); return; }
       this._review(this.parse(text), text);
     } catch (err) {
@@ -904,7 +942,10 @@ const CardScanner = {
 
   /** Extraction heuristique (cartes suisses/françaises). Toujours à vérifier par l'utilisateur. */
   parse(text) {
-    const lines = text.split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(l => l.length > 1);
+    // Séparateurs visuels (| • · …) → nouvelle ligne ; on retire les pictogrammes en début de ligne (📍 ☎ ✉ lus comme © Q @ etc.)
+    const lines = text.replace(/[|•·●▪◆■►]+/g, '\n').split(/\r?\n/)
+      .map(l => l.replace(/\s+/g, ' ').replace(/^[^A-Za-zÀ-ÿ0-9+(]+\s*/, '').trim())
+      .filter(l => l.length > 1);
     const out = { societe: '', contact: '', telephone: '', email: '', adresse: '' };
 
     // Email
@@ -931,17 +972,36 @@ const CardScanner = {
 
     // Adresse : ligne "NPA Ville" (4 chiffres CH, 5 chiffres FR) + rue juste avant
     const streetRe = /\b(rue|route|rte|avenue|av\.?|chemin|ch\.?|place|quai|boulevard|bd|impasse|allée|passage|case postale|strasse|weg|platz)\b/i;
+    const isPhoneLine = l => /(\+|\b00)\d|\b(tel|tél|t\.|mob|fax|phone|natel|direct)\b/i.test(l) || l.replace(/\D/g, '').length >= 9;
+    const isContactLine = l => /@|www\.|https?:/i.test(l) || isPhoneLine(l);
+    // "Rue X 12", "12 rue X", ou "Nom de lieu 12" (nom puis numéro)
+    const streetish = l => !!l && !isContactLine(l) &&
+      (streetRe.test(l) || /^[A-Za-zÀ-ÿ'’.\- ]{3,}\s\d{1,4}\s?[A-Za-z]?$/.test(l) || /^\d{1,4}\s?[A-Za-z]?,?\s+[A-Za-zÀ-ÿ'’.\- ]{3,}$/.test(l));
+    const cleanStreet = s => String(s || '').replace(/^[\s,;–—-]+|[\s,;–—-]+$/g, '');
+    const postalRe = /(?:^|[\s,;])(?:CH|FR|F|D|DE)?[-\s]?(\d{4,5})\s+([A-ZÀ-Ý][A-Za-zÀ-ÿ'’\-]*(?:[ \-][A-Za-zÀ-ÿ'’\-]+)*)(?:\s+\d{1,2})?\s*$/;
+
     for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/^(?:CH[- ]?|F[- ]?)?(\d{4,5})\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’\-]*(?: [A-Za-zÀ-ÿ'’\-]+)*)(?: \d{1,2})?$/) ||
-                lines[i].match(/(?:^|,\s*)(?:CH[- ]?|F[- ]?)?(\d{4,5})\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’\-]*(?: [A-Za-zÀ-ÿ'’\-]+)*)(?: \d{1,2})?$/);
+      if (isContactLine(lines[i])) continue;
+      const line = lines[i].replace(/[,\s]*(Suisse|Switzerland|Schweiz|Svizzera|France)\s*$/i, '');
+      const m = line.match(postalRe);
       if (!m) continue;
       const cityLine = `${m[1]} ${m[2].trim()}`;
+      // Rue : même ligne (dernier segment avant le NPA), sinon ligne d'avant, sinon ligne d'après
+      const before = cleanStreet(line.slice(0, m.index));
+      const seg = cleanStreet(before.split(/[,;]/).pop());
       let street = '';
-      const before = lines[i].replace(m[0], '').replace(/[,\s]+$/, '');
-      if (before && /\d|\b/.test(before) && streetRe.test(before)) street = before;
-      else if (i > 0 && (streetRe.test(lines[i - 1]) || /\d/.test(lines[i - 1])) && !/@|www\./i.test(lines[i - 1])) street = lines[i - 1];
+      if (streetish(seg)) street = seg;
+      else if (streetish(lines[i - 1])) street = cleanStreet(lines[i - 1]);
+      else if (streetish(lines[i + 1])) street = cleanStreet(lines[i + 1]);
+      else if (seg && /\d/.test(seg) && !isContactLine(seg)) street = seg;
+      // "Case postale 123" juste au-dessus de la rue : on l'ajoute comme ligne complémentaire
       out.adresse = [street, cityLine].filter(Boolean).join('\n');
       break;
+    }
+    // Aucun NPA/ville lu : on garde au moins la ligne de rue
+    if (!out.adresse) {
+      const s = lines.find(l => streetish(l) && streetRe.test(l));
+      if (s) out.adresse = cleanStreet(s);
     }
 
     // Société : forme juridique, sinon première ligne en majuscules sans chiffres
