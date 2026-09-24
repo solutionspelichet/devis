@@ -624,7 +624,11 @@
                         <div>
                             <label class="field-label" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
                                 <span>Société cliente</span>
-                                <button type="button" id="cardScanBtn" class="btn btn-ghost btn-xs" title="Scanner une carte de visite pour remplir les champs client">📇 Scanner une carte</button>
+                                <span style="display:inline-flex;gap:6px;align-items:center">
+                                    <span style="font-size:11px;font-weight:400;opacity:.7">📇 Carte de visite :</span>
+                                    <button type="button" id="cardCamBtn" class="btn btn-ghost btn-xs" title="Prendre la carte en photo avec la caméra">📷 Photo</button>
+                                    <button type="button" id="cardScanBtn" class="btn btn-ghost btn-xs" title="Importer une photo de carte depuis l'appareil">🖼 Importer</button>
+                                </span>
                             </label>
                             <input type="text" name="client" class="font-bold" placeholder="Nom du client (base clients + registre)…" autocomplete="off">
                             <div class="error-msg">Nom du client requis</div>

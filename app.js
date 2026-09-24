@@ -818,17 +818,68 @@ const CardScanner = {
   _busy: false,
 
   init() {
-    const btn = document.getElementById('cardScanBtn');
+    const btn = document.getElementById('cardScanBtn');   // Importer
+    const cam = document.getElementById('cardCamBtn');    // Photo (caméra)
     const file = document.getElementById('cardFile');
     if (!btn || !file) return;
-    btn.addEventListener('click', () => { if (!this._busy) file.click(); });
-    // Précharge le moteur dès que l'utilisateur approche le bouton (gagne ~30 s au 1er scan)
-    ['mouseenter', 'touchstart', 'focus'].forEach(ev =>
-      btn.addEventListener(ev, () => { this._getWorker().catch(() => {}); }, { once: true, passive: true }));
+    this._activeBtn = btn;
+    btn.addEventListener('click', () => { if (!this._busy) { this._activeBtn = btn; file.click(); } });
+    if (cam) cam.addEventListener('click', () => { if (!this._busy) { this._activeBtn = cam; this._openCamera(); } });
+    // Précharge le moteur dès que l'utilisateur approche un bouton (gagne ~30 s au 1er scan)
+    [btn, cam].filter(Boolean).forEach(b => ['mouseenter', 'touchstart', 'focus'].forEach(ev =>
+      b.addEventListener(ev, () => { this._getWorker().catch(() => {}); }, { once: true, passive: true })));
     file.addEventListener('change', () => {
       if (file.files && file.files[0]) this._process(file.files[0]);
       file.value = '';
     });
+  },
+
+  /** Caméra en direct (ordinateur et téléphone) ; si refusée/indisponible → appareil photo natif du téléphone */
+  async _openCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return this._nativeCapture();
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+      });
+    } catch (err) {
+      Toast.warning('Caméra inaccessible (' + (err.name === 'NotAllowedError' ? 'autorisation refusée' : err.message) + ') — choisis « Importer »');
+      return this._nativeCapture();
+    }
+    document.getElementById('cardCamOverlay')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'cardCamOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:14px';
+    overlay.innerHTML = `
+      <div style="color:#fff;font-size:14px;text-align:center">Place la carte à plat, bien éclairée, dans le cadre</div>
+      <div style="position:relative;max-width:min(92vw,900px);width:100%">
+        <video id="cardCamVideo" autoplay playsinline muted style="width:100%;max-height:70vh;background:#000;border-radius:12px;display:block"></video>
+        <div style="position:absolute;inset:8% 6%;border:2px dashed rgba(255,255,255,.75);border-radius:10px;pointer-events:none"></div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button type="button" id="cardCamCancel" style="padding:11px 20px;border:1px solid #888;background:transparent;color:#fff;border-radius:9px;cursor:pointer">Annuler</button>
+        <button type="button" id="cardCamShot" style="padding:11px 26px;border:0;background:#dc2626;color:#fff;font-weight:700;border-radius:9px;cursor:pointer">📸 Capturer</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    const video = overlay.querySelector('#cardCamVideo');
+    video.srcObject = stream;
+    const close = () => { stream.getTracks().forEach(t => t.stop()); overlay.remove(); };
+    overlay.querySelector('#cardCamCancel').addEventListener('click', close);
+    overlay.querySelector('#cardCamShot').addEventListener('click', () => {
+      if (!video.videoWidth) { Toast.warning('Caméra pas encore prête, réessaie'); return; }
+      const c = document.createElement('canvas');
+      c.width = video.videoWidth; c.height = video.videoHeight;
+      c.getContext('2d').drawImage(video, 0, 0);
+      close();
+      c.toBlob(b => { if (b) this._process(new File([b], 'carte.jpg', { type: 'image/jpeg' })); }, 'image/jpeg', 0.95);
+    });
+  },
+
+  _nativeCapture() {
+    const f = document.getElementById('cardFile');
+    f.setAttribute('capture', 'environment');
+    f.click();
+    setTimeout(() => f.removeAttribute('capture'), 1000);
   },
 
   /** Un seul worker OCR, créé une fois puis réutilisé (langues mises en cache par le navigateur) */
@@ -911,10 +962,11 @@ const CardScanner = {
   },
 
   async _process(file) {
-    const btn = document.getElementById('cardScanBtn');
+    const btn = this._activeBtn || document.getElementById('cardScanBtn');
+    const allBtns = [document.getElementById('cardScanBtn'), document.getElementById('cardCamBtn')].filter(Boolean);
     const label = btn.textContent;
     this._busy = true;
-    btn.disabled = true;
+    allBtns.forEach(b => { b.disabled = true; });
     try {
       btn.textContent = '⏳ Préparation…';
       const first = !this._workerPromise;
@@ -935,7 +987,7 @@ const CardScanner = {
       Toast.error('Scan impossible : ' + err.message);
     } finally {
       this._busy = false;
-      btn.disabled = false;
+      allBtns.forEach(b => { b.disabled = false; });
       btn.textContent = label;
     }
   },
@@ -1011,12 +1063,23 @@ const CardScanner = {
                   lines.find(l => l === l.toUpperCase() && /[A-Z]{3,}/.test(l) && !/\d/.test(l) && l.length < 40 && !isNoise(l)) || '';
 
     // Contact : 2–3 mots capitalisés, sans chiffres ni titre de fonction
-    const title = /(directeur|directrice|responsable|manager|chef|head|ceo|cfo|coo|ing[ée]nieur|assistant|charg[ée]|conseiller|commercial|sales|technicien|gérant|président|fondateur)/i;
-    out.contact = lines.find(l => {
-      if (l === out.societe || l === l.toUpperCase() || isNoise(l) || title.test(l) || /\d/.test(l) || streetRe.test(l) || legal.test(l)) return false;
+    // Intitulés de fonction (FR/EN/DE) : ces lignes ne sont jamais le nom, mais indiquent où il se trouve (juste avant/après)
+    const title = /(directeur|directrice|direction|responsable|manager|management|chef\b|cheffe|head\b|director|officer|\bceo\b|\bcfo\b|\bcoo\b|\bcto\b|ing[ée]nieur|engineer|assistant|assistante|charg[ée]|conseiller|conseill[èe]re|commercial|sales|vente|achats?|technicien|gérant|gérante|président|présidente|fondateur|fondatrice|associ[ée]|partner|consultant|coordinat|gestionnaire|adjoint|secrétaire|administrat|leiter|geschäft|projet|project|logisti|marketing|finance|comptab|opérations|operations|senior|junior|général|general|technique|technical|spécialiste|specialist|expert|business|account|development|développement|ressources|human|hr\b|it\b)/i;
+    const orgWords = /\b(radio|télévision|television|suisse|swiss|switzerland|group|groupe|société|service|services|département|department|université|university|hôpital|banque|bank|fondation|association|institut|école|ecole|commune|ville|canton|logistics|transports?|déménagements?|solutions|consulting|technologies|international|holding|immobilier)\b/i;
+    const particle = /^(de|du|des|la|le|van|von|der|den|di|da|el|al|ben|mc|mac|d'|l')$/i;
+    const nameTok = x => /^[A-ZÀ-Ý][A-Za-zÀ-ÿ'’\-.]*$/.test(x) || particle.test(x);
+    const isTitleLine = l => title.test(l) && l.length < 70;
+    let bestName = null;
+    lines.forEach((l, i) => {
+      if (l === out.societe || isNoise(l) || isTitleLine(l) || /\d/.test(l) || streetRe.test(l) || legal.test(l) || orgWords.test(l) || /[&@]|\b(et|and|of|und|pour|for)\b/i.test(l)) return;
       const w = l.split(' ');
-      return w.length >= 2 && w.length <= 4 && w.every(x => /^[A-ZÀ-Ý][A-Za-zÀ-ÿ'’\-.]*$/.test(x));
-    }) || '';
+      if (w.length < 2 || w.length > 4 || !w.every(nameTok) || !w.some(x => /^[A-ZÀ-Ý]/.test(x) && !particle.test(x))) return;
+      const upper = l === l.toUpperCase();
+      const nextToTitle = (i > 0 && isTitleLine(lines[i - 1])) || (i + 1 < lines.length && isTitleLine(lines[i + 1]));
+      const score = 100 - i * 2 + (upper ? 0 : 20) + (nextToTitle ? 30 : 0);
+      if (!bestName || score > bestName.score) bestName = { l, score };
+    });
+    out.contact = bestName ? bestName.l : '';
     return out;
   },
 
