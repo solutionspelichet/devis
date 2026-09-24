@@ -1598,11 +1598,12 @@ select {
   z-index: 200;
   background: oklch(0.15 0.02 265 / 0.6);
   backdrop-filter: blur(6px);
-  display: grid; place-items: center;
+  display: flex;                 /* flex + margin:auto : le haut reste accessible si l'écran est petit */
   padding: 24px;
   animation: fadeIn 220ms;
   overflow-y: auto;
 }
+.login-overlay > .login-modal { margin: auto; }
 .login-overlay.hidden { display: none; }
 @keyframes fadeIn { from { opacity: 0; } }
 .login-modal {
@@ -3409,7 +3410,7 @@ body.controller-mode .topbar::after {
 /* ---- TOASTS ---- */
 .toast-layer {
   position: fixed; top: 64px; right: 16px;
-  z-index: 80;
+  z-index: 10000;   /* au-dessus de la connexion (200) et des fenêtres (9999) */
   display: flex; flex-direction: column; gap: 8px;
   pointer-events: none;
 }

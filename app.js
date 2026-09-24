@@ -240,19 +240,23 @@ const UserManager = {
     const errorDiv = document.getElementById('registerError');
     const submitBtn = document.getElementById('registerSubmitBtn');
 
+    // Affiche l'erreur, la rend visible (même sur petit écran) et met le focus sur le champ concerné
+    const fail = (msg, fieldId) => {
+      if (errorDiv) {
+        errorDiv.textContent = msg;
+        errorDiv.classList.remove('hidden');
+        errorDiv.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+      Toast.error(msg);
+      const f = fieldId && document.getElementById(fieldId);
+      if (f) { f.focus(); f.style.borderColor = 'var(--red)'; setTimeout(() => { f.style.borderColor = ''; }, 3000); }
+    };
+
     // Validation
-    if (!prenom || !nom) {
-      if (errorDiv) { errorDiv.textContent = 'Prenom et nom sont obligatoires.'; errorDiv.classList.remove('hidden'); }
-      return;
-    }
-    if (!telephone) {
-      if (errorDiv) { errorDiv.textContent = 'Le numero de telephone est obligatoire.'; errorDiv.classList.remove('hidden'); }
-      return;
-    }
-    if (!titre) {
-      if (errorDiv) { errorDiv.textContent = 'Le titre / fonction est obligatoire.'; errorDiv.classList.remove('hidden'); }
-      return;
-    }
+    if (!prenom) return fail('Le prénom est obligatoire.', 'regPrenom');
+    if (!nom) return fail('Le nom est obligatoire.', 'regNom');
+    if (!telephone) return fail('Le numéro de téléphone est obligatoire.', 'regTelephone');
+    if (!titre) return fail('Le titre / fonction est obligatoire.', 'regTitre');
 
     // Desactiver le bouton
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creation en cours...'; }
@@ -291,10 +295,10 @@ const UserManager = {
 
         resolve(newUser);
       } else {
-        if (errorDiv) { errorDiv.textContent = result.message || 'Erreur lors de la creation.'; errorDiv.classList.remove('hidden'); }
+        fail(result.message || 'Erreur lors de la création.');
       }
     } catch (err) {
-      if (errorDiv) { errorDiv.textContent = 'Erreur de connexion : ' + err.message; errorDiv.classList.remove('hidden'); }
+      fail('Erreur de connexion : ' + err.message);
     } finally {
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Creer mon compte'; }
     }
@@ -1710,9 +1714,13 @@ const Toast = {
 
   _getContainer() {
     if (!this._container) {
-      this._container = document.createElement('div');
-      this._container.className = 'toast-container';
-      document.body.appendChild(this._container);
+      // Le conteneur stylé (position fixe, en haut à droite) existe dans index.html ; sinon on le crée avec la même classe
+      this._container = document.getElementById('toastLayer');
+      if (!this._container) {
+        this._container = document.createElement('div');
+        this._container.className = 'toast-layer';
+        document.body.appendChild(this._container);
+      }
     }
     return this._container;
   },
