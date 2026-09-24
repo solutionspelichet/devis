@@ -375,6 +375,20 @@
                 <div class="settings-tabs">
                     <button type="button" class="settings-tab active" data-stab="tarifs">Tarifs &amp; Marges</button>
                     <button type="button" class="settings-tab" data-stab="apikeys">🔑 Clés API</button>
+                    <button type="button" class="settings-tab" data-stab="modeles">📄 Modèles</button>
+                </div>
+
+                <div class="settings-pane" data-spane="modeles">
+                    <p class="apikey-intro">
+                        Personnalise tes modèles de <strong>Devis</strong>, <strong>RESA</strong> et <strong>Bordereau</strong>.
+                        « Personnaliser » crée <strong>ta copie</strong> du modèle actuel dans Google Docs : modifie-la comme tu veux,
+                        elle sera utilisée pour tous tes prochains documents. Les autres utilisateurs ne sont pas affectés.
+                    </p>
+                    <p class="apikey-intro" style="color:var(--red)">
+                        ⚠ Conserve les balises <code>{{...}}</code> (ex. <code>{{ref}}</code>, <code>{{client}}</code>, <code>{{instructions}}</code>,
+                        <code>{{prestations}}</code>, <code>{{detail_prestations}}</code>) et les tableaux : elles sont remplies automatiquement.
+                    </p>
+                    <div id="templatesList" class="settings-table-wrap"></div>
                 </div>
 
                 <div class="settings-pane active" data-spane="tarifs">

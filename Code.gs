@@ -804,6 +804,9 @@ function addUser(userData) {
   // Creer l'onglet de suivi pour ce user
   ensureUserSheet(id);
 
+  // Creer le repertoire Drive dedie (sinon cree au premier devis)
+  try { getUserFolder(id); } catch (err) { Logger.log('Erreur creation dossier Drive: ' + err); }
+
   Logger.log('Utilisateur cree: ' + id + ' - ' + prenom + ' ' + nom + ' (signature: ' + signatureId + ')');
 
   return {
@@ -1418,6 +1421,34 @@ function doGet(e) {
       }
     }
 
+    if (action === 'template_list' || action === 'template_customize' || action === 'template_reset') {
+      try {
+        var tplUser = e.parameter.user || '';
+        if (!tplUser || !getUserById(tplUser)) return jsonResponse({ status: 'error', message: 'Utilisateur inconnu' });
+        var tplType = e.parameter.type || '';
+        if (action !== 'template_list') {
+          if (!TEMPLATE_TYPES[tplType]) return jsonResponse({ status: 'error', message: 'Type de modèle invalide' });
+          if (action === 'template_customize') customizeTemplate(tplUser, tplType);
+          else resetTemplate(tplUser, tplType);
+        }
+        return jsonResponse({ status: 'success', data: listTemplates(tplUser) });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur modèles: ' + err });
+      }
+    }
+
+    if (action === 'user_ensure_folder') {
+      try {
+        var efUser = e.parameter.user || '';
+        if (!efUser) return jsonResponse({ status: 'error', message: 'userId requis' });
+        var efFolder = getUserFolder(efUser);
+        ensureUserSheet(efUser);
+        return jsonResponse({ status: 'success', folderId: efFolder.getId(), folderUrl: efFolder.getUrl() });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: 'Erreur dossier: ' + err });
+      }
+    }
+
     if (action === 'user_update_profile') {
       try {
         var profData = JSON.parse(e.parameter.data || '{}');
@@ -1564,11 +1595,9 @@ function doGet(e) {
     if (action === 'forecast_global') {
       try {
         var fcUserId = e.parameter.user || '';
-        if (fcUserId) {
-          var u = getUserById(fcUserId);
-          if (!u || (u.role !== 'controller' && u.role !== 'admin')) {
-            return jsonResponse({ status: 'error', code: 403, message: 'Accès réservé au Controller / Admin' });
-          }
+        var u = fcUserId ? getUserById(fcUserId) : null;
+        if (!u || (u.role !== 'controller' && u.role !== 'admin')) {
+          return jsonResponse({ status: 'error', code: 403, message: 'Accès réservé au Controller / Admin' });
         }
         var data = listerAffairesGlobal();
         var commerciaux = listerCommerciauxAvecDossiers();
@@ -1581,11 +1610,9 @@ function doGet(e) {
     if (action === 'forecast_xlsx') {
       try {
         var fcUserId = e.parameter.user || '';
-        if (fcUserId) {
-          var u = getUserById(fcUserId);
-          if (!u || (u.role !== 'controller' && u.role !== 'admin')) {
-            return jsonResponse({ status: 'error', code: 403, message: 'Accès réservé au Controller / Admin' });
-          }
+        var u = fcUserId ? getUserById(fcUserId) : null;
+        if (!u || (u.role !== 'controller' && u.role !== 'admin')) {
+          return jsonResponse({ status: 'error', code: 403, message: 'Accès réservé au Controller / Admin' });
         }
         var filters = {
           start: e.parameter.start || '',
@@ -2633,7 +2660,9 @@ function listerAffaires(userId) {
       mois: moisISO,
       dateCreation: dateCreation,
       hasRealise: !!(data.realise && data.realise.savedAt),
-      typeSociete: safe(data.typeSociete, '')
+      typeSociete: safe(data.typeSociete, ''),
+      adresseDepart: safe(data.adresseDepart, ''),
+      adresseArrivee: safe(data.adresseArrivee, '')
     };
   });
 }
@@ -3233,6 +3262,77 @@ function getUserFolder(userId) {
   return newFolder;
 }
 
+// ============================================
+// MODÈLES (TEMPLATES) PERSONNALISABLES PAR UTILISATEUR
+// ============================================
+// Un utilisateur peut "personnaliser" un modèle : on copie le modèle par défaut
+// dans son répertoire Drive (_MODELE_<TYPE>) ; il l'édite dans Google Docs.
+// À la génération, le modèle perso est utilisé s'il existe, sinon le défaut.
+var TEMPLATE_TYPES = {
+  devis:       { label: 'Devis (Pelichet)',       key: 'TEMPLATE_PELICHET_ID' },
+  devis_autre: { label: 'Devis (Autre société)',  key: 'TEMPLATE_AUTRE_ID' },
+  resa:        { label: 'Fiche RESA',             key: 'TEMPLATE_RESA_ID' },
+  bordereau:   { label: 'Bordereau de travail',   key: 'TEMPLATE_BORDEREAU_ID' }
+};
+
+function findCustomTemplate(userId, type) {
+  if (!userId || !TEMPLATE_TYPES[type]) return null;
+  var files = getUserFolder(userId).getFilesByName('_MODELE_' + type.toUpperCase());
+  return files.hasNext() ? files.next() : null;
+}
+
+/** ID du modèle à utiliser : version personnelle si elle existe, sinon défaut */
+function resolveTemplateId(userId, type) {
+  var def = CONFIG[TEMPLATE_TYPES[type].key];
+  try {
+    var f = findCustomTemplate(userId, type);
+    if (f) return f.getId();
+  } catch (err) {
+    Logger.log('resolveTemplateId ' + type + ': ' + err);
+  }
+  return def;
+}
+
+function listTemplates(userId) {
+  return Object.keys(TEMPLATE_TYPES).map(function(type) {
+    var f = null;
+    try { f = findCustomTemplate(userId, type); } catch (e) { /* ignore */ }
+    var defId = CONFIG[TEMPLATE_TYPES[type].key];
+    return {
+      type: type,
+      label: TEMPLATE_TYPES[type].label,
+      custom: !!f,
+      url: 'https://docs.google.com/document/d/' + (f ? f.getId() : defId) + '/edit',
+      defaultUrl: 'https://docs.google.com/document/d/' + defId + '/edit'
+    };
+  });
+}
+
+/** Crée la copie personnelle (à partir du modèle par défaut) et la rend éditable */
+function customizeTemplate(userId, type) {
+  if (!userId || !TEMPLATE_TYPES[type]) throw new Error('Paramètres invalides');
+  var existing = findCustomTemplate(userId, type);
+  if (existing) return existing;
+  var def = CONFIG[TEMPLATE_TYPES[type].key];
+  var copy = DriveApp.getFileById(def).makeCopy('_MODELE_' + type.toUpperCase(), getUserFolder(userId));
+  try {
+    copy.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+  } catch (e) {
+    try { copy.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.EDIT); }
+    catch (e2) { Logger.log('Partage modèle impossible: ' + e2); }
+  }
+  var u = getUserById(userId);
+  if (u && u.email) { try { copy.addEditor(u.email); } catch (e3) { /* ignore */ } }
+  return copy;
+}
+
+/** Supprime la copie personnelle → retour au modèle par défaut */
+function resetTemplate(userId, type) {
+  var f = findCustomTemplate(userId, type);
+  if (f) f.setTrashed(true);
+  return true;
+}
+
 /**
  * Génère un flux iCalendar (.ics) à partir des missions d'un utilisateur.
  * Compatible avec iPhone Calendar, Google Calendar, Outlook.
@@ -3829,7 +3929,7 @@ function doPost(e) {
 
     // 1. GENERATION DEVIS
     Logger.log('Génération devis: ' + ref + ' - ' + client);
-    const templateId = estPelichet ? CONFIG.TEMPLATE_PELICHET_ID : CONFIG.TEMPLATE_AUTRE_ID;
+    const templateId = resolveTemplateId(userId, estPelichet ? 'devis' : 'devis_autre');
     const copyDevis = DriveApp.getFileById(templateId).makeCopy(fileNameBase, folder);
     const docDevis = DocumentApp.openById(copyDevis.getId());
     const bodyDevis = docDevis.getBody();
@@ -4378,7 +4478,7 @@ function genererDevisDoc(data, folder, ref, client) {
   var montantHT = parseFloat(data.montantHT) || 0;
   var postes = safeArray(data.postes);
   var fileNameBase = 'Devis_' + ref + '_' + client.replace(/\s+/g, '_');
-  var templateId = estPelichet ? CONFIG.TEMPLATE_PELICHET_ID : CONFIG.TEMPLATE_AUTRE_ID;
+  var templateId = resolveTemplateId(safe(data.userId), estPelichet ? 'devis' : 'devis_autre');
 
   var copyDevis = DriveApp.getFileById(templateId).makeCopy(fileNameBase, folder);
   var docDevis = DocumentApp.openById(copyDevis.getId());
@@ -4444,7 +4544,7 @@ function genererBordereau(data, folder, ref, client) {
     return null;
   }
   var fileName = ref + ' BORDEREAU - ' + client.replace(/\s+/g, '_');
-  var copy = DriveApp.getFileById(CONFIG.TEMPLATE_BORDEREAU_ID).makeCopy(fileName, folder);
+  var copy = DriveApp.getFileById(resolveTemplateId(safe(data.userId), 'bordereau')).makeCopy(fileName, folder);
   var bordFileId = copy.getId();
   var doc = DocumentApp.openById(bordFileId);
   var body = doc.getBody();
@@ -4555,7 +4655,7 @@ function genererBordereau(data, folder, ref, client) {
     // Calculer le nombre total de jours sur toutes les prestations
     var totalJours = 0;
     allPostes.forEach(function(p) {
-      if (safe(p.titre, '')) totalJours += parseFloat(p.jours) || 1;
+      totalJours += parseFloat(p.jours) || 1;
     });
     if (totalJours > 0) {
       var totalLabel = (totalJours === 0.5) ? '1/2 jour'
@@ -4567,8 +4667,7 @@ function genererBordereau(data, folder, ref, client) {
     }
 
     allPostes.forEach(function(p) {
-      var titre = safe(p.titre, '').toUpperCase();
-      if (!titre) return;
+      var titre = safe(p.titre, 'PRESTATION').toUpperCase();
 
       var nbJoursVal = parseFloat(p.jours) || 1;
       var joursFmt = nbJoursVal === 0.5 ? '1/2 jour' : (nbJoursVal + (nbJoursVal > 1 ? ' jours' : ' jour'));
@@ -4623,7 +4722,7 @@ function genererBordereau(data, folder, ref, client) {
 
 function genererFicheResa(data, folder, ref, client) {
   const fileNameResa = ref + ' RESA - ' + client.replace(/\s+/g, '_');
-  const copyResa = DriveApp.getFileById(CONFIG.TEMPLATE_RESA_ID).makeCopy(fileNameResa, folder);
+  const copyResa = DriveApp.getFileById(resolveTemplateId(safe(data.userId), 'resa')).makeCopy(fileNameResa, folder);
   const resaFileId = copyResa.getId();
   const docResa = DocumentApp.openById(resaFileId);
   const body = docResa.getBody();
@@ -4760,8 +4859,7 @@ function genererFicheResa(data, folder, ref, client) {
 
     // Traiter TOUS les postes (simples et détaillés)
     allPostes.forEach(function(p, posteIdx) {
-      var titre = safe(p.titre, '').toUpperCase();
-      if (!titre) return; // Pas de titre = pas d'insertion
+      var titre = safe(p.titre, 'PRESTATION').toUpperCase();
       var nbJoursVal = parseFloat(p.jours) || 1;
       var joursFmt = nbJoursVal === 0.5 ? '1/2 jour' : (nbJoursVal + (nbJoursVal > 1 ? ' jours' : ' jour'));
 

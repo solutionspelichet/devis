@@ -3052,6 +3052,69 @@ const BulkDownload = {
 };
 
 // ============================================
+// MODÈLES PERSONNALISABLES (devis / RESA / bordereau)
+// ============================================
+const TemplateManager = {
+  async _call(action, type) {
+    const p = new URLSearchParams({ action, user: UserManager.getUserId() });
+    if (type) p.set('type', type);
+    const resp = await fetch(`${CONFIG.SCRIPT_URL}?${p.toString()}`);
+    const json = await resp.json();
+    if (json.status !== 'success') throw new Error(json.message || 'Erreur serveur');
+    return json.data;
+  },
+
+  async refresh() {
+    const box = document.getElementById('templatesList');
+    if (!box) return;
+    box.innerHTML = '<p class="apikey-intro">Chargement…</p>';
+    try {
+      this._render(await this._call('template_list'));
+    } catch (err) {
+      box.innerHTML = `<p class="apikey-intro" style="color:var(--red)">Erreur : ${err.message}</p>`;
+    }
+  },
+
+  _render(list) {
+    const box = document.getElementById('templatesList');
+    box.innerHTML = `<table class="settings-table"><thead><tr><th>Modèle</th><th>Version utilisée</th><th></th></tr></thead><tbody>${
+      list.map(t => `
+        <tr>
+          <td><strong>${t.label}</strong></td>
+          <td>${t.custom ? '✏️ Ma version personnalisée' : 'Modèle standard'}</td>
+          <td style="white-space:nowrap;text-align:right">
+            ${t.custom
+              ? `<a class="btn btn-primary btn-xs" href="${t.url}" target="_blank" rel="noopener">Ouvrir / modifier</a>
+                 <button type="button" class="btn btn-ghost btn-xs" data-tpl-reset="${t.type}">Revenir au standard</button>`
+              : `<button type="button" class="btn btn-primary btn-xs" data-tpl-custom="${t.type}">Personnaliser</button>
+                 <a class="btn btn-ghost btn-xs" href="${t.url}" target="_blank" rel="noopener">Voir</a>`}
+          </td>
+        </tr>`).join('')
+    }</tbody></table>`;
+
+    box.querySelectorAll('[data-tpl-custom]').forEach(b => b.addEventListener('click', async () => {
+      b.disabled = true; b.textContent = 'Création…';
+      try {
+        const data = await this._call('template_customize', b.dataset.tplCustom);
+        this._render(data);
+        const mine = data.find(t => t.type === b.dataset.tplCustom);
+        if (mine) window.open(mine.url, '_blank', 'noopener');
+        Toast.success('Ta copie est créée — modifie-la dans Google Docs');
+      } catch (err) { Toast.error('Erreur : ' + err.message); this.refresh(); }
+    }));
+
+    box.querySelectorAll('[data-tpl-reset]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Supprimer ta version personnalisée et revenir au modèle standard ?')) return;
+      b.disabled = true;
+      try {
+        this._render(await this._call('template_reset', b.dataset.tplReset));
+        Toast.success('Modèle standard rétabli');
+      } catch (err) { Toast.error('Erreur : ' + err.message); this.refresh(); }
+    }));
+  }
+};
+
+// ============================================
 // API KEYS MANAGER (settings panel)
 // ============================================
 const ApiKeysManager = {
@@ -3064,6 +3127,7 @@ const ApiKeysManager = {
         tab.classList.add('active');
         document.querySelector(`.settings-pane[data-spane="${tab.dataset.stab}"]`)?.classList.add('active');
         if (tab.dataset.stab === 'apikeys') this.refresh();
+        if (tab.dataset.stab === 'modeles') TemplateManager.refresh();
       });
     });
 
