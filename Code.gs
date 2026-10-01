@@ -141,7 +141,16 @@ function fmt(v) {
 // ============================================
 
 var API_KEYS_PROP = 'API_KEYS_JSON';
-var REQUIRE_API_KEY = false; // false = legacy ouvert ; true = clé obligatoire partout
+// IMPORTANT : true = une clé API valide est obligatoire pour les actions apikey_* (gestion des clés).
+// Avec REQUIRE_API_KEY=false, n'importe quel appel sans clé était autorisé avec un niveau 'admin'
+// implicite — ce qui permettait à quiconque connaissait l'URL de se créer lui-même une clé admin
+// via apikey_create. Ne JAMAIS repasser à false sans comprendre cette conséquence.
+//
+// Bootstrap de la toute première clé : comme ces actions sont désormais fermées côté web,
+// crée la première clé admin directement depuis l'éditeur Apps Script (Exécuter une fonction) :
+//   apiKeyCreate('Admin', 'admin')
+// puis récupère la clé retournée dans les logs d'exécution.
+var REQUIRE_API_KEY = true;
 var API_PERMISSION_LEVELS = { read: 1, write: 2, admin: 3 };
 
 function _loadApiKeys() {
@@ -1414,30 +1423,8 @@ function doGet(e) {
       return jsonResponse({ status: 'success', data: users });
     }
 
-    if (action === 'verify_password') {
-      var vUser = e.parameter.userId || '';
-      var vPwd = e.parameter.password || '';
-      var ok = verifyUserPassword(vUser, vPwd);
-      return jsonResponse({ status: ok ? 'success' : 'error', message: ok ? 'OK' : 'Mot de passe incorrect' });
-    }
-
-    if (action === 'set_password') {
-      var spUser = e.parameter.userId || '';
-      var spOld = e.parameter.oldPassword || '';
-      var spNew = e.parameter.newPassword || '';
-      // Si l'utilisateur a déjà un mot de passe : exiger l'ancien
-      if (hasUserPassword(spUser)) {
-        if (!verifyUserPassword(spUser, spOld)) {
-          return jsonResponse({ status: 'error', message: 'Mot de passe actuel incorrect' });
-        }
-      }
-      try {
-        setUserPassword(spUser, spNew);
-        return jsonResponse({ status: 'success' });
-      } catch (err) {
-        return jsonResponse({ status: 'error', message: err.toString() });
-      }
-    }
+    // verify_password / set_password : volontairement absents de doGet — un mot de passe ne doit
+    // jamais transiter en paramètre d'URL (logs serveur/proxy, historique navigateur). Voir doPost.
 
     if (action === 'user_add') {
       try {
@@ -3947,6 +3934,32 @@ function genererPlanning(userId) {
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
+
+    // --- Mots de passe : POST uniquement, jamais en paramètre GET ---
+    if (data._action === 'verify_password') {
+      var vUser = data.userId || '';
+      var vPwd = data.password || '';
+      var ok = verifyUserPassword(vUser, vPwd);
+      return jsonResponse({ status: ok ? 'success' : 'error', message: ok ? 'OK' : 'Mot de passe incorrect' });
+    }
+
+    if (data._action === 'set_password') {
+      var spUser = data.userId || '';
+      var spOld = data.oldPassword || '';
+      var spNew = data.newPassword || '';
+      // Si l'utilisateur a déjà un mot de passe : exiger l'ancien
+      if (hasUserPassword(spUser)) {
+        if (!verifyUserPassword(spUser, spOld)) {
+          return jsonResponse({ status: 'error', message: 'Mot de passe actuel incorrect' });
+        }
+      }
+      try {
+        setUserPassword(spUser, spNew);
+        return jsonResponse({ status: 'success' });
+      } catch (err) {
+        return jsonResponse({ status: 'error', message: err.toString() });
+      }
+    }
 
     // --- Routage actions utilisateur (pas de lock nécessaire) ---
     if (data._action === 'user_add') {
