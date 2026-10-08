@@ -34,10 +34,10 @@ jobs:
       - name: Deploy (production)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
-          DEPLOYMENT_ID: ${{ vars.PROD_DEPLOYMENT_ID }}
+          DEPLOYMENT_ID: ${{ secrets.PROD_DEPLOYMENT_ID }}
         run: |
           if [ -z "$DEPLOYMENT_ID" ]; then
-            echo "::error::Variable de repo PROD_DEPLOYMENT_ID absente — configure-la dans Settings > Secrets and variables > Actions > Variables."
+            echo "::error::Secret PROD_DEPLOYMENT_ID absent — configure-le dans Settings > Secrets and variables > Actions > Secrets."
             exit 1
           fi
           clasp deploy -i "$DEPLOYMENT_ID" -d "prod $(date -u +%Y-%m-%dT%H:%M:%SZ) ${{ github.sha }}"
@@ -48,10 +48,10 @@ jobs:
       - name: Deploy (test, manuel uniquement)
         if: github.event_name == 'workflow_dispatch'
         env:
-          DEPLOYMENT_ID: ${{ vars.TEST_DEPLOYMENT_ID }}
+          DEPLOYMENT_ID: ${{ secrets.TEST_DEPLOYMENT_ID }}
         run: |
           if [ -z "$DEPLOYMENT_ID" ]; then
-            echo "::error::Variable de repo TEST_DEPLOYMENT_ID absente — cree un déploiement de test (clasp deploy -d 'test') puis ajoute son ID comme variable de repo TEST_DEPLOYMENT_ID."
+            echo "::error::Secret TEST_DEPLOYMENT_ID absent — cree un déploiement de test (clasp deploy -d 'test') puis ajoute son ID comme secret TEST_DEPLOYMENT_ID."
             exit 1
           fi
           clasp deploy -i "$DEPLOYMENT_ID" -d "test ${{ github.ref_name }} $(date -u +%Y-%m-%dT%H:%M:%SZ) ${{ github.sha }}"
