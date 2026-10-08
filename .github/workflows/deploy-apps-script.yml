@@ -4,7 +4,16 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Déploiement cible'
+        type: choice
+        required: true
+        default: test
+        options:
+          - test
+          - prod
 
 jobs:
   deploy:
@@ -29,10 +38,9 @@ jobs:
       - name: Push code to Apps Script
         run: clasp push --force
 
-      # Déclenché automatiquement par un push sur main : déploie sur la PROD
-      # (même déploiement/URL, nouvelle version).
+      # Prod : automatique sur push vers main, ou manuellement avec target=prod.
       - name: Deploy (production)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'prod')
         env:
           DEPLOYMENT_ID: ${{ secrets.PROD_DEPLOYMENT_ID }}
         run: |
@@ -42,11 +50,9 @@ jobs:
           fi
           clasp deploy -i "$DEPLOYMENT_ID" -d "prod $(date -u +%Y-%m-%dT%H:%M:%SZ) ${{ github.sha }}"
 
-      # Déclenché UNIQUEMENT à la main (bouton "Run workflow" dans l'onglet
-      # Actions, en choisissant la branche à tester) : déploie sur le
-      # déploiement de TEST, jamais automatiquement sur un simple push.
+      # Test : uniquement manuel, avec target=test (valeur par défaut).
       - name: Deploy (test, manuel uniquement)
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.target == 'test'
         env:
           DEPLOYMENT_ID: ${{ secrets.TEST_DEPLOYMENT_ID }}
         run: |
