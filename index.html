@@ -423,6 +423,14 @@
                     </p>
 
                     <div class="apikey-create">
+                        <input type="password" id="apikeyAdminKey" placeholder="Ta clé admin (pk_…)" autocomplete="off" style="flex-basis:220px">
+                        <button type="button" id="apikeyAdminKeySave" class="btn btn-secondary btn-xs">Enregistrer</button>
+                    </div>
+                    <p class="apikey-intro" style="color:var(--ink-3);font-size:.85em">
+                        La gestion des clés nécessite désormais une clé admin existante (créée une seule fois depuis l'éditeur Apps Script : <code>apiKeyCreate('Admin', 'admin')</code>). Colle-la ci-dessus pour gérer les clés depuis cet écran — elle reste uniquement dans ce navigateur.
+                    </p>
+
+                    <div class="apikey-create">
                         <input type="text" id="apikeyNewName" placeholder="Nom de l'application (ex: Mon ERP)">
                         <select id="apikeyNewPerm">
                             <option value="read">read</option>

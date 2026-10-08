@@ -155,8 +155,10 @@ const UserManager = {
       const errEl = document.getElementById('loginPwdError');
       errEl.classList.add('hidden');
       try {
-        const url = `${CONFIG.SCRIPT_URL}?action=verify_password&userId=${encodeURIComponent(user.id)}&password=${encodeURIComponent(pwd)}`;
-        const resp = await fetch(url);
+        const resp = await fetch(CONFIG.SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ _action: 'verify_password', userId: user.id, password: pwd })
+        });
         const result = await resp.json();
         if (result.status === 'success') {
           this._completeLogin(user, resolve);
@@ -1548,13 +1550,15 @@ const ProfilePanel = {
     const btn = document.getElementById('profPwdSave');
     if (btn) btn.disabled = true;
     try {
-      const params = new URLSearchParams({
-        action: 'set_password',
-        userId: user.id,
-        oldPassword: oldPwd,
-        newPassword: newPwd
+      const resp = await fetch(CONFIG.SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          _action: 'set_password',
+          userId: user.id,
+          oldPassword: oldPwd,
+          newPassword: newPwd
+        })
       });
-      const resp = await fetch(`${CONFIG.SCRIPT_URL}?${params.toString()}`);
       const result = await resp.json();
       if (result.status === 'success') {
         Toast.success('🔑 Mot de passe mis à jour');
@@ -3569,10 +3573,23 @@ const ApiKeysManager = {
 
     document.getElementById('apikeyCreateBtn')?.addEventListener('click', () => this.createKey());
 
+    const adminKeyInput = document.getElementById('apikeyAdminKey');
+    if (adminKeyInput) adminKeyInput.value = localStorage.getItem('pelichet_admin_apikey') || '';
+    document.getElementById('apikeyAdminKeySave')?.addEventListener('click', () => {
+      localStorage.setItem('pelichet_admin_apikey', adminKeyInput?.value.trim() || '');
+      Toast.success('Clé admin enregistrée');
+      this.refresh();
+    });
+
     // Remplir l'URL d'exemple dans la doc
     document.querySelectorAll('#apiUrlExample, .apiUrlExample').forEach(el => {
       el.textContent = CONFIG.SCRIPT_URL;
     });
+  },
+
+  /** Clé admin saisie par l'utilisateur, nécessaire pour toute action apikey_* (REQUIRE_API_KEY=true). */
+  _adminKey() {
+    return localStorage.getItem('pelichet_admin_apikey') || '';
   },
 
   async refresh() {
@@ -3580,7 +3597,7 @@ const ApiKeysManager = {
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--ink-3);padding:20px">Chargement…</td></tr>';
     try {
-      const url = `${CONFIG.SCRIPT_URL}?action=apikey_list`;
+      const url = `${CONFIG.SCRIPT_URL}?action=apikey_list&apiKey=${encodeURIComponent(this._adminKey())}`;
       const resp = await fetch(url);
       const result = await resp.json();
       if (result.status !== 'success') {
@@ -3627,7 +3644,7 @@ const ApiKeysManager = {
     const perm = document.getElementById('apikeyNewPerm')?.value;
     if (!name) { Toast.warning('Nom requis'); return; }
     try {
-      const url = `${CONFIG.SCRIPT_URL}?action=apikey_create&name=${encodeURIComponent(name)}&permission=${perm}`;
+      const url = `${CONFIG.SCRIPT_URL}?action=apikey_create&name=${encodeURIComponent(name)}&permission=${perm}&apiKey=${encodeURIComponent(this._adminKey())}`;
       const resp = await fetch(url);
       const result = await resp.json();
       if (result.status === 'success' && result.data) {
@@ -3661,20 +3678,20 @@ const ApiKeysManager = {
     }
     if (act === 'revoke') {
       if (!confirm(`Révoquer la clé "${info.name}" ? L'application qui l'utilise ne pourra plus accéder à l'API.`)) return;
-      const resp = await fetch(`${CONFIG.SCRIPT_URL}?action=apikey_revoke&key=${encodeURIComponent(key)}`);
+      const resp = await fetch(`${CONFIG.SCRIPT_URL}?action=apikey_revoke&key=${encodeURIComponent(key)}&apiKey=${encodeURIComponent(this._adminKey())}`);
       const r = await resp.json();
       if (r.status === 'success') { Toast.success('Clé révoquée'); this.refresh(); }
       else Toast.error(r.message);
     }
     if (act === 'reactivate') {
-      const resp = await fetch(`${CONFIG.SCRIPT_URL}?action=apikey_reactivate&key=${encodeURIComponent(key)}`);
+      const resp = await fetch(`${CONFIG.SCRIPT_URL}?action=apikey_reactivate&key=${encodeURIComponent(key)}&apiKey=${encodeURIComponent(this._adminKey())}`);
       const r = await resp.json();
       if (r.status === 'success') { Toast.success('Clé réactivée'); this.refresh(); }
       else Toast.error(r.message);
     }
     if (act === 'delete') {
       if (!confirm(`Supprimer DÉFINITIVEMENT la clé "${info.name}" ?`)) return;
-      const resp = await fetch(`${CONFIG.SCRIPT_URL}?action=apikey_delete&key=${encodeURIComponent(key)}`);
+      const resp = await fetch(`${CONFIG.SCRIPT_URL}?action=apikey_delete&key=${encodeURIComponent(key)}&apiKey=${encodeURIComponent(this._adminKey())}`);
       const r = await resp.json();
       if (r.status === 'success') { Toast.success('Clé supprimée'); this.refresh(); }
       else Toast.error(r.message);
