@@ -4,9 +4,7 @@ on:
   push:
     branches:
       - main
-      - 'fix/**'
-      - 'feature/**'
-      - 'ci/**'
+  workflow_dispatch: {}
 
 jobs:
   deploy:
@@ -31,8 +29,10 @@ jobs:
       - name: Push code to Apps Script
         run: clasp push --force
 
+      # Déclenché automatiquement par un push sur main : déploie sur la PROD
+      # (même déploiement/URL, nouvelle version).
       - name: Deploy (production)
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           DEPLOYMENT_ID: ${{ vars.PROD_DEPLOYMENT_ID }}
         run: |
@@ -42,13 +42,16 @@ jobs:
           fi
           clasp deploy -i "$DEPLOYMENT_ID" -d "prod $(date -u +%Y-%m-%dT%H:%M:%SZ) ${{ github.sha }}"
 
-      - name: Deploy (test)
-        if: github.ref != 'refs/heads/main'
+      # Déclenché UNIQUEMENT à la main (bouton "Run workflow" dans l'onglet
+      # Actions, en choisissant la branche à tester) : déploie sur le
+      # déploiement de TEST, jamais automatiquement sur un simple push.
+      - name: Deploy (test, manuel uniquement)
+        if: github.event_name == 'workflow_dispatch'
         env:
           DEPLOYMENT_ID: ${{ vars.TEST_DEPLOYMENT_ID }}
         run: |
           if [ -z "$DEPLOYMENT_ID" ]; then
-            echo "::warning::Variable de repo TEST_DEPLOYMENT_ID absente — le code a ete pousse (clasp push) mais aucun deploiement de test n'a ete mis a jour. Cree un deploiement de test (clasp deploy -d 'test') puis ajoute son ID comme variable de repo TEST_DEPLOYMENT_ID."
-            exit 0
+            echo "::error::Variable de repo TEST_DEPLOYMENT_ID absente — cree un déploiement de test (clasp deploy -d 'test') puis ajoute son ID comme variable de repo TEST_DEPLOYMENT_ID."
+            exit 1
           fi
           clasp deploy -i "$DEPLOYMENT_ID" -d "test ${{ github.ref_name }} $(date -u +%Y-%m-%dT%H:%M:%SZ) ${{ github.sha }}"
