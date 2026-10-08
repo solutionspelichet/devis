@@ -1,0 +1,57 @@
+name: Deploy Apps Script backend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Write clasp credentials
+        run: echo "$CLASP_CREDENTIALS" > "$HOME/.clasprc.json"
+        env:
+          CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
+
+      - name: Push code to Apps Script
+        run: clasp push --force
+
+      # Déclenché automatiquement par un push sur main : déploie sur la PROD
+      # (même déploiement/URL, nouvelle version).
+      - name: Deploy (production)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          DEPLOYMENT_ID: ${{ secrets.PROD_DEPLOYMENT_ID }}
+        run: |
+          if [ -z "$DEPLOYMENT_ID" ]; then
+            echo "::error::Secret PROD_DEPLOYMENT_ID absent — configure-le dans Settings > Secrets and variables > Actions > Secrets."
+            exit 1
+          fi
+          clasp deploy -i "$DEPLOYMENT_ID" -d "prod $(date -u +%Y-%m-%dT%H:%M:%SZ) ${{ github.sha }}"
+
+      # Déclenché UNIQUEMENT à la main (bouton "Run workflow" dans l'onglet
+      # Actions, en choisissant la branche à tester) : déploie sur le
+      # déploiement de TEST, jamais automatiquement sur un simple push.
+      - name: Deploy (test, manuel uniquement)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DEPLOYMENT_ID: ${{ secrets.TEST_DEPLOYMENT_ID }}
+        run: |
+          if [ -z "$DEPLOYMENT_ID" ]; then
+            echo "::error::Secret TEST_DEPLOYMENT_ID absent — cree un déploiement de test (clasp deploy -d 'test') puis ajoute son ID comme secret TEST_DEPLOYMENT_ID."
+            exit 1
+          fi
+          clasp deploy -i "$DEPLOYMENT_ID" -d "test ${{ github.ref_name }} $(date -u +%Y-%m-%dT%H:%M:%SZ) ${{ github.sha }}"
