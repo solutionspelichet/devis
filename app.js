@@ -3118,16 +3118,22 @@ const ControllerDashboard = {
       ? '<tr><td colspan="8" class="affaires-empty">Aucune affaire</td></tr>'
       : sortedDetail.map(a => `
         <tr>
-          <td class="ref-cell">${a.ref}</td>
-          <td>${a.client || '—'}</td>
-          <td>${a.commercial || '—'}</td>
-          <td>${a.statut || ''}</td>
+          <td class="ref-cell">${this._esc(a.ref)}</td>
+          <td>${this._esc(a.client) || '—'}</td>
+          <td>${this._esc(a.commercial) || '—'}</td>
+          <td>${this._esc(a.statut)}</td>
           <td>${fmtDate(a.datePrevue)}</td>
           <td class="num">${fmt(a.coutPourMarge)} CHF</td>
           <td class="num">${fmt(a.montantFacture)} CHF</td>
           <td class="num ${a.margePct >= 0 ? 'marge-pos' : 'marge-neg'}">${fmtPct(a.margePct)}</td>
         </tr>
       `).join('');
+  },
+
+  _esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : str;
+    return d.innerHTML;
   },
 
   async _exportXlsx() {
@@ -4028,10 +4034,10 @@ const AffairesView = {
       return;
     }
     tbody.innerHTML = filtered.map(a => `
-      <tr data-ref="${a.ref}">
-        <td class="ref-cell">${a.ref}</td>
-        <td>${a.client || '—'}</td>
-        <td><span class="statut-pill ${this._statutClass(a.statut)}">${a.statut || '—'}</span></td>
+      <tr data-ref="${this._esc(a.ref)}">
+        <td class="ref-cell">${this._esc(a.ref)}</td>
+        <td>${this._esc(a.client) || '—'}</td>
+        <td><span class="statut-pill ${this._statutClass(a.statut)}">${this._esc(a.statut) || '—'}</span></td>
         <td>${fmtDate(a.datePrevue)}</td>
         <td class="num">${fmt(a.coutPourMarge)} CHF</td>
         <td class="num">${fmt(a.montantFacture)} CHF</td>
@@ -4049,6 +4055,12 @@ const AffairesView = {
         }
       });
     });
+  },
+
+  _esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : str;
+    return d.innerHTML;
   },
 
   _exportCsv() {
@@ -4372,15 +4384,21 @@ const PosteManager = {
 
     let html = '<option value="">-- Type --</option>';
     // Options par défaut
-    html += defaults.map(i => `<option value="${i}">${i}</option>`).join('');
+    html += defaults.map(i => `<option value="${this._esc(i)}">${this._esc(i)}</option>`).join('');
     // Séparateur + options personnalisées
     if (customs.length > 0) {
       html += '<option disabled>────────────</option>';
-      html += customs.map(i => `<option value="${i}">${i} ★</option>`).join('');
+      html += customs.map(i => `<option value="${this._esc(i)}">${this._esc(i)} ★</option>`).join('');
     }
     // Option "Autre"
     html += '<option value="__autre__">+ Autre (personnalisé)</option>';
     return html;
+  },
+
+  _esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : str;
+    return d.innerHTML;
   },
 
   /** Rafraîchit toutes les listes déroulantes d'un type donné */
@@ -4494,8 +4512,8 @@ const PosteManager = {
     const header = document.createElement('div');
     header.className = 'cb-header';
     header.innerHTML = `
-      <input type="checkbox" value="${itemName}" ${checked ? 'checked' : ''}>
-      <span class="cb-name">${itemName}</span>
+      <input type="checkbox" value="${this._esc(itemName)}" ${checked ? 'checked' : ''}>
+      <span class="cb-name">${this._esc(itemName)}</span>
     `;
     div.appendChild(header);
 
@@ -4987,7 +5005,7 @@ const Modal = {
 
     const postes = data.postes || [];
     const postesRecap = postes.map((p, i) =>
-      `<div style="font-size:12px;padding:0.25rem 0">${i+1}. ${p.titre || 'Sans titre'} — ${p.prix ? p.prix + ' CHF' : 'Inclus'}</div>`
+      `<div style="font-size:12px;padding:0.25rem 0">${i+1}. ${this._esc(p.titre) || 'Sans titre'} — ${p.prix ? this._esc(p.prix) + ' CHF' : 'Inclus'}</div>`
     ).join('');
 
     const ht = parseFloat(data.montantHT) || 0;
@@ -5013,10 +5031,10 @@ const Modal = {
     overlay.innerHTML = `
       <div class="modal" style="max-width:560px">
         <h3>Confirmer l'envoi du devis</h3>
-        <div class="recap-item"><strong>Référence</strong>${data.ref}</div>
-        <div class="recap-item"><strong>Client</strong>${data.client}</div>
-        <div class="recap-item"><strong>Départ</strong>${data.adresseDepart}</div>
-        <div class="recap-item"><strong>Arrivée</strong>${data.adresseArrivee}</div>
+        <div class="recap-item"><strong>Référence</strong>${this._esc(data.ref)}</div>
+        <div class="recap-item"><strong>Client</strong>${this._esc(data.client)}</div>
+        <div class="recap-item"><strong>Départ</strong>${this._esc(data.adresseDepart)}</div>
+        <div class="recap-item"><strong>Arrivée</strong>${this._esc(data.adresseArrivee)}</div>
         <div class="recap-item"><strong>Postes (${postes.length})</strong>${postesRecap}</div>
         <div class="recap-item"><strong>Total TTC</strong>${fmt(ttc)}</div>
 
@@ -5095,6 +5113,12 @@ const Modal = {
     });
 
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  },
+
+  _esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : str;
+    return d.innerHTML;
   }
 };
 
@@ -5194,13 +5218,13 @@ const DossierList = {
       const statusClass = statusFromString(d.statut);
       const isActive = d.ref === activeRef;
       return `
-        <div class="dossier-item ${isActive ? 'active' : ''}" data-ref="${d.ref}" data-statut="${d.statut || ''}">
-          <span class="dossier-dot ${statusClass}" title="${d.statut || ''}"></span>
-          <div class="dossier-ref">${d.ref}</div>
+        <div class="dossier-item ${isActive ? 'active' : ''}" data-ref="${this._esc(d.ref)}" data-statut="${this._esc(d.statut) || ''}">
+          <span class="dossier-dot ${statusClass}" title="${this._esc(d.statut) || ''}"></span>
+          <div class="dossier-ref">${this._esc(d.ref)}</div>
           <div class="dossier-amount">${fmtCHF(d.montantHT)}</div>
-          <div class="dossier-client">${d.client || '—'}</div>
+          <div class="dossier-client">${this._esc(d.client) || '—'}</div>
           <div class="dossier-meta">${(d.date || '').split(' ')[0]}</div>
-          <button type="button" class="dossier-menu-btn" data-ref="${d.ref}" aria-label="Actions">
+          <button type="button" class="dossier-menu-btn" data-ref="${this._esc(d.ref)}" aria-label="Actions">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="3" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="8" cy="13" r="1.2"/></svg>
           </button>
         </div>
@@ -5248,6 +5272,12 @@ const DossierList = {
         item.classList.toggle('selected', BulkDownload._selected.has(item.dataset.ref));
       });
     }
+  },
+
+  _esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : str;
+    return d.innerHTML;
   }
 };
 
