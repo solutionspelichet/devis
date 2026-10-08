@@ -4653,6 +4653,10 @@ const PosteManager = {
 
     div.innerHTML = `
       <span class="poste-number"></span>
+      <span class="poste-move-group">
+        <button type="button" class="poste-move poste-move-up" title="Monter ce poste">↑</button>
+        <button type="button" class="poste-move poste-move-down" title="Descendre ce poste">↓</button>
+      </span>
       <button type="button" class="poste-remove" title="Supprimer le poste">&times;</button>
       <div class="grid-2 mb-3">
         <div class="col-span-2" style="display:grid;grid-template-columns:1fr auto;gap:0.5rem">
@@ -4704,6 +4708,22 @@ const PosteManager = {
     // Remove button
     div.querySelector('.poste-remove').addEventListener('click', () => {
       div.remove();
+      this.renumber();
+      PriceCalc.updateBreakdown();
+    });
+
+    // Déplacer vers le haut / bas
+    div.querySelector('.poste-move-up').addEventListener('click', () => {
+      const prev = div.previousElementSibling;
+      if (!prev) return;
+      this._container.insertBefore(div, prev);
+      this.renumber();
+      PriceCalc.updateBreakdown();
+    });
+    div.querySelector('.poste-move-down').addEventListener('click', () => {
+      const next = div.nextElementSibling;
+      if (!next) return;
+      this._container.insertBefore(next, div);
       this.renumber();
       PriceCalc.updateBreakdown();
     });
@@ -4830,9 +4850,14 @@ const PosteManager = {
   },
 
   renumber() {
-    this._container.querySelectorAll('.poste-card').forEach((card, idx) => {
+    const cards = this._container.querySelectorAll('.poste-card');
+    cards.forEach((card, idx) => {
       const num = card.querySelector('.poste-number');
       if (num) num.textContent = idx + 1;
+      const upBtn = card.querySelector('.poste-move-up');
+      const downBtn = card.querySelector('.poste-move-down');
+      if (upBtn) upBtn.disabled = (idx === 0);
+      if (downBtn) downBtn.disabled = (idx === cards.length - 1);
     });
   },
 
