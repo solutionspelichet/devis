@@ -1823,6 +1823,17 @@ const Validator = {
       Toast.warning('Ajoutez au moins un poste de prestation.');
     }
 
+    // Aucun prix ou quantité négatif (toutes lignes : poste, engins, personnel/véhicules/matériel)
+    let hasNegative = false;
+    form.querySelectorAll('[name="postePrix"], [name="qty"], [name="cbQty"], .cb-qty').forEach(input => {
+      const v = parseFloat(input.value);
+      if (!isNaN(v) && v < 0) { hasNegative = true; input.classList.add('error'); }
+    });
+    if (hasNegative) {
+      valid = false;
+      Toast.warning('Les prix et quantités ne peuvent pas être négatifs.');
+    }
+
     return valid;
   },
 
@@ -2350,8 +2361,9 @@ const RealiseManager = {
 
     document.getElementById('realiseRefLabel').textContent = ref + ' · ' + (document.querySelector('[name="client"]')?.value || '');
 
-    // Charger les données existantes : mémoire > localStorage > rien
-    const existing = window._currentDossierRealise || this._restoreFromLocal(ref) || null;
+    // Charger les données existantes : mémoire (si elle correspond bien à ce dossier) > localStorage > rien
+    const memRealise = (window._currentDossierRealiseRef === ref) ? window._currentDossierRealise : null;
+    const existing = memRealise || this._restoreFromLocal(ref) || null;
     this._render(postes, existing);
 
     // Initialiser le montant facturé avec l'existant ou le HT du devis
@@ -2779,6 +2791,7 @@ const RealiseManager = {
       if (res.status === 'success') {
         Toast.success(`📋 Réalisé sauvegardé · marge ${this._currentMarge()}`);
         window._currentDossierRealise = realise;
+        window._currentDossierRealiseRef = ref;
         // Rafraîchir le right rail pour afficher la marge réelle
         if (typeof RightRail !== 'undefined') RightRail.update();
 
@@ -4241,8 +4254,12 @@ const RightRail = {
     const htInput = document.querySelector('[name="montantHT"]');
     const htDevis = parseFloat(htInput?.value) || this._sumPostes();
 
-    // Si réalisé sauvegardé : utiliser le montant facturé réel comme HT et le coût réel manuel
-    const realise = window._currentDossierRealise;
+    // Si réalisé sauvegardé : utiliser le montant facturé réel comme HT et le coût réel manuel.
+    // On ne le réutilise que s'il appartient bien au dossier actuellement affiché (évite d'afficher
+    // le réalisé d'un ancien dossier si l'utilisateur enchaîne sur un nouveau devis sans recharger).
+    const currentRef = document.querySelector('[name="ref"]')?.value?.trim() || '';
+    const realise = (window._currentDossierRealiseRef && window._currentDossierRealiseRef === currentRef)
+      ? window._currentDossierRealise : null;
     const hasRealise = !!realise;
     const htReal = (hasRealise && realise.montantFacture > 0) ? parseFloat(realise.montantFacture) : null;
     const coutManuel = (hasRealise && realise.coutReelManuel != null && !isNaN(parseFloat(realise.coutReelManuel)))
@@ -4425,7 +4442,7 @@ const PosteManager = {
           <span style="font-size:8px;font-weight:700;color:var(--slate-400);margin-left:2px">T</span>
         </div>
         <div style="display:flex;align-items:center;margin-left:0.5rem">
-          <input type="number" name="qty" placeholder="Qté" value="1" style="width:2.5rem;text-align:center">
+          <input type="number" name="qty" placeholder="Qté" value="1" min="1" style="width:2.5rem;text-align:center">
           <span style="font-size:8px;font-weight:700;color:var(--slate-400);margin-left:2px">x</span>
         </div>
         <select name="enginDuree" class="cb-duree" style="margin-left:0.5rem">
@@ -4438,7 +4455,7 @@ const PosteManager = {
           <option value="4j">4 jours</option>
           <option value="5j">5 jours</option>
         </select>
-      ` : `<input type="number" name="qty" value="1" style="width:3rem;text-align:center">`}
+      ` : `<input type="number" name="qty" value="1" min="1" style="width:3rem;text-align:center">`}
       <button type="button" class="row-remove" title="Supprimer">&times;</button>
     `;
     const select = div.querySelector('select');
@@ -4640,7 +4657,7 @@ const PosteManager = {
       <div class="grid-2 mb-3">
         <div class="col-span-2" style="display:grid;grid-template-columns:1fr auto;gap:0.5rem">
           <input type="text" name="posteTitre" placeholder="DESIGNATION" class="font-bold uppercase">
-          <input type="number" name="postePrix" placeholder="Prix HT" style="width:7rem;text-align:right" class="font-bold">
+          <input type="number" name="postePrix" placeholder="Prix HT" min="0" style="width:7rem;text-align:right" class="font-bold">
         </div>
       </div>
       <div class="space-y-4">
@@ -4876,7 +4893,7 @@ const PosteManager = {
       if (hasEnginFields) {
         const ton = r.querySelector('input[name="ton"]')?.value || '';
         const duree = r.querySelector('[name="enginDuree"]')?.value || '';
-        const base = `${qty}x ${label} (${ton}T)`;
+        const base = ton ? `${qty}x ${label} (${ton}T)` : `${qty}x ${label}`;
         return duree ? `${base} [${duree}]` : base;
       }
       return `${qty}x ${label}`;
@@ -5424,8 +5441,10 @@ const DossierLoader = {
       if (data.volumeEstime) form.querySelector('[name="volumeEstime"]').value = data.volumeEstime;
 
       PosteManager.loadPostes(data.postes);
-      // Mémoriser le réalisé existant pour restoration dans le modal + right rail
+      // Mémoriser le réalisé existant (+ la référence à laquelle il appartient, pour éviter
+      // qu'il reste affiché si l'utilisateur enchaîne sur un nouveau devis sans recharger la page)
       window._currentDossierRealise = data.realise || null;
+      window._currentDossierRealiseRef = data.realise ? (data.ref || null) : null;
       PriceCalc.updateBreakdown();
       if (typeof RightRail !== 'undefined') RightRail.update();
       Toast.success('Dossier chargé !' + (data.realise ? ' (avec réalisé)' : ''));
